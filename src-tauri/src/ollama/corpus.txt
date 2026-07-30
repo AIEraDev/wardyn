@@ -1,0 +1,29 @@
+Sample 1 (Scheduling):
+"Hi Sarah, 3pm WAT on Thursday works well on my end. I'll send over the Google Meet link Thursday morning. Talk soon!"
+
+Sample 2 (Document Confirmation):
+"Thanks for following up. Attached are the requested reference letters and project summaries. Let me know if you need anything else from my side."
+
+Sample 3 (Product Milestone Update):
+"Hey team, shipped the text-effects engine rewrite today. 30+ effects ported, cleaner API surface, and benchmarked at 60fps. Next up is the export pipeline."
+
+Sample 4 (Quick Response):
+"Got it, thanks! Will review this evening and get back to you with notes before tomorrow's standup."
+
+Sample 5 (Polite Decline / Redirect):
+"Appreciate you reaching out. I'm focused on the current release right now so I'll have to pass for this week, but let's touch base next month."
+
+Sample 6 (Feedback Request):
+"Looks great overall! Only minor suggestion is tweaking the border contrast on dark mode. Ready to merge once that's updated."
+
+Sample 7 (Status Update):
+"Hi Alex, visa documentation has been submitted to the Home Office portal. Will update the calendar deadline as soon as confirmation arrives."
+
+Sample 8 (Brief Acknowledgement):
+"Confirmed! Thanks for coordinating."
+
+Sample 9 (Clarification Request):
+"Thanks for the details. Quick question on item 2: are we targeting the 14th or 21st for staging deployment?"
+
+Sample 10 (Follow-up):
+"Following up on our discussion yesterday. I've updated the draft notes in the shared doc. Let me know if everything looks good to proceed."

@@ -1,0 +1,20 @@
+[package]
+name = "wardyn-desktop"
+version = "0.1.0"
+description = "Wardyn Desktop Application"
+authors = ["Wardyn"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1.40", features = ["full"] }
+open = "5.3"
+url = "2.5"
+base64 = "0.22"

@@ -37,8 +37,11 @@ export default function App() {
       <h2 style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0, pointerEvents: 'none' }}>
         Wardyn desktop app: a sidebar with navigation and a main daily brief showing reply cards awaiting approval, a content brief card, and an auto-handled summary
       </h2>
+
+      {/* macOS Seamless Window Titlebar Drag Area */}
+      <div data-tauri-drag-region className="h-6 w-full fixed top-0 left-0 z-40" />
       
-      <div className="flex gap-5 max-w-5xl mx-auto relative z-0">
+      <div className="flex gap-5 max-w-5xl mx-auto pt-4 relative z-0">
         <Sidebar />
         {renderActiveTab()}
       </div>

@@ -9,11 +9,49 @@ import { useQueueStore } from './store/useQueueStore';
 
 export default function App() {
   const activeTab = useQueueStore((state) => state.activeTab);
+  const setActiveTab = useQueueStore((state) => state.setActiveTab);
   const fetchItems = useQueueStore((state) => state.fetchItems);
+  const syncGmail = useQueueStore((state) => state.syncGmail);
+  const syncIntervalMinutes = useQueueStore((state) => state.syncIntervalMinutes);
+  const gmailAccount = useQueueStore((state) => state.gmailAccount);
 
+  // 1. Initial items fetch & notification action listener
   useEffect(() => {
     fetchItems();
-  }, [fetchItems]);
+
+    // Listen for notification click events to bring window to focus
+    const setupNotificationListener = async () => {
+      try {
+        if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+          const { onAction } = await import('@tauri-apps/plugin-notification');
+          await onAction(() => {
+            setActiveTab('today');
+            import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+              const win = getCurrentWindow();
+              win.show();
+              win.setFocus();
+            });
+          });
+        }
+      } catch (err) {
+        console.warn('Notification action listener registration:', err);
+      }
+    };
+
+    setupNotificationListener();
+  }, [fetchItems, setActiveTab]);
+
+  // 2. Background Periodic Inbox Sync Interval
+  useEffect(() => {
+    if (!gmailAccount) return;
+
+    const intervalMs = syncIntervalMinutes * 60 * 1000;
+    const timer = setInterval(() => {
+      syncGmail();
+    }, intervalMs);
+
+    return () => clearInterval(timer);
+  }, [gmailAccount, syncIntervalMinutes, syncGmail]);
 
   const renderActiveTab = () => {
     switch (activeTab) {

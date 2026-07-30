@@ -86,6 +86,8 @@ async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Ve
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    dotenvy::dotenv().ok(); // Automatically load .env file
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(

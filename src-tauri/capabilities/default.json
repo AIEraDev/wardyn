@@ -8,6 +8,7 @@
     "core:webview:default",
     "core:webview:allow-internal-toggle-devtools",
     "core:window:default",
+    "core:window:allow-start-dragging",
     "notification:default",
     "notification:allow-notify",
     "autostart:default",

@@ -2,6 +2,11 @@
 node_modules/
 .pnpm-store/
 
+# Environment Variables & Credentials (NEVER COMMIT)
+.env
+.env.local
+.env.*.local
+
 # Vite / Frontend Build Output
 dist/
 dist-ssr/

@@ -61,13 +61,16 @@ interface QueueStore {
   gmailAccount: string | null;
   testOverrideRecipient: string | null;
 
-  // Notification & Background Sync Preferences
+  // Preferences
   notificationsEnabled: boolean;
+  autoStartEnabled: boolean;
   syncIntervalMinutes: number;
 
   // Actions
   setActiveTab: (tab: TabType) => void;
   toggleNotifications: (enabled: boolean) => void;
+  checkAutoStartStatus: () => Promise<void>;
+  toggleAutoStart: (enable: boolean) => Promise<void>;
   setSyncInterval: (minutes: number) => void;
   fetchItems: () => Promise<void>;
   approveItem: (id: string, editedDraft?: string) => Promise<void>;
@@ -118,6 +121,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   gmailAccount: null,
   testOverrideRecipient: null,
   notificationsEnabled: true,
+  autoStartEnabled: false,
   syncIntervalMinutes: 5,
 
   setActiveTab: (tab: TabType) => {
@@ -126,6 +130,35 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   toggleNotifications: (enabled: boolean) => {
     set({ notificationsEnabled: enabled });
+  },
+
+  checkAutoStartStatus: async () => {
+    try {
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+        const { isEnabled } = await import('@tauri-apps/plugin-autostart');
+        const active = await isEnabled();
+        set({ autoStartEnabled: active });
+      }
+    } catch (err) {
+      console.warn('Autostart plugin status check failed:', err);
+    }
+  },
+
+  toggleAutoStart: async (enable: boolean) => {
+    try {
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+        const { enable: enableAutostart, disable: disableAutostart } = await import('@tauri-apps/plugin-autostart');
+        if (enable) {
+          await enableAutostart();
+          set({ autoStartEnabled: true });
+        } else {
+          await disableAutostart();
+          set({ autoStartEnabled: false });
+        }
+      }
+    } catch (err) {
+      console.error('Autostart toggle failed:', err);
+    }
   },
 
   setSyncInterval: (minutes: number) => {

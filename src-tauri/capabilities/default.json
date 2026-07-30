@@ -9,6 +9,10 @@
     "core:webview:allow-internal-toggle-devtools",
     "core:window:default",
     "notification:default",
-    "notification:allow-notify"
+    "notification:allow-notify",
+    "autostart:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
   ]
 }

@@ -1,5 +1,5 @@
-import React from 'react';
-import { IconMail, IconCpu, IconVolume, IconBell, IconClock } from '@tabler/icons-react';
+import React, { useEffect } from 'react';
+import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
 
 export const SettingsTab: React.FC = () => {
@@ -9,10 +9,17 @@ export const SettingsTab: React.FC = () => {
     disconnectGmail,
     notificationsEnabled,
     toggleNotifications,
+    autoStartEnabled,
+    checkAutoStartStatus,
+    toggleAutoStart,
     syncIntervalMinutes,
     setSyncInterval,
     sendDesktopNotification,
   } = useQueueStore();
+
+  useEffect(() => {
+    checkAutoStartStatus();
+  }, [checkAutoStartStatus]);
 
   const handleTestNotification = async () => {
     await sendDesktopNotification(
@@ -26,7 +33,7 @@ export const SettingsTab: React.FC = () => {
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Settings</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Connectors, Local Model & Tone Preferences</p>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Connectors, Autostart, Local Model & Preferences</p>
         </div>
       </div>
 
@@ -63,6 +70,33 @@ export const SettingsTab: React.FC = () => {
               Connect Account
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Auto-Start on System Boot / Login Card */}
+      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-[#181E27] text-[#4A8FC2] border border-[#242B35]">
+              <IconPower size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#F0F4F8]">Auto-Start on System Login</p>
+              <p className="text-xs text-[#9AA4B2]">Launch Wardyn sentinel silently when you log in</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => toggleAutoStart(!autoStartEnabled)}
+            className={`font-mono text-xs px-3 py-1 rounded-md font-medium transition-colors cursor-pointer ${
+              autoStartEnabled
+                ? 'bg-[rgba(52,211,153,0.15)] text-[#34D399] border border-[rgba(52,211,153,0.3)]'
+                : 'bg-[#181E27] text-[#7A8492] border border-[#242B35]'
+            }`}
+          >
+            {autoStartEnabled ? 'Enabled' : 'Disabled'}
+          </button>
         </div>
       </div>
 

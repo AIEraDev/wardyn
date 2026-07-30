@@ -3,21 +3,24 @@ use std::net::TcpListener;
 use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 
-const GOOGLE_CLIENT_ID: &str = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"; // Standard PKCE client
+const DEFAULT_GOOGLE_CLIENT_ID: &str = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
 const REDIRECT_URI: &str = "http://127.0.0.1:14220/callback";
 const REDIRECT_URI_ENCODED: &str = "http%3A%2F%2F127.0.0.1%3A14220%2Fcallback";
 
 pub async fn start_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
+    let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| DEFAULT_GOOGLE_CLIENT_ID.to_string());
+    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default();
+
     // 1. Build Google OAuth Auth URL
     let auth_url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?\
 client_id={}&\
 redirect_uri={}&\
 response_type=code&\
-scope=https://www.googleapis.com/auth/gmail.readonly%20https://www.googleapis.com/auth/calendar.events&\
+scope=https://www.googleapis.com/auth/gmail.readonly%20https://www.googleapis.com/auth/gmail.send%20https://www.googleapis.com/auth/calendar.events&\
 access_type=offline&\
 prompt=consent",
-        GOOGLE_CLIENT_ID,
+        client_id,
         REDIRECT_URI_ENCODED
     );
 
@@ -55,12 +58,15 @@ prompt=consent",
 
     // 5. Exchange code for access & refresh tokens
     let client = reqwest::Client::new();
-    let params = [
-        ("client_id", GOOGLE_CLIENT_ID),
-        ("code", &code),
+    let mut params = vec![
+        ("client_id", client_id.as_str()),
+        ("code", code.as_str()),
         ("grant_type", "authorization_code"),
         ("redirect_uri", REDIRECT_URI),
     ];
+    if !client_secret.is_empty() {
+        params.push(("client_secret", client_secret.as_str()));
+    }
 
     let res = client.post("https://oauth2.googleapis.com/token")
         .form(&params)

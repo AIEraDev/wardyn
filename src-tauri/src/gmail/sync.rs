@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 use crate::models::QueueItem;
+use crate::ollama;
 
 pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> Result<usize, String> {
     let creds_opt = {
@@ -25,7 +26,6 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
         .map_err(|e| format!("Network error fetching Gmail list: {}", e))?;
 
     if list_res.status().as_u16() == 401 {
-        // Handle revoked or invalid token cleanly
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         db::delete_credentials(&conn, "gmail").ok();
         return Err("Gmail authorization was revoked or expired. Please re-authenticate.".into());
@@ -82,24 +82,36 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                     snippet
                 };
 
-                let lower_sender = sender.to_lowercase();
-                let lower_preview = preview.to_lowercase();
-                let is_flagged = lower_sender.contains("visa") 
-                    || lower_sender.contains("ukvi") 
-                    || lower_sender.contains("home office")
-                    || lower_preview.contains("visa")
-                    || lower_preview.contains("global talent");
+                let item_id = format!("gmail_{}", msg_id);
+
+                // Initial temp item
+                let temp_item = QueueItem {
+                    id: item_id.clone(),
+                    source: "gmail".into(),
+                    kind: "reply".into(),
+                    sender: sender.clone(),
+                    preview: preview.clone(),
+                    draft_text: None,
+                    status: "pending".into(),
+                    flagged: false,
+                    confidence: 0.0,
+                    created_at: "2026-07-30T23:35:00Z".into(),
+                    updated_at: "2026-07-30T23:35:00Z".into(),
+                };
+
+                // Run Ollama local model analysis & draft generation
+                let analysis = ollama::client::classify_and_draft_item(&temp_item).await;
 
                 let item = QueueItem {
-                    id: format!("gmail_{}", msg_id),
+                    id: item_id,
                     source: "gmail".into(),
                     kind: "reply".into(),
                     sender,
                     preview,
-                    draft_text: None, // No drafting yet in Phase 1b
+                    draft_text: analysis.draft_text,
                     status: "pending".into(),
-                    flagged: is_flagged,
-                    confidence: 0.0,
+                    flagged: analysis.flagged,
+                    confidence: analysis.confidence,
                     created_at: "2026-07-30T23:35:00Z".into(),
                     updated_at: "2026-07-30T23:35:00Z".into(),
                 };
@@ -133,12 +145,17 @@ async fn get_valid_access_token(
         return Ok(creds.access_token.clone());
     }
 
-    // Refresh token request
-    let params = [
-        ("client_id", "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"),
-        ("refresh_token", &creds.refresh_token),
+    let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com".to_string());
+    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default();
+
+    let mut params = vec![
+        ("client_id", client_id.as_str()),
+        ("refresh_token", creds.refresh_token.as_str()),
         ("grant_type", "refresh_token"),
     ];
+    if !client_secret.is_empty() {
+        params.push(("client_secret", client_secret.as_str()));
+    }
 
     let res = client.post("https://oauth2.googleapis.com/token")
         .form(&params)

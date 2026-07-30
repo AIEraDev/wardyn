@@ -7,6 +7,8 @@
     "core:default",
     "core:webview:default",
     "core:webview:allow-internal-toggle-devtools",
-    "core:window:default"
+    "core:window:default",
+    "notification:default",
+    "notification:allow-notify"
   ]
 }

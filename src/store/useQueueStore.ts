@@ -61,12 +61,19 @@ interface QueueStore {
   gmailAccount: string | null;
   testOverrideRecipient: string | null;
 
+  // Notification & Background Sync Preferences
+  notificationsEnabled: boolean;
+  syncIntervalMinutes: number;
+
   // Actions
   setActiveTab: (tab: TabType) => void;
+  toggleNotifications: (enabled: boolean) => void;
+  setSyncInterval: (minutes: number) => void;
   fetchItems: () => Promise<void>;
   approveItem: (id: string, editedDraft?: string) => Promise<void>;
   skipItem: (id: string) => Promise<void>;
   updateDraft: (id: string, text: string) => void;
+  regenerateDraft: (id: string, tone: 'shorter' | 'formal' | 'availability') => void;
   setTestOverrideRecipient: (email: string | null) => void;
 
   // Gmail OAuth & Send Actions
@@ -80,6 +87,9 @@ interface QueueStore {
 
   // Calendar Sync Actions
   syncCalendarDeadlines: () => Promise<void>;
+
+  // Native Notification Helper
+  sendDesktopNotification: (title: string, body: string) => Promise<void>;
 }
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
@@ -107,9 +117,38 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   error: null,
   gmailAccount: null,
   testOverrideRecipient: null,
+  notificationsEnabled: true,
+  syncIntervalMinutes: 5,
 
   setActiveTab: (tab: TabType) => {
     set({ activeTab: tab });
+  },
+
+  toggleNotifications: (enabled: boolean) => {
+    set({ notificationsEnabled: enabled });
+  },
+
+  setSyncInterval: (minutes: number) => {
+    set({ syncIntervalMinutes: minutes });
+  },
+
+  sendDesktopNotification: async (title: string, body: string) => {
+    if (!get().notificationsEnabled) return;
+    try {
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+        const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification');
+        let permission = await isPermissionGranted();
+        if (!permission) {
+          const permissionGranted = await requestPermission();
+          permission = permissionGranted === 'granted';
+        }
+        if (permission) {
+          sendNotification({ title, body });
+        }
+      }
+    } catch (err) {
+      console.warn('Desktop notification dispatch unavailable:', err);
+    }
   },
 
   fetchItems: async () => {
@@ -207,6 +246,28 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }));
   },
 
+  regenerateDraft: (id: string, tone: 'shorter' | 'formal' | 'availability') => {
+    const target = get().items.find((i) => i.id === id);
+    if (!target) return;
+
+    let newDraft = target.draft_text || 'Thanks for reaching out.';
+    if (tone === 'shorter') {
+      newDraft = 'Thanks, received. Will follow up shortly.';
+    } else if (tone === 'formal') {
+      newDraft = 'Thank you for your message. I have noted the details and will provide a formal response by Friday.';
+    } else if (tone === 'availability') {
+      newDraft = 'Thanks for the invite. I am available Thursday between 2pm - 4pm WAT. Let me know if that works.';
+    }
+
+    set((state) => ({
+      items: state.items.map((item) =>
+        item.id === id
+          ? { ...item, draft_text: newDraft, updated_at: new Date().toISOString() }
+          : item
+      ),
+    }));
+  },
+
   checkGmailStatus: async () => {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
@@ -226,6 +287,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const email = await invoke<string>('start_gmail_auth');
         set({ gmailAccount: email });
         await get().syncGmail();
+        await get().sendDesktopNotification(
+          'Wardyn Account Connected',
+          `Successfully authenticated Gmail account: ${email}`
+        );
       } catch (err: any) {
         set({ error: err.toString() });
       }
@@ -248,9 +313,16 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke<number>('sync_gmail_messages');
+        const newItemsCount = await invoke<number>('sync_gmail_messages');
         await get().fetchItems();
         await get().syncCalendarDeadlines();
+
+        if (newItemsCount > 0) {
+          await get().sendDesktopNotification(
+            'New Messages Triaged',
+            `Wardyn fetched and triaged ${newItemsCount} new message(s) awaiting approval.`
+          );
+        }
       } catch (err: any) {
         if (err.toString().includes('revoked') || err.toString().includes('expired')) {
           set({ gmailAccount: null });

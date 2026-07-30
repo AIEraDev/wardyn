@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { IconMail, IconCheck, IconAlertCircle } from '@tabler/icons-react';
+import { IconMail, IconCheck, IconAlertCircle, IconSparkles } from '@tabler/icons-react';
 import { QueueItem } from '../types/queue';
 import { useQueueStore } from '../store/useQueueStore';
 import { ConfirmModal } from './ConfirmModal';
@@ -9,7 +9,7 @@ interface ReplyCardProps {
 }
 
 export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
-  const { approveItem, skipItem } = useQueueStore();
+  const { approveItem, skipItem, regenerateDraft } = useQueueStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editedDraft, setEditedDraft] = useState(item.draft_text || '');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -19,7 +19,6 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
   const isSkipped = item.status === 'skipped';
 
   const handleApproveClick = () => {
-    // Hardened Guardrail: Do not allow approving a low-confidence item without manual edit text!
     if (isLowConfidence && (!editedDraft || editedDraft.trim().length === 0)) {
       setIsEditing(true);
       return;
@@ -37,6 +36,14 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
     setShowConfirmModal(false);
     approveItem(item.id, isEditing || isLowConfidence ? editedDraft : undefined);
     setIsEditing(false);
+  };
+
+  const handleToneRegenerate = (tone: 'shorter' | 'formal' | 'availability') => {
+    regenerateDraft(item.id, tone);
+    const updated = useQueueStore.getState().items.find((i) => i.id === item.id);
+    if (updated?.draft_text) {
+      setEditedDraft(updated.draft_text);
+    }
   };
 
   if (isSkipped) return null;
@@ -101,8 +108,8 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
             )}
           </div>
         ) : (
-          /* Quoted Draft Block */
-          <div className="border-l-2 border-[#384352] pl-3 py-1.5 mb-3.5 bg-[#151A21]/50 rounded-r-md">
+          /* Quoted Draft Block with Quick Tone Refinement Options */
+          <div className="border-l-2 border-[#384352] pl-3 py-1.5 mb-3.5 bg-[#151A21]/50 rounded-r-md space-y-2">
             {isEditing ? (
               <textarea
                 value={editedDraft}
@@ -114,6 +121,36 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
               <p className="text-xs text-[#9AA4B2] italic leading-relaxed">
                 "{item.draft_text}"
               </p>
+            )}
+
+            {/* Quick Tone Refinement Pills */}
+            {!isDone && (
+              <div className="flex items-center gap-1.5 pt-1">
+                <span className="font-mono text-[10px] text-[#7A8492] flex items-center gap-1 mr-1">
+                  <IconSparkles size={11} /> Tone:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleToneRegenerate('shorter')}
+                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
+                >
+                  Shorter
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToneRegenerate('formal')}
+                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
+                >
+                  Formal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToneRegenerate('availability')}
+                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
+                >
+                  Add Times
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -128,9 +165,10 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
           ) : isEditing ? (
             <>
               <button
+                type="button"
                 onClick={handleApproveClick}
                 disabled={isLowConfidence && !editedDraft.trim()}
-                className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                   isLowConfidence && !editedDraft.trim()
                     ? 'text-[#7A8492] bg-[#151A21] border border-[#242B35] cursor-not-allowed opacity-50'
                     : 'text-[#4A8FC2] bg-[rgba(74,143,194,0.16)] border border-[rgba(74,143,194,0.35)] hover:bg-[rgba(74,143,194,0.25)]'
@@ -139,8 +177,9 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
                 Save & Approve
               </button>
               <button
+                type="button"
                 onClick={() => setIsEditing(false)}
-                className="px-3.5 py-1.5 text-xs font-medium text-[#9AA4B2] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors"
+                className="px-3.5 py-1.5 text-xs font-medium text-[#9AA4B2] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -148,14 +187,16 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
           ) : isLowConfidence ? (
             <>
               <button
+                type="button"
                 onClick={() => setIsEditing(true)}
-                className="px-3.5 py-1.5 text-xs font-medium text-[#E8A23D] bg-[rgba(232,162,61,0.15)] border border-[rgba(232,162,61,0.3)] rounded-lg hover:bg-[rgba(232,162,61,0.25)] transition-colors font-mono"
+                className="px-3.5 py-1.5 text-xs font-medium text-[#E8A23D] bg-[rgba(232,162,61,0.15)] border border-[rgba(232,162,61,0.3)] rounded-lg hover:bg-[rgba(232,162,61,0.25)] transition-colors font-mono cursor-pointer"
               >
                 Write Manual Reply
               </button>
               <button
+                type="button"
                 onClick={() => skipItem(item.id)}
-                className="px-3.5 py-1.5 text-xs font-medium text-[#7A8492] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors"
+                className="px-3.5 py-1.5 text-xs font-medium text-[#7A8492] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors cursor-pointer"
               >
                 Skip
               </button>
@@ -163,23 +204,26 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
           ) : (
             <>
               <button
+                type="button"
                 onClick={handleApproveClick}
-                className="px-3.5 py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.16)] border border-[rgba(74,143,194,0.35)] rounded-lg hover:bg-[rgba(74,143,194,0.25)] transition-colors"
+                className="px-3.5 py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.16)] border border-[rgba(74,143,194,0.35)] rounded-lg hover:bg-[rgba(74,143,194,0.25)] transition-colors cursor-pointer"
               >
                 Approve
               </button>
               <button
+                type="button"
                 onClick={() => {
                   setEditedDraft(item.draft_text || '');
                   setIsEditing(true);
                 }}
-                className="px-3.5 py-1.5 text-xs font-medium text-[#F0F4F8] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors"
+                className="px-3.5 py-1.5 text-xs font-medium text-[#F0F4F8] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors cursor-pointer"
               >
                 Edit
               </button>
               <button
+                type="button"
                 onClick={() => skipItem(item.id)}
-                className="px-3.5 py-1.5 text-xs font-medium text-[#7A8492] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors"
+                className="px-3.5 py-1.5 text-xs font-medium text-[#7A8492] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors cursor-pointer"
               >
                 Skip
               </button>

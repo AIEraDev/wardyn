@@ -87,6 +87,7 @@ async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Ve
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let app_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             std::fs::create_dir_all(&app_dir).ok();

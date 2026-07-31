@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary } from '../types/queue';
+import { SupportedLanguage, TRANSLATIONS, TranslationDictionary } from '../i18n/translations';
 
 export interface SyncedCalendarEvent {
   id: string;
@@ -173,12 +174,15 @@ interface QueueStore {
   gmailAccount: string | null;
   testOverrideRecipient: string | null;
 
-  // Preferences
+  // Preferences & i18n
+  language: SupportedLanguage;
   notificationsEnabled: boolean;
   autoStartEnabled: boolean;
   syncIntervalMinutes: number;
 
   // Actions
+  setLanguage: (lang: SupportedLanguage) => void;
+  t: (key: keyof TranslationDictionary) => string;
   setActiveTab: (tab: TabType) => void;
   toggleNotifications: (enabled: boolean) => void;
   checkAutoStartStatus: () => Promise<void>;
@@ -243,16 +247,31 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       created_at: '2026-07-30T10:00:00Z',
     },
   ],
-  linkedInSummary: null, // No initial summary if not available
+  linkedInSummary: null,
   linkedInAccount: null,
   activeTab: 'today',
   isLoading: false,
   error: null,
   gmailAccount: null,
   testOverrideRecipient: null,
+  language: 'en',
   notificationsEnabled: true,
   autoStartEnabled: false,
   syncIntervalMinutes: 5,
+
+  setLanguage: (lang: SupportedLanguage) => {
+    set({ language: lang });
+    get().sendDesktopNotification(
+      '🌐 Language Updated',
+      `Wardyn interface switched to ${lang.toUpperCase()}`
+    );
+  },
+
+  t: (key: keyof TranslationDictionary) => {
+    const currentLang = get().language;
+    const dict = TRANSLATIONS[currentLang] || TRANSLATIONS.en;
+    return dict[key] || TRANSLATIONS.en[key] || key;
+  },
 
   setActiveTab: (tab: TabType) => {
     set({ activeTab: tab });
@@ -521,7 +540,6 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       ),
     }));
 
-    // 1. Copy approved text copy to system clipboard
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(finalContent);
@@ -530,7 +548,6 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       console.warn('Clipboard write warning:', err);
     }
 
-    // 2. Launch system browser to platform share URL via Rust open_external_url
     const shareUrl = target.platform === 'linkedin'
       ? `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(finalContent)}`
       : `https://twitter.com/intent/tweet?text=${encodeURIComponent(finalContent)}`;

@@ -1,12 +1,16 @@
 import React, { useEffect } from 'react';
-import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower } from '@tabler/icons-react';
+import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
+import { SupportedLanguage } from '../i18n/translations';
 
 export const SettingsTab: React.FC = () => {
   const {
     gmailAccount,
     connectGmail,
     disconnectGmail,
+    language,
+    setLanguage,
+    t,
     notificationsEnabled,
     toggleNotifications,
     autoStartEnabled,
@@ -32,8 +36,36 @@ export const SettingsTab: React.FC = () => {
     <div className="flex-1 min-w-0 space-y-6">
       <div className="flex items-baseline justify-between mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Settings</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Connectors, Autostart, Local Model & Preferences</p>
+          <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">{t('settings')}</h1>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Language, Connectors, Autostart & Local Model</p>
+        </div>
+      </div>
+
+      {/* Language / i18n Selector Card */}
+      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] border border-[rgba(74,143,194,0.35)]">
+              <IconWorld size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#F0F4F8]">{t('language')}</p>
+              <p className="text-xs text-[#9AA4B2]">Interface Multi-Language Translation (i18n)</p>
+            </div>
+          </div>
+
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value as SupportedLanguage)}
+            className="bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-1.5 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2] cursor-pointer"
+          >
+            <option value="en">🇬🇧 English (en)</option>
+            <option value="fr">🇫🇷 Français (fr)</option>
+            <option value="es">🇪🇸 Español (es)</option>
+            <option value="de">🇩🇪 Deutsch (de)</option>
+            <option value="zh">🇨🇳 中文 (zh)</option>
+            <option value="ja">🇯🇵 日本語 (ja)</option>
+          </select>
         </div>
       </div>
 
@@ -67,7 +99,7 @@ export const SettingsTab: React.FC = () => {
               onClick={connectGmail}
               className="text-xs font-medium text-black bg-[#4A8FC2] px-3.5 py-1.5 rounded-lg hover:bg-[#5b9bd1] transition-colors font-mono cursor-pointer"
             >
-              Connect Account
+              {t('connect_gmail')}
             </button>
           )}
         </div>
@@ -81,7 +113,7 @@ export const SettingsTab: React.FC = () => {
               <IconPower size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Auto-Start on System Login</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">{t('auto_start')}</p>
               <p className="text-xs text-[#9AA4B2]">Launch Wardyn sentinel silently when you log in</p>
             </div>
           </div>
@@ -108,7 +140,7 @@ export const SettingsTab: React.FC = () => {
               <IconBell size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Desktop System Notifications</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">{t('desktop_notifications')}</p>
               <p className="text-xs text-[#9AA4B2]">Notify on urgent visa requests or low confidence items</p>
             </div>
           </div>
@@ -144,7 +176,7 @@ export const SettingsTab: React.FC = () => {
               <IconClock size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Background Sync Frequency</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">{t('sync_frequency')}</p>
               <p className="text-xs text-[#9AA4B2]">Automatically check Gmail inbox in the background</p>
             </div>
           </div>

@@ -10,18 +10,20 @@ import {
 } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
 import { TabType } from '../types/queue';
+import { TranslationDictionary } from '../i18n/translations';
 
 export const Sidebar: React.FC = () => {
   const activeTab = useQueueStore((state) => state.activeTab);
   const setActiveTab = useQueueStore((state) => state.setActiveTab);
+  const t = useQueueStore((state) => state.t);
 
-  const tabs: Array<{ id: TabType; label: string; icon: React.ElementType }> = [
-    { id: 'today', label: 'Today', icon: IconLayoutDashboard },
-    { id: 'messages', label: 'Messages', icon: IconMail },
-    { id: 'content', label: 'Content', icon: IconPencil },
-    { id: 'deadlines', label: 'Deadlines', icon: IconCalendar },
-    { id: 'channels', label: 'Channels', icon: IconGridDots },
-    { id: 'settings', label: 'Settings', icon: IconSettings },
+  const tabs: Array<{ id: TabType; labelKey: keyof TranslationDictionary; icon: React.ElementType }> = [
+    { id: 'today', labelKey: 'today', icon: IconLayoutDashboard },
+    { id: 'messages', labelKey: 'messages', icon: IconMail },
+    { id: 'content', labelKey: 'content', icon: IconPencil },
+    { id: 'deadlines', labelKey: 'deadlines', icon: IconCalendar },
+    { id: 'channels', labelKey: 'channels', icon: IconGridDots },
+    { id: 'settings', labelKey: 'settings', icon: IconSettings },
   ];
 
   return (
@@ -49,7 +51,7 @@ export const Sidebar: React.FC = () => {
               }`}
             >
               <Icon size={16} className="pointer-events-none shrink-0" />
-              <span className="pointer-events-none">{tab.label}</span>
+              <span className="pointer-events-none truncate">{t(tab.labelKey)}</span>
             </button>
           );
         })}

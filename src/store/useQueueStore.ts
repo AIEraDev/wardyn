@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary, FeedInsight, KnowledgeItem, Decision } from '../types/queue';
+import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary, FeedInsight, KnowledgeItem, Decision, CustomFeed } from '../types/queue';
+
 import { SupportedLanguage, TRANSLATIONS, TranslationDictionary } from '../i18n/translations';
 
 
@@ -211,7 +212,15 @@ interface QueueStore {
   stopSpeech: () => Promise<void>;
   fetchVaultPath: () => Promise<void>;
   setVaultPath: (path: string) => Promise<void>;
+
+  // Phase E & F: Custom RSS Feeds & Deep Reader
+  customFeeds: CustomFeed[];
+  fetchCustomFeeds: () => Promise<void>;
+  addCustomFeed: (title: string, url: string, category?: string) => Promise<void>;
+  deleteCustomFeed: (id: string) => Promise<void>;
+  deepReadUrl: (url: string) => Promise<string>;
 }
+
 
 
 
@@ -245,6 +254,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   weeklyReviewLoading: false,
   isPlayingAudio: false,
   vaultPath: null,
+  customFeeds: [],
+
 
 
 
@@ -1077,7 +1088,54 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
     }
   },
+
+  fetchCustomFeeds: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const feeds = await invoke<CustomFeed[]>('get_custom_feeds_command');
+        set({ customFeeds: feeds });
+      } catch (err) {
+        console.error('Fetch custom feeds error:', err);
+      }
+    }
+  },
+
+  addCustomFeed: async (title: string, url: string, category?: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const feed = await invoke<CustomFeed>('add_custom_feed_command', {
+          title, url, category: category || 'custom'
+        });
+        set((state) => ({ customFeeds: [feed, ...state.customFeeds] }));
+      } catch (err) {
+        console.error('Add custom feed error:', err);
+      }
+    }
+  },
+
+  deleteCustomFeed: async (id: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('delete_custom_feed_command', { id });
+        set((state) => ({ customFeeds: state.customFeeds.filter((f) => f.id !== id) }));
+      } catch (err) {
+        console.error('Delete custom feed error:', err);
+      }
+    }
+  },
+
+  deepReadUrl: async (url: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<string>('deep_read_url_command', { url });
+    }
+    return 'Tauri environment required for deep URL reading.';
+  },
 }));
+
 
 
 

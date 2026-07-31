@@ -8,7 +8,13 @@ pub async fn run_feed_ingestion(conn_mutex: &std::sync::Mutex<rusqlite::Connecti
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Fetch all sources concurrently
+    // Read custom feeds from SQLite
+    let custom_feeds = {
+        let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+        db::get_custom_feeds(&conn).unwrap_or_default()
+    };
+
+    // Fetch all built-in sources concurrently
     let (hn, arxiv, github, devto) = tokio::join!(
         sources::fetch_hackernews(&client),
         sources::fetch_arxiv(&client),
@@ -22,7 +28,14 @@ pub async fn run_feed_ingestion(conn_mutex: &std::sync::Mutex<rusqlite::Connecti
     all_items.extend(github);
     all_items.extend(devto);
 
+    // Fetch custom RSS feeds concurrently
+    for cf in &custom_feeds {
+        let rss_items = super::rss::fetch_custom_rss(&client, &cf.title, &cf.url).await;
+        all_items.extend(rss_items);
+    }
+
     let total = all_items.len();
+
 
     // Persist to SQLite (deduplicated by id)
     {

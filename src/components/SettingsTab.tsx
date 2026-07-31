@@ -110,11 +110,19 @@ export const SettingsTab: React.FC = () => {
     sendDesktopNotification,
     vaultPath,
     setVaultPath,
+    customFeeds,
+    addCustomFeed,
+    deleteCustomFeed,
   } = useQueueStore();
 
 
   const [vaultInput, setVaultInput] = useState(vaultPath || '');
   const [vaultSaved, setVaultSaved] = useState(false);
+
+  const [newFeedTitle, setNewFeedTitle] = useState('');
+  const [newFeedUrl, setNewFeedUrl] = useState('');
+  const [addingFeed, setAddingFeed] = useState(false);
+
 
   useEffect(() => {
     if (vaultPath !== null) setVaultInput(vaultPath);
@@ -501,6 +509,85 @@ export const SettingsTab: React.FC = () => {
           Each capture and decision creates a `.md` file with clean YAML frontmatter for automatic Obsidian Graph linking.
         </p>
       </div>
+
+      {/* Custom RSS & Atom Feed Subscriptions */}
+      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-[#181E27] text-[#4A8FC2] border border-[#242B35]">
+              <IconWorld size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#F0F4F8]">Custom RSS & Atom Feed Subscriptions</p>
+              <p className="text-xs text-[#9AA4B2]">Ingest your favorite blogs, newsletters, and podcasts into your Morning Brief</p>
+            </div>
+          </div>
+          <span className="font-mono text-[10px] bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] px-2 py-1 rounded border border-[rgba(74,143,194,0.25)]">
+            {customFeeds.length} Active Feeds
+          </span>
+        </div>
+
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!newFeedTitle.trim() || !newFeedUrl.trim()) return;
+            setAddingFeed(true);
+            await addCustomFeed(newFeedTitle.trim(), newFeedUrl.trim());
+            setNewFeedTitle('');
+            setNewFeedUrl('');
+            setAddingFeed(false);
+          }}
+          className="flex gap-2"
+        >
+          <input
+            id="custom-feed-title-input"
+            type="text"
+            value={newFeedTitle}
+            onChange={(e) => setNewFeedTitle(e.target.value)}
+            placeholder="Feed Title (e.g. Paul Graham)"
+            className="w-1/3 bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+            required
+          />
+          <input
+            id="custom-feed-url-input"
+            type="url"
+            value={newFeedUrl}
+            onChange={(e) => setNewFeedUrl(e.target.value)}
+            placeholder="Feed URL (https://paulgraham.com/rss.html)"
+            className="flex-1 bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+            required
+          />
+          <button
+            type="submit"
+            disabled={addingFeed}
+            className="px-3 py-2 bg-[#4A8FC2] text-black text-xs font-semibold rounded-lg hover:bg-[#5b9bd1] transition-colors cursor-pointer disabled:opacity-40"
+          >
+            Add Feed
+          </button>
+        </form>
+
+        {customFeeds.length > 0 && (
+          <div className="space-y-1.5 pt-1">
+            {customFeeds.map((feed) => (
+              <div key={feed.id} className="flex items-center justify-between p-2.5 rounded-lg bg-[#181E27] border border-[#242B35]">
+                <div className="min-w-0 pr-2">
+                  <p className="text-xs font-medium text-[#F0F4F8] truncate">{feed.title}</p>
+                  <p className="text-[10px] text-[#7A8492] font-mono truncate">{feed.url}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => deleteCustomFeed(feed.id)}
+                  title="Remove Feed"
+                  className="p-1 text-[#7A8492] hover:text-[#EF4444] hover:bg-[rgba(239,68,68,0.1)] rounded transition-colors cursor-pointer shrink-0"
+                >
+                  <IconTrash size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
 
       {/* Tone & Corpus Preferences */}
       <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">

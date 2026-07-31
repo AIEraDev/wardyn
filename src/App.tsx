@@ -27,6 +27,7 @@ export default function App() {
   const fetchDecisions = useQueueStore((state) => state.fetchDecisions);
   const fetchWeeklyReview = useQueueStore((state) => state.fetchWeeklyReview);
   const fetchVaultPath = useQueueStore((state) => state.fetchVaultPath);
+  const fetchCustomFeeds = useQueueStore((state) => state.fetchCustomFeeds);
 
 
   // 1. Startup Boot Auto-Sync & Notification Listener
@@ -44,6 +45,7 @@ export default function App() {
       fetchDecisions();
       fetchWeeklyReview();
       fetchVaultPath();
+      fetchCustomFeeds();
 
 
       // If Gmail is connected, run immediate boot inbox sync & triaging

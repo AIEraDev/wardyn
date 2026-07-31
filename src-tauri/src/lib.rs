@@ -11,6 +11,8 @@ pub mod memory;
 pub mod intelligence;
 pub mod speech;
 pub mod vault;
+pub mod reader;
+
 
 
 
@@ -262,6 +264,34 @@ fn set_vault_path_command(path: String, state: State<'_, DbState>) -> Result<(),
     db::set_app_setting(&conn, "vault_path", &path).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn add_custom_feed_command(
+    title: String,
+    url: String,
+    category: Option<String>,
+    state: State<'_, DbState>
+) -> Result<db::CustomFeed, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::save_custom_feed(&conn, &title, &url, category.as_deref().unwrap_or("custom")).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_custom_feeds_command(state: State<'_, DbState>) -> Result<Vec<db::CustomFeed>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::get_custom_feeds(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_custom_feed_command(id: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::delete_custom_feed(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn deep_read_url_command(url: String) -> Result<String, String> {
+    reader::deep_read_url(&url).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok(); // Automatically load .env file
@@ -314,7 +344,11 @@ pub fn run() {
             speak_text_command,
             stop_speech_command,
             get_vault_path_command,
-            set_vault_path_command
+            set_vault_path_command,
+            add_custom_feed_command,
+            get_custom_feeds_command,
+            delete_custom_feed_command,
+            deep_read_url_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

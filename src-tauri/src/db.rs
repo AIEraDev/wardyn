@@ -195,8 +195,69 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS custom_feeds (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL,
+            category TEXT DEFAULT 'custom',
+            created_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     Ok(())
 }
+
+// ─── Custom RSS Feeds ────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct CustomFeed {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub category: String,
+    pub created_at: String,
+}
+
+pub fn save_custom_feed(conn: &Connection, title: &str, url: &str, category: &str) -> Result<CustomFeed> {
+    let id = format!("feed_{}", uuid_simple_db());
+    let now = now_iso();
+    let feed = CustomFeed {
+        id: id.clone(),
+        title: title.to_string(),
+        url: url.to_string(),
+        category: category.to_string(),
+        created_at: now.clone(),
+    };
+    conn.execute(
+        "INSERT INTO custom_feeds (id, title, url, category, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, title, url, category, now],
+    )?;
+    Ok(feed)
+}
+
+pub fn get_custom_feeds(conn: &Connection) -> Result<Vec<CustomFeed>> {
+    let mut stmt = conn.prepare("SELECT id, title, url, category, created_at FROM custom_feeds ORDER BY created_at DESC")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(CustomFeed {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            url: row.get(2)?,
+            category: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "custom".into()),
+            created_at: row.get(4)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+pub fn delete_custom_feed(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM custom_feeds WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 
 pub fn get_app_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
     let mut stmt = conn.prepare("SELECT value FROM app_settings WHERE key = ?1")?;

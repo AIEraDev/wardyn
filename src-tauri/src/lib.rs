@@ -12,6 +12,7 @@ use models::QueueItem;
 use db::SyncedCalendarEvent;
 use gmail::send::SendEmailRequest;
 use linkedin::api::RealLinkedInSummary;
+use ollama::client::InstalledModelInfo;
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -99,6 +100,16 @@ async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Resu
 }
 
 #[tauri::command]
+async fn get_installed_ollama_models_command() -> Result<Vec<InstalledModelInfo>, String> {
+    Ok(ollama::client::fetch_installed_ollama_models().await)
+}
+
+#[tauri::command]
+async fn install_ollama_model_command(model_name: String) -> Result<String, String> {
+    ollama::client::trigger_ollama_model_install(model_name).await
+}
+
+#[tauri::command]
 async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Vec<SyncedCalendarEvent>, String> {
     calendar::sync::sync_calendar_deadlines(&state.0).await
 }
@@ -141,6 +152,8 @@ pub fn run() {
             sync_gmail_messages,
             disconnect_gmail,
             process_item_with_ollama,
+            get_installed_ollama_models_command,
+            install_ollama_model_command,
             sync_calendar_deadlines_command,
             open_external_url
         ])

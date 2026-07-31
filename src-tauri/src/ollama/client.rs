@@ -11,8 +11,14 @@ pub struct ClassificationResult {
     pub confidence: f64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InstalledModelInfo {
+    pub name: String,
+    pub size_gb: String,
+    pub status: String,
+}
+
 pub async fn classify_and_draft_item(item: &QueueItem) -> ClassificationResult {
-    // 1. Build HTTP client with strict 5-second timeout to prevent UI freezes on low-spec hardware
     let client_res = Client::builder()
         .timeout(Duration::from_secs(5))
         .build();
@@ -29,8 +35,7 @@ pub async fn classify_and_draft_item(item: &QueueItem) -> ClassificationResult {
         item.preview
     );
 
-    // Cascading model attempts: qwen2.5 -> llama3 -> mistral -> gemma -> llama2
-    let models = ["qwen2.5", "llama3", "mistral", "gemma", "llama2"];
+    let models = ["qwen2.5", "llama3", "mistral", "gemma", "llama2", "phi3"];
 
     for model in models {
         let body = serde_json::json!({
@@ -58,8 +63,54 @@ pub async fn classify_and_draft_item(item: &QueueItem) -> ClassificationResult {
         }
     }
 
-    // 2. Guaranteed zero-crash fallback for users without Ollama installed or offline
     fallback_rule_based_classify(item)
+}
+
+pub async fn fetch_installed_ollama_models() -> Vec<InstalledModelInfo> {
+    let client = Client::new();
+    let res = client.get("http://localhost:11434/api/tags").send().await;
+
+    let mut installed = Vec::new();
+    if let Ok(resp) = res {
+        if resp.status().is_success() {
+            if let Ok(json_val) = resp.json::<serde_json::Value>().await {
+                if let Some(models_arr) = json_val["models"].as_array() {
+                    for m in models_arr {
+                        let name = m["name"].as_str().unwrap_or("unknown").to_string();
+                        let size_bytes = m["size"].as_u64().unwrap_or(0);
+                        let size_gb = format!("{:.2} GB", size_bytes as f64 / 1_073_741_824.0);
+                        installed.push(InstalledModelInfo {
+                            name,
+                            size_gb,
+                            status: "installed".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    installed
+}
+
+pub async fn trigger_ollama_model_install(model_name: String) -> Result<String, String> {
+    let client = Client::new();
+    let payload = serde_json::json!({
+        "name": model_name,
+        "stream": false
+    });
+
+    let res = client.post("http://localhost:11434/api/pull")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send pull request to Ollama: {}", e))?;
+
+    if res.status().is_success() {
+        Ok(format!("Successfully pulled local model {}", model_name))
+    } else {
+        let err_text = res.text().await.unwrap_or_default();
+        Err(format!("Ollama model install failed: {}", err_text))
+    }
 }
 
 fn fallback_rule_based_classify(item: &QueueItem) -> ClassificationResult {

@@ -220,6 +220,10 @@ pub fn update_status_and_draft(conn: &Connection, id: &str, status: &str, draft:
 }
 
 pub fn save_credentials(conn: &Connection, creds: &GmailCredentials) -> Result<()> {
+    if !creds.refresh_token.is_empty() && creds.refresh_token != "[KEYCHAIN_ENCLAVE]" {
+        crate::security::store_secure_token(&creds.service, &creds.refresh_token).ok();
+    }
+
     conn.execute(
         "INSERT INTO credentials (service, access_token, refresh_token, expires_at, email)
          VALUES (?1, ?2, ?3, ?4, ?5)
@@ -228,7 +232,7 @@ pub fn save_credentials(conn: &Connection, creds: &GmailCredentials) -> Result<(
             refresh_token=excluded.refresh_token,
             expires_at=excluded.expires_at,
             email=excluded.email",
-        params![creds.service, creds.access_token, creds.refresh_token, creds.expires_at, creds.email],
+        params![creds.service, creds.access_token, "[KEYCHAIN_ENCLAVE]", creds.expires_at, creds.email],
     )?;
     Ok(())
 }
@@ -237,15 +241,18 @@ pub fn get_credentials(conn: &Connection, service: &str) -> Result<Option<GmailC
     let mut stmt = conn.prepare("SELECT service, access_token, refresh_token, expires_at, email FROM credentials WHERE service = ?1")?;
     let mut rows = stmt.query(params![service])?;
     if let Some(row) = rows.next()? {
+        let service_key: String = row.get(0)?;
+        let db_refresh: String = row.get(2)?;
+        let secure_refresh = crate::security::retrieve_secure_token(&service_key).ok().flatten().unwrap_or(db_refresh);
+
         Ok(Some(GmailCredentials {
-            service: row.get(0)?,
+            service: service_key,
             access_token: row.get(1)?,
-            refresh_token: row.get(2)?,
+            refresh_token: secure_refresh,
             expires_at: row.get(3)?,
             email: row.get(4)?,
         }))
     } else {
-        // Fallback for gmail: search any gmail:*
         if service == "gmail" {
             let all = get_all_gmail_credentials(conn)?;
             Ok(all.into_iter().next())
@@ -258,10 +265,14 @@ pub fn get_credentials(conn: &Connection, service: &str) -> Result<Option<GmailC
 pub fn get_all_gmail_credentials(conn: &Connection) -> Result<Vec<GmailCredentials>> {
     let mut stmt = conn.prepare("SELECT service, access_token, refresh_token, expires_at, email FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'")?;
     let rows = stmt.query_map([], |row| {
+        let service_key: String = row.get(0)?;
+        let db_refresh: String = row.get(2)?;
+        let secure_refresh = crate::security::retrieve_secure_token(&service_key).ok().flatten().unwrap_or(db_refresh);
+
         Ok(GmailCredentials {
-            service: row.get(0)?,
+            service: service_key,
             access_token: row.get(1)?,
-            refresh_token: row.get(2)?,
+            refresh_token: secure_refresh,
             expires_at: row.get(3)?,
             email: row.get(4)?,
         })
@@ -275,6 +286,7 @@ pub fn get_all_gmail_credentials(conn: &Connection) -> Result<Vec<GmailCredentia
 }
 
 pub fn delete_credentials(conn: &Connection, service: &str) -> Result<()> {
+    crate::security::delete_secure_token(service).ok();
     conn.execute("DELETE FROM credentials WHERE service = ?1", params![service])?;
     Ok(())
 }
@@ -283,14 +295,20 @@ pub fn delete_gmail_credentials(conn: &Connection, email: Option<&str>) -> Resul
     match email {
         Some(e) => {
             let key = format!("gmail:{}", e);
+            crate::security::delete_secure_token(&key).ok();
             conn.execute("DELETE FROM credentials WHERE service = ?1 OR email = ?2", params![key, e])?;
         }
         None => {
+            let all = get_all_gmail_credentials(conn).unwrap_or_default();
+            for c in all {
+                crate::security::delete_secure_token(&c.service).ok();
+            }
             conn.execute("DELETE FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'", [])?;
         }
     }
     Ok(())
 }
+
 
 
 pub fn get_synced_calendar_events(conn: &Connection) -> Result<Vec<SyncedCalendarEvent>> {

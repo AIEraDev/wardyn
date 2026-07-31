@@ -4,6 +4,8 @@ pub mod gmail;
 pub mod linkedin;
 pub mod ollama;
 pub mod calendar;
+pub mod security;
+
 
 use std::sync::Mutex;
 use rusqlite::Connection;

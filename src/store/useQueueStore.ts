@@ -181,6 +181,12 @@ interface QueueStore {
 
   // Native Notification Helper
   sendDesktopNotification: (title: string, body: string) => Promise<void>;
+
+  // Morning Intelligence Brief
+  morningBrief: string | null;
+  morningBriefLoading: boolean;
+  fetchMorningBrief: () => Promise<void>;
+  refreshMorningBrief: () => Promise<void>;
 }
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
@@ -205,6 +211,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   publishingStatus: 'idle',
   publishingError: null,
   analyticsWeeklyData: [],
+  morningBrief: null,
+  morningBriefLoading: false,
+
 
 
   setLanguage: (lang: SupportedLanguage) => {
@@ -863,4 +872,33 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
     }
   },
+
+  fetchMorningBrief: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        set({ morningBriefLoading: true });
+        const { invoke } = await import('@tauri-apps/api/core');
+        const brief = await invoke<string>('get_morning_brief_command');
+        set({ morningBrief: brief, morningBriefLoading: false });
+      } catch (err) {
+        console.error('Morning brief fetch error:', err);
+        set({ morningBriefLoading: false });
+      }
+    }
+  },
+
+  refreshMorningBrief: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        set({ morningBriefLoading: true, morningBrief: null });
+        const { invoke } = await import('@tauri-apps/api/core');
+        const brief = await invoke<string>('refresh_morning_brief_command');
+        set({ morningBrief: brief, morningBriefLoading: false });
+      } catch (err) {
+        console.error('Morning brief refresh error:', err);
+        set({ morningBriefLoading: false });
+      }
+    }
+  },
 }));
+

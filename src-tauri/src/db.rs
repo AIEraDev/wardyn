@@ -117,6 +117,99 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS feed_items (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL,
+            summary TEXT,
+            score INTEGER DEFAULT 0,
+            relevance_score REAL DEFAULT 0.0,
+            fetched_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS morning_briefs (
+            date TEXT PRIMARY KEY,
+            brief_text TEXT NOT NULL,
+            generated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    Ok(())
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct FeedItem {
+    pub id: String,
+    pub source: String,
+    pub title: String,
+    pub url: String,
+    pub summary: Option<String>,
+    pub score: i64,
+    pub relevance_score: f64,
+    pub fetched_at: String,
+}
+
+pub fn upsert_feed_item(conn: &Connection, item: &FeedItem) -> Result<()> {
+    conn.execute(
+        "INSERT INTO feed_items (id, source, title, url, summary, score, relevance_score, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(id) DO UPDATE SET
+            score=excluded.score,
+            relevance_score=excluded.relevance_score,
+            fetched_at=excluded.fetched_at",
+        params![item.id, item.source, item.title, item.url, item.summary, item.score, item.relevance_score, item.fetched_at],
+    )?;
+    Ok(())
+}
+
+pub fn get_recent_feed_items(conn: &Connection, since_hours: i64, limit: usize) -> Result<Vec<FeedItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, source, title, url, summary, score, relevance_score, fetched_at
+         FROM feed_items
+         WHERE datetime(fetched_at) >= datetime('now', ?1)
+         ORDER BY score DESC, relevance_score DESC LIMIT ?2"
+    )?;
+    let offset = format!("-{} hours", since_hours);
+    let rows = stmt.query_map(params![offset, limit as i64], |row| {
+        Ok(FeedItem {
+            id: row.get(0)?,
+            source: row.get(1)?,
+            title: row.get(2)?,
+            url: row.get(3)?,
+            summary: row.get(4)?,
+            score: row.get(5)?,
+            relevance_score: row.get(6)?,
+            fetched_at: row.get(7)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+pub fn get_morning_brief(conn: &Connection, date: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT brief_text FROM morning_briefs WHERE date = ?1")?;
+    let mut rows = stmt.query(params![date])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn save_morning_brief(conn: &Connection, date: &str, brief_text: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO morning_briefs (date, brief_text, generated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(date) DO UPDATE SET brief_text=excluded.brief_text, generated_at=excluded.generated_at",
+        params![date, brief_text, now_iso()],
+    )?;
     Ok(())
 }
 

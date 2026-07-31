@@ -20,6 +20,8 @@ export default function App() {
   const syncIntervalMinutes = useQueueStore((state) => state.syncIntervalMinutes);
   const gmailAccounts = useQueueStore((state) => state.gmailAccounts);
 
+  const fetchMorningBrief = useQueueStore((state) => state.fetchMorningBrief);
+
   // 1. Startup Boot Auto-Sync & Notification Listener
   useEffect(() => {
     const initBootSentinel = async () => {
@@ -27,6 +29,9 @@ export default function App() {
       await checkGmailStatus();
       await syncCalendarDeadlines();
       await syncLinkedInTimeline();
+
+      // Auto-generate morning brief on first launch of the day (cached if already done)
+      fetchMorningBrief();
 
       // If Gmail is connected, run immediate boot inbox sync & triaging
       const currentAccounts = useQueueStore.getState().gmailAccounts;
@@ -36,6 +41,7 @@ export default function App() {
     };
 
     initBootSentinel();
+
 
     // Listen for notification click events safely
     const setupNotificationListener = async () => {

@@ -5,6 +5,8 @@ pub mod linkedin;
 pub mod ollama;
 pub mod calendar;
 pub mod security;
+pub mod feeds;
+pub mod brief;
 
 
 use std::sync::Mutex;
@@ -152,6 +154,23 @@ async fn publish_linkedin_post_command(text: String, state: State<'_, DbState>) 
     linkedin::api::publish_linkedin_post(&state.0, text).await
 }
 
+#[tauri::command]
+async fn get_morning_brief_command(state: State<'_, DbState>) -> Result<String, String> {
+    brief::generator::get_or_generate_brief(&state.0).await
+}
+
+#[tauri::command]
+async fn refresh_morning_brief_command(state: State<'_, DbState>) -> Result<String, String> {
+    // Force-clear today's cached brief then regenerate
+    {
+        let now = db::now_iso();
+        let today = &now[..10];
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM morning_briefs WHERE date = ?1", rusqlite::params![today]).ok();
+    }
+    brief::generator::get_or_generate_brief(&state.0).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok(); // Automatically load .env file
@@ -191,7 +210,9 @@ pub fn run() {
             delete_ollama_model_command,
             sync_calendar_deadlines_command,
             open_external_url,
-            publish_linkedin_post_command
+            publish_linkedin_post_command,
+            get_morning_brief_command,
+            refresh_morning_brief_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -7,9 +7,12 @@ import {
   IconShieldCheck,
   IconInbox,
   IconSparkles,
+  IconBrain,
+  IconLoader2,
 } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
 import { ReplyCard } from './ReplyCard';
+
 
 export const TodayBrief: React.FC = () => {
   const {
@@ -23,7 +26,11 @@ export const TodayBrief: React.FC = () => {
     syncCalendarDeadlines,
     testOverrideRecipient,
     setTestOverrideRecipient,
+    morningBrief,
+    morningBriefLoading,
+    refreshMorningBrief,
   } = useQueueStore();
+
 
 
   const [showSafetyInput, setShowSafetyInput] = useState(false);
@@ -127,6 +134,50 @@ export const TodayBrief: React.FC = () => {
           )}
         </form>
       )}
+
+      {/* ── Morning Intelligence Brief ── */}
+      <div className="mb-6 rounded-xl bg-gradient-to-br from-[#0E1318] to-[#141B24] border border-[rgba(74,143,194,0.25)] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(74,143,194,0.15)]">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-[rgba(74,143,194,0.18)] flex items-center justify-center">
+              <IconBrain size={14} className="text-[#4A8FC2]" />
+            </div>
+            <span className="text-xs font-semibold text-[#F0F4F8]">Morning Intelligence Brief</span>
+            <span className="font-mono text-[10px] bg-[rgba(52,211,153,0.12)] text-[#34D399] px-1.5 py-0.5 rounded border border-[rgba(52,211,153,0.25)]">AI · Local</span>
+          </div>
+          <button
+            onClick={refreshMorningBrief}
+            disabled={morningBriefLoading}
+            title="Regenerate Brief"
+            className="p-1.5 text-[#7A8492] hover:text-[#4A8FC2] hover:bg-[rgba(74,143,194,0.1)] rounded-md transition-colors cursor-pointer disabled:opacity-40"
+          >
+            {morningBriefLoading
+              ? <IconLoader2 size={13} className="animate-spin" />
+              : <IconRefresh size={13} />}
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-4 py-3">
+          {morningBriefLoading && !morningBrief ? (
+            <div className="space-y-2">
+              {[80, 60, 90, 70, 55].map((w, i) => (
+                <div key={i} className="h-3 bg-[#1A2233] rounded animate-pulse" style={{ width: `${w}%` }} />
+              ))}
+              <p className="text-[11px] text-[#7A8492] font-mono pt-1">Ingesting feeds & synthesising brief…</p>
+            </div>
+          ) : morningBrief ? (
+            <pre className="text-[11.5px] text-[#C8D6E5] leading-relaxed whitespace-pre-wrap font-sans">
+              {morningBrief}
+            </pre>
+          ) : (
+            <p className="text-[11px] text-[#7A8492]">
+              Brief will auto-generate on next launch. Click refresh to generate now.
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* STATE 1: New User / Unauthenticated Onboarding State */}
       {gmailAccounts.length === 0 && (

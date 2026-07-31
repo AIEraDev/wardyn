@@ -81,40 +81,61 @@ export const ContentTab: React.FC = () => {
       </div>
 
       {/* LinkedIn Executive Profile & Timeline Summary Card */}
-      {linkedInSummary && (platformFilter === 'all' || platformFilter === 'linkedin') && (
-        <div className="mb-5 p-5 rounded-xl bg-[rgba(74,143,194,0.08)] border border-[rgba(74,143,194,0.35)] shadow-[0_0_15px_rgba(74,143,194,0.05)]">
-          <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[rgba(74,143,194,0.2)]">
-            <div className="flex items-center gap-2">
-              <IconBrandLinkedin size={18} className="text-[#4A8FC2]" />
-              <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">LinkedIn Profile & Timeline Brief</h3>
-            </div>
-            <div className="flex items-center gap-3 font-mono text-xs">
-              <span className="text-[#4A8FC2] flex items-center gap-1">
-                <IconChartBar size={13} /> {linkedInSummary.total_impressions} Impressions
-              </span>
-              <span className="text-[#7A8492]">• {linkedInSummary.total_posts_analyzed} Posts Analyzed</span>
-            </div>
-          </div>
-
-          <p className="text-xs text-[#9AA4B2] font-mono mb-2">
-            <strong className="text-[#F0F4F8]">{linkedInSummary.profile_name}</strong> — {linkedInSummary.headline}
-          </p>
-
-          <p className="text-xs text-[#F0F4F8] leading-relaxed bg-[#151A21] p-3 rounded-lg border border-[#242B35] mb-3">
-            <strong className="text-[#4A8FC2]">Chief-of-Staff Summary: </strong>
-            {linkedInSummary.executive_summary}
-          </p>
-
-          <div className="space-y-2">
-            <h4 className="font-mono text-[11px] text-[#7A8492] uppercase m-0">Recent Post Analytics:</h4>
-            {linkedInSummary.recent_posts.map((post) => (
-              <div key={post.id} className="p-2.5 rounded bg-[#181E27] border border-[#242B35] text-xs flex items-center justify-between gap-3">
-                <p className="text-[#9AA4B2] truncate m-0 flex-1">{post.text}</p>
-                <span className="font-mono text-[11px] text-[#4A8FC2] shrink-0">{post.engagement}</span>
+      {(platformFilter === 'all' || platformFilter === 'linkedin') && (
+        linkedInSummary ? (
+          <div className="mb-5 p-5 rounded-xl bg-[rgba(74,143,194,0.08)] border border-[rgba(74,143,194,0.35)] shadow-[0_0_15px_rgba(74,143,194,0.05)]">
+            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[rgba(74,143,194,0.2)]">
+              <div className="flex items-center gap-2">
+                <IconBrandLinkedin size={18} className="text-[#4A8FC2]" />
+                <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">LinkedIn Profile & Timeline Brief</h3>
               </div>
-            ))}
+              <div className="flex items-center gap-3 font-mono text-xs">
+                <span className="text-[#4A8FC2] flex items-center gap-1">
+                  <IconChartBar size={13} /> {linkedInSummary.total_impressions} Impressions
+                </span>
+                <span className="text-[#7A8492]">• {linkedInSummary.total_posts_analyzed} Posts Analyzed</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#9AA4B2] font-mono mb-2">
+              <strong className="text-[#F0F4F8]">{linkedInSummary.profile_name}</strong> — {linkedInSummary.headline}
+            </p>
+
+            <p className="text-xs text-[#F0F4F8] leading-relaxed bg-[#151A21] p-3 rounded-lg border border-[#242B35] mb-3">
+              <strong className="text-[#4A8FC2]">Chief-of-Staff Summary: </strong>
+              {linkedInSummary.executive_summary}
+            </p>
+
+            <div className="space-y-2">
+              <h4 className="font-mono text-[11px] text-[#7A8492] uppercase m-0">Recent Post Analytics:</h4>
+              {linkedInSummary.recent_posts.map((post) => (
+                <div key={post.id} className="p-2.5 rounded bg-[#181E27] border border-[#242B35] text-xs flex items-center justify-between gap-3">
+                  <p className="text-[#9AA4B2] truncate m-0 flex-1">{post.text}</p>
+                  <span className="font-mono text-[11px] text-[#4A8FC2] shrink-0">{post.engagement}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mb-5 p-4 rounded-xl bg-[#151A21] border border-[#242B35] text-center flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-[rgba(74,143,194,0.12)] text-[#4A8FC2]">
+                <IconBrandLinkedin size={20} />
+              </div>
+              <div className="text-left">
+                <h4 className="text-xs font-semibold text-[#F0F4F8] m-0">No LinkedIn Timeline Data Synced Yet</h4>
+                <p className="text-[11px] text-[#7A8492] m-0">Click Sync LinkedIn Activity to fetch timeline posts and generate executive AI summary.</p>
+              </div>
+            </div>
+            <button
+              onClick={handleTimelineSync}
+              disabled={isSyncingTimeline}
+              className="font-mono text-xs bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] px-3 py-1.5 rounded-lg font-medium border border-[rgba(74,143,194,0.35)] hover:bg-[rgba(74,143,194,0.25)] transition-colors cursor-pointer shrink-0"
+            >
+              Sync LinkedIn Activity
+            </button>
+          </div>
+        )
       )}
 
       {/* Platform Filter Tabs */}

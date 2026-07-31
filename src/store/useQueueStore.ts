@@ -75,29 +75,6 @@ const INITIAL_SOCIAL_POSTS: SocialPost[] = [
   },
 ];
 
-const INITIAL_LINKEDIN_SUMMARY: LinkedInTimelineSummary = {
-  profile_name: 'abdulkabirmusa',
-  headline: 'Founder & Software Engineer | Building Wardyn Local-First Sentinel',
-  total_posts_analyzed: 5,
-  total_impressions: '18,650+',
-  top_performing_topic: 'Local-First Desktop Architecture & Tauri v2 Performance',
-  executive_summary: 'Ollama local analysis completed for abdulkabirmusa: 18.6k total impressions across recent activity. Top engagement driven by local-first Tauri v2 architecture breakdowns and private voice drafting.',
-  recent_posts: [
-    {
-      id: 'lp-1',
-      text: 'Building local-first desktop software with Tauri v2 and Rust. Why sacrifice privacy for AI intelligence when you can run both locally?',
-      engagement: '5.4k views • 240 likes • 42 comments',
-      date: 'Just now',
-    },
-    {
-      id: 'lp-2',
-      text: 'Shipped Clypra text-effects rewrite. Zero-latency rendering and custom web presets built for modern web apps.',
-      engagement: '3.1k views • 112 likes • 28 comments',
-      date: '3 days ago',
-    },
-  ],
-};
-
 const INITIAL_CHANNELS: ChannelConfig[] = [
   {
     id: 'gmail',
@@ -154,8 +131,7 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     category: 'social',
     description: 'Executive network outreach, personal profile (abdulkabirmusa) timeline ingestion & content briefs',
     iconName: 'IconBrandLinkedin',
-    status: 'connected',
-    accountLabel: 'abdulkabirmusa',
+    status: 'disconnected',
   },
   {
     id: 'twitter',
@@ -267,8 +243,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       created_at: '2026-07-30T10:00:00Z',
     },
   ],
-  linkedInSummary: INITIAL_LINKEDIN_SUMMARY,
-  linkedInAccount: 'abdulkabirmusa',
+  linkedInSummary: null, // No initial summary if not available
+  linkedInAccount: null,
   activeTab: 'today',
   isLoading: false,
   error: null,

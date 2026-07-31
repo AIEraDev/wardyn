@@ -84,13 +84,14 @@ async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Resu
     let result = ollama::client::classify_and_draft_item(&item).await;
 
     let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let now = db::now_iso();
     conn.execute(
         "UPDATE queue_items SET flagged = ?1, draft_text = ?2, confidence = ?3, updated_at = ?4 WHERE id = ?5",
         rusqlite::params![
             if result.flagged { 1 } else { 0 },
             result.draft_text,
             result.confidence,
-            "2026-07-30T23:38:00Z",
+            now,
             id
         ],
     ).map_err(|e| e.to_string())?;
@@ -130,6 +131,11 @@ fn open_external_url(url: String) -> Result<(), String> {
     })
 }
 
+#[tauri::command]
+async fn publish_linkedin_post_command(text: String, state: State<'_, DbState>) -> Result<String, String> {
+    linkedin::api::publish_linkedin_post(&state.0, text).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok(); // Automatically load .env file
@@ -167,7 +173,8 @@ pub fn run() {
             install_ollama_model_command,
             delete_ollama_model_command,
             sync_calendar_deadlines_command,
-            open_external_url
+            open_external_url,
+            publish_linkedin_post_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

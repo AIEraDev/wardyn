@@ -32,6 +32,7 @@ export interface TranslationDictionary {
   no_linkedin_data: string;
   sync_linkedin_activity: string;
   new_social_brief: string;
+  analytics: string;
 }
 
 export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
@@ -67,6 +68,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     no_linkedin_data: 'No LinkedIn Timeline Data Synced Yet',
     sync_linkedin_activity: 'Sync LinkedIn Activity',
     new_social_brief: 'New Social Brief',
+    analytics: 'Analytics',
   },
   fr: {
     today: "Aujourd'hui",
@@ -100,6 +102,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     no_linkedin_data: 'Aucune donnée LinkedIn synchronisée',
     sync_linkedin_activity: 'Sync Activité LinkedIn',
     new_social_brief: 'Nouveau Brief Social',
+    analytics: 'Analytique',
   },
   es: {
     today: 'Hoy',
@@ -133,6 +136,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     no_linkedin_data: 'Sin datos de LinkedIn sincronizados',
     sync_linkedin_activity: 'Sincronizar Actividad LinkedIn',
     new_social_brief: 'Nuevo Resumen Social',
+    analytics: 'Analítica',
   },
   de: {
     today: 'Heute',
@@ -166,6 +170,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     no_linkedin_data: 'Noch keine LinkedIn-Daten synchronisiert',
     sync_linkedin_activity: 'LinkedIn-Aktivität Sync',
     new_social_brief: 'Neuer Social-Brief',
+    analytics: 'Analytik',
   },
   zh: {
     today: '今天',
@@ -199,6 +204,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     no_linkedin_data: '尚未同步 LinkedIn 时间线数据',
     sync_linkedin_activity: '同步 LinkedIn 动态',
     new_social_brief: '新建社交简报',
+    analytics: '分析',
   },
   ja: {
     today: '今日',
@@ -232,6 +238,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     no_linkedin_data: 'LinkedInのデータはまだ同期されていません',
     sync_linkedin_activity: 'LinkedInアクティビティを同期',
     new_social_brief: '新規ソーシャルブリーフ',
+    analytics: '分析',
   },
 };
 

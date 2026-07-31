@@ -14,6 +14,8 @@ import {
   IconBulb,
   IconRepeat,
   IconPhoto,
+  IconSend,
+  IconLoader2,
 } from '@tabler/icons-react';
 import { useQueueStore, PostCadence } from '../store/useQueueStore';
 import { SocialPlatform } from '../types/queue';
@@ -31,6 +33,8 @@ export const ContentTab: React.FC = () => {
     generateCadenceLinkedInPost,
     remixInsightToPersonalPost,
     syncLinkedInTimeline,
+    publishLinkedInPost,
+    publishingStatus,
   } = useQueueStore();
 
   const [platformFilter, setPlatformFilter] = useState<'all' | 'linkedin' | 'twitter'>('all');
@@ -478,13 +482,26 @@ export const ContentTab: React.FC = () => {
                         </>
                       ) : (
                         <>
+                          {/* Direct LinkedIn Publish Button */}
+                          {isLinkedIn && (
+                            <button
+                              type="button"
+                              onClick={() => publishLinkedInPost(post.id, isEditing ? editedContent : undefined)}
+                              disabled={publishingStatus === 'publishing'}
+                              className="px-3.5 py-1.5 text-xs font-medium text-[#34D399] bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.35)] rounded-lg hover:bg-[rgba(52,211,153,0.2)] transition-colors cursor-pointer font-mono flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {publishingStatus === 'publishing'
+                                ? <><IconLoader2 size={13} className="animate-spin" /> Publishing…</>
+                                : <><IconSend size={13} /> Publish via API</>}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => approveSocialPost(post.id)}
                             className="px-3.5 py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.16)] border border-[rgba(74,143,194,0.35)] rounded-lg hover:bg-[rgba(74,143,194,0.25)] transition-colors cursor-pointer font-mono"
                           >
                             <IconCheck size={14} className="inline mr-1 -mt-0.5" />
-                            Approve & Post to LinkedIn
+                            Approve & Open Composer
                           </button>
                           <button
                             type="button"

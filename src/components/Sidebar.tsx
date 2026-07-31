@@ -7,6 +7,7 @@ import {
   IconCalendar,
   IconGridDots,
   IconSettings,
+  IconChartBar,
 } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
 import { TabType } from '../types/queue';
@@ -21,6 +22,7 @@ export const Sidebar: React.FC = () => {
     { id: 'today', labelKey: 'today', icon: IconLayoutDashboard },
     { id: 'messages', labelKey: 'messages', icon: IconMail },
     { id: 'content', labelKey: 'content', icon: IconPencil },
+    { id: 'analytics', labelKey: 'analytics', icon: IconChartBar },
     { id: 'deadlines', labelKey: 'deadlines', icon: IconCalendar },
     { id: 'channels', labelKey: 'channels', icon: IconGridDots },
     { id: 'settings', labelKey: 'settings', icon: IconSettings },

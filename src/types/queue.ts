@@ -1,7 +1,8 @@
 export type QueueItemStatus = 'pending' | 'approved' | 'edited' | 'skipped' | 'sent';
 export type QueueItemSource = 'gmail' | 'calendar' | 'slack' | 'discord' | 'telegram' | 'imessage' | 'linkedin' | 'twitter' | 'whatsapp' | 'teams';
 export type QueueItemKind = 'reply' | 'deadline' | 'social' | 'dm';
-export type TabType = 'today' | 'messages' | 'content' | 'deadlines' | 'channels' | 'settings';
+export type TabType = 'today' | 'messages' | 'content' | 'deadlines' | 'channels' | 'settings' | 'analytics';
+
 
 export type SocialPlatform = 'linkedin' | 'twitter';
 export type SocialPostStatus = 'pending' | 'approved' | 'edited' | 'skipped' | 'posted';

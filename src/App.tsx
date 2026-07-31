@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { TodayBrief } from './components/TodayBrief';
 import { MessagesTab } from './components/MessagesTab';
 import { ContentTab } from './components/ContentTab';
+import { AnalyticsTab } from './components/AnalyticsTab';
 import { DeadlinesTab } from './components/DeadlinesTab';
 import { ChannelsTab } from './components/ChannelsTab';
 import { SettingsTab } from './components/SettingsTab';
@@ -82,6 +83,8 @@ export default function App() {
         return <MessagesTab />;
       case 'content':
         return <ContentTab />;
+      case 'analytics':
+        return <AnalyticsTab />;
       case 'deadlines':
         return <DeadlinesTab />;
       case 'channels':

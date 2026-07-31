@@ -96,6 +96,14 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
   },
 ];
 
+export interface WeeklyAnalytics {
+  week: string; // e.g. "Jul 24"
+  emailsTriaged: number;
+  hoursSaved: number;
+  linkedInImpressions: number;
+  postsPublished: number;
+}
+
 interface QueueStore {
   items: QueueItem[];
   socialPosts: SocialPost[];
@@ -160,6 +168,14 @@ interface QueueStore {
   // Calendar Sync Actions
   syncCalendarDeadlines: () => Promise<void>;
 
+  // Analytics State
+  analyticsWeeklyData: WeeklyAnalytics[];
+  publishingStatus: 'idle' | 'publishing' | 'success' | 'error';
+  publishingError: string | null;
+
+  // LinkedIn Direct Publish Action
+  publishLinkedInPost: (id: string, content?: string) => Promise<void>;
+
   // Native Notification Helper
   sendDesktopNotification: (title: string, body: string) => Promise<void>;
 }
@@ -181,6 +197,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   notificationsEnabled: true,
   autoStartEnabled: false,
   syncIntervalMinutes: 5,
+  publishingStatus: 'idle',
+  publishingError: null,
+  analyticsWeeklyData: [],
+
 
   setLanguage: (lang: SupportedLanguage) => {
     set({ language: lang });
@@ -518,6 +538,45 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       );
     }
   },
+
+  publishLinkedInPost: async (id: string, content?: string) => {
+    const target = get().socialPosts.find((p) => p.id === id);
+    if (!target) return;
+    const finalContent = content !== undefined ? content : target.content;
+
+    set({ publishingStatus: 'publishing', publishingError: null });
+
+    try {
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const postId = await invoke<string>('publish_linkedin_post_command', { text: finalContent });
+
+        // Mark as posted in store
+        set((state) => ({
+          publishingStatus: 'success',
+          socialPosts: state.socialPosts.map((post) =>
+            post.id === id ? { ...post, status: 'posted', content: finalContent } : post
+          ),
+        }));
+
+
+        await get().sendDesktopNotification(
+          '🚀 Published to LinkedIn',
+          `Post published directly via API${postId !== 'published' ? ` (ID: ${postId})` : ''}. No browser needed.`
+        );
+      } else {
+        throw new Error('Tauri not available — cannot publish directly.');
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      set({ publishingStatus: 'error', publishingError: errMsg });
+      await get().sendDesktopNotification(
+        '❌ LinkedIn Publish Failed',
+        errMsg.length > 100 ? errMsg.slice(0, 100) + '…' : errMsg
+      );
+    }
+  },
+
 
   regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread' | 'leadership' | 'story') => {
     const target = get().socialPosts.find((p) => p.id === id);

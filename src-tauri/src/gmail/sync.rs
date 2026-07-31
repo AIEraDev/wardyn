@@ -17,108 +17,132 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
     let client = reqwest::Client::new();
     let access_token = get_valid_access_token(&client, &creds, conn_mutex).await?;
 
-    // 1. Query recent Gmail inbox messages
-    let list_url = "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&q=label:INBOX";
-    let list_res = client.get(list_url)
-        .bearer_auth(&access_token)
-        .send()
-        .await
-        .map_err(|e| format!("Network error fetching Gmail list: {}", e))?;
-
-    if list_res.status().as_u16() == 401 {
-        let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
-        db::delete_credentials(&conn, "gmail").ok();
-        return Err("Gmail authorization was revoked or expired. Please re-authenticate.".into());
-    }
-
-    if !list_res.status().is_success() {
-        return Err(format!("Gmail API returned error status: {}", list_res.status()));
-    }
-
-    let list_json: serde_json::Value = list_res.json().await.map_err(|e| e.to_string())?;
-    let messages = list_json["messages"].as_array();
-    if messages.is_none() || messages.unwrap().is_empty() {
-        return Ok(0);
-    }
+    // Fetch all 5 Gmail categories in parallel
+    let categories: Vec<(&str, &str)> = vec![
+        ("INBOX -category:promotions -category:social -category:updates -category:forums", "primary"),
+        ("category:updates", "updates"),
+        ("category:promotions", "promotions"),
+        ("category:social", "social"),
+        ("category:forums", "forums"),
+    ];
 
     let mut imported_count = 0;
-    for msg_summary in messages.unwrap() {
-        let msg_id = match msg_summary["id"].as_str() {
-            Some(id) => id,
-            None => continue,
-        };
 
-        // Fetch detailed message content
-        let detail_url = format!("https://gmail.googleapis.com/gmail/v1/users/me/messages/{}", msg_id);
-        let detail_res = client.get(&detail_url)
+    for (query, category_label) in &categories {
+        let list_url = format!(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&q={}",
+            urlencoding::encode(query)
+        );
+
+        let list_res = client.get(&list_url)
             .bearer_auth(&access_token)
             .send()
             .await;
 
-        if let Ok(res) = detail_res {
-            if res.status().is_success() {
-                let msg_json: serde_json::Value = res.json().await.unwrap_or_default();
-                let snippet = msg_json["snippet"].as_str().unwrap_or("No snippet available").to_string();
-                
-                // Extract From header and Subject
-                let headers = msg_json["payload"]["headers"].as_array();
-                let mut sender = "Unknown Sender".to_string();
-                let mut subject = "".to_string();
+        let list_res = match list_res {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[Gmail Sync] Network error for category {}: {}", category_label, e);
+                continue;
+            }
+        };
 
-                if let Some(h_list) = headers {
-                    for h in h_list {
-                        let name = h["name"].as_str().unwrap_or("");
-                        if name.eq_ignore_ascii_case("From") {
-                            sender = h["value"].as_str().unwrap_or("Unknown Sender").to_string();
-                        } else if name.eq_ignore_ascii_case("Subject") {
-                            subject = h["value"].as_str().unwrap_or("").to_string();
+        if list_res.status().as_u16() == 401 {
+            let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+            db::delete_credentials(&conn, "gmail").ok();
+            return Err("Gmail authorization was revoked or expired. Please re-authenticate.".into());
+        }
+
+        if !list_res.status().is_success() {
+            eprintln!("[Gmail Sync] Category {} returned status: {}", category_label, list_res.status());
+            continue;
+        }
+
+        let list_json: serde_json::Value = list_res.json().await.map_err(|e| e.to_string())?;
+        let messages = match list_json["messages"].as_array() {
+            Some(m) if !m.is_empty() => m.clone(),
+            _ => continue,
+        };
+
+        for msg_summary in &messages {
+            let msg_id = match msg_summary["id"].as_str() {
+                Some(id) => id,
+                None => continue,
+            };
+
+            // Fetch detailed message content
+            let detail_url = format!("https://gmail.googleapis.com/gmail/v1/users/me/messages/{}", msg_id);
+            let detail_res = client.get(&detail_url)
+                .bearer_auth(&access_token)
+                .send()
+                .await;
+
+            if let Ok(res) = detail_res {
+                if res.status().is_success() {
+                    let msg_json: serde_json::Value = res.json().await.unwrap_or_default();
+                    let snippet = msg_json["snippet"].as_str().unwrap_or("No snippet available").to_string();
+
+                    // Extract From header and Subject
+                    let headers = msg_json["payload"]["headers"].as_array();
+                    let mut sender = "Unknown Sender".to_string();
+                    let mut subject = "".to_string();
+
+                    if let Some(h_list) = headers {
+                        for h in h_list {
+                            let name = h["name"].as_str().unwrap_or("");
+                            if name.eq_ignore_ascii_case("From") {
+                                sender = h["value"].as_str().unwrap_or("Unknown Sender").to_string();
+                            } else if name.eq_ignore_ascii_case("Subject") {
+                                subject = h["value"].as_str().unwrap_or("").to_string();
+                            }
                         }
                     }
-                }
 
-                let preview = if !subject.is_empty() {
-                    format!("{}: {}", subject, snippet)
-                } else {
-                    snippet
-                };
+                    let preview = if !subject.is_empty() {
+                        format!("[{}] {}: {}", category_label.to_uppercase(), subject, snippet)
+                    } else {
+                        format!("[{}] {}", category_label.to_uppercase(), snippet)
+                    };
 
-                let item_id = format!("gmail_{}", msg_id);
+                    let item_id = format!("gmail_{}", msg_id);
 
-                // Initial temp item
-                let temp_item = QueueItem {
-                    id: item_id.clone(),
-                    source: "gmail".into(),
-                    kind: "reply".into(),
-                    sender: sender.clone(),
-                    preview: preview.clone(),
-                    draft_text: None,
-                    status: "pending".into(),
-                    flagged: false,
-                    confidence: 0.0,
-                    created_at: "2026-07-30T23:35:00Z".into(),
-                    updated_at: "2026-07-30T23:35:00Z".into(),
-                };
+                    // Initial temp item
+                    let now = crate::db::now_iso();
+                    let temp_item = QueueItem {
+                        id: item_id.clone(),
+                        source: "gmail".into(),
+                        kind: "reply".into(),
+                        sender: sender.clone(),
+                        preview: preview.clone(),
+                        draft_text: None,
+                        status: "pending".into(),
+                        flagged: false,
+                        confidence: 0.0,
+                        created_at: now.clone(),
+                        updated_at: now.clone(),
+                    };
 
-                // Run Ollama local model analysis & draft generation
-                let analysis = ollama::client::classify_and_draft_item(&temp_item).await;
+                    // Run Ollama local model analysis & draft generation
+                    let analysis = ollama::client::classify_and_draft_item(&temp_item).await;
 
-                let item = QueueItem {
-                    id: item_id,
-                    source: "gmail".into(),
-                    kind: "reply".into(),
-                    sender,
-                    preview,
-                    draft_text: analysis.draft_text,
-                    status: "pending".into(),
-                    flagged: analysis.flagged,
-                    confidence: analysis.confidence,
-                    created_at: "2026-07-30T23:35:00Z".into(),
-                    updated_at: "2026-07-30T23:35:00Z".into(),
-                };
+                    let item = QueueItem {
+                        id: item_id,
+                        source: "gmail".into(),
+                        kind: "reply".into(),
+                        sender,
+                        preview,
+                        draft_text: analysis.draft_text,
+                        status: "pending".into(),
+                        flagged: analysis.flagged,
+                        confidence: analysis.confidence,
+                        created_at: now.clone(),
+                        updated_at: now,
+                    };
 
-                let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
-                if db::insert_queue_item(&conn, &item).is_ok() {
-                    imported_count += 1;
+                    let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+                    if db::insert_queue_item(&conn, &item).is_ok() {
+                        imported_count += 1;
+                    }
                 }
             }
         }
@@ -126,6 +150,7 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
 
     Ok(imported_count)
 }
+
 
 async fn get_valid_access_token(
     client: &reqwest::Client,

@@ -30,8 +30,9 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
             }
 
             let summary = format!("Deadline: {}", item.preview.chars().take(40).collect::<String>());
-            let start_time = "2026-08-01T17:00:00Z";
-            let end_time = "2026-08-01T18:00:00Z";
+            let base = crate::db::now_iso();
+            let start_time = format!("{}T17:00:00Z", &base[..10]);
+            let end_time = format!("{}T18:00:00Z", &base[..10]);
 
             let payload = serde_json::json!({
                 "summary": summary,
@@ -62,17 +63,21 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
                 queue_item_id: item.id.clone(),
                 event_id,
                 summary,
-                event_date: start_time.into(),
-                created_at: "2026-07-30T23:50:00Z".into(),
+                event_date: start_time.clone(),
+                created_at: crate::db::now_iso(),
             };
 
             let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
             db::record_calendar_event(&conn, &record).ok();
         }
 
-        // 2. Fetch upcoming events from Google Calendar API
-        let list_url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=10&timeMin=2026-07-31T00:00:00Z";
-        let cal_res = client.get(list_url)
+        // 2. Fetch upcoming events from Google Calendar API (timeMin = now)
+        let now_iso = crate::db::now_iso();
+        let list_url = format!(
+            "https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=20&timeMin={}",
+            urlencoding::encode(&now_iso)
+        );
+        let cal_res = client.get(&list_url)
             .bearer_auth(&creds.access_token)
             .send()
             .await;
@@ -96,7 +101,7 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
                             event_id: evt_id,
                             summary: evt_summary,
                             event_date: evt_date,
-                            created_at: "2026-07-31T01:45:00Z".into(),
+                            created_at: crate::db::now_iso(),
                         };
 
                         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;

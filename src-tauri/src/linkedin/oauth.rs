@@ -11,8 +11,8 @@ pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>
     let redirect_uri = std::env::var("LINKEDIN_REDIRECT_URI").unwrap_or_else(|_| "http://localhost:14220/callback".to_string());
     let redirect_uri_encoded = urlencoding::encode(&redirect_uri);
     
-    // Configurable scope (defaults to OpenID Connect openid profile email)
-    let scope = std::env::var("LINKEDIN_SCOPE").unwrap_or_else(|_| "openid profile email".to_string());
+    // Configurable scope (defaults to OpenID Connect + publishing permission)
+    let scope = std::env::var("LINKEDIN_SCOPE").unwrap_or_else(|_| "openid profile email w_member_social".to_string());
     let scope_encoded = urlencoding::encode(&scope);
     
     let state_token = format!("wardyn_state_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());

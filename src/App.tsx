@@ -15,6 +15,7 @@ export default function App() {
   const checkGmailStatus = useQueueStore((state) => state.checkGmailStatus);
   const syncGmail = useQueueStore((state) => state.syncGmail);
   const syncCalendarDeadlines = useQueueStore((state) => state.syncCalendarDeadlines);
+  const syncLinkedInTimeline = useQueueStore((state) => state.syncLinkedInTimeline);
   const syncIntervalMinutes = useQueueStore((state) => state.syncIntervalMinutes);
   const gmailAccount = useQueueStore((state) => state.gmailAccount);
 
@@ -24,6 +25,7 @@ export default function App() {
       await fetchItems();
       await checkGmailStatus();
       await syncCalendarDeadlines();
+      await syncLinkedInTimeline();
 
       // If Gmail is connected, run immediate boot inbox sync & triaging
       const currentAccount = useQueueStore.getState().gmailAccount;
@@ -51,24 +53,26 @@ export default function App() {
           }
         }
       } catch (_err) {
-        // Silent catch for notification listener on platforms without registerListener
+        // Silent catch for notification listener
       }
     };
 
     setupNotificationListener();
-  }, [fetchItems, checkGmailStatus, syncCalendarDeadlines, syncGmail, setActiveTab]);
+  }, [fetchItems, checkGmailStatus, syncCalendarDeadlines, syncLinkedInTimeline, syncGmail, setActiveTab]);
 
-  // 2. Background Periodic Inbox Sync Interval
+  // 2. Background Periodic Multi-Channel Ingestion & Continuous AI Learning Interval
   useEffect(() => {
-    if (!gmailAccount) return;
-
     const intervalMs = syncIntervalMinutes * 60 * 1000;
-    const timer = setInterval(() => {
-      syncGmail();
+    const timer = setInterval(async () => {
+      if (gmailAccount) {
+        await syncGmail();
+      }
+      // Continuous background fetching & local AI model learning from LinkedIn
+      await syncLinkedInTimeline();
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [gmailAccount, syncIntervalMinutes, syncGmail]);
+  }, [gmailAccount, syncIntervalMinutes, syncGmail, syncLinkedInTimeline]);
 
   const renderActiveTab = () => {
     switch (activeTab) {

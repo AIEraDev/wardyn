@@ -5,6 +5,7 @@ import {
   IconMail,
   IconPencil,
   IconCalendar,
+  IconGridDots,
   IconSettings,
 } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
@@ -19,6 +20,7 @@ export const Sidebar: React.FC = () => {
     { id: 'messages', label: 'Messages', icon: IconMail },
     { id: 'content', label: 'Content', icon: IconPencil },
     { id: 'deadlines', label: 'Deadlines', icon: IconCalendar },
+    { id: 'channels', label: 'Channels', icon: IconGridDots },
     { id: 'settings', label: 'Settings', icon: IconSettings },
   ];
 

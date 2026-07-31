@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform } from '../types/queue';
+import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig } from '../types/queue';
 
 export interface SyncedCalendarEvent {
   id: string;
@@ -75,9 +75,96 @@ const INITIAL_SOCIAL_POSTS: SocialPost[] = [
   },
 ];
 
+const INITIAL_CHANNELS: ChannelConfig[] = [
+  {
+    id: 'gmail',
+    name: 'Gmail',
+    category: 'email',
+    description: 'Inbox triage, thread monitoring & voice drafting over OAuth 2.0 PKCE',
+    iconName: 'IconMail',
+    status: 'disconnected',
+  },
+  {
+    id: 'calendar',
+    name: 'Google Calendar',
+    category: 'email',
+    description: 'Auto-sync deadline events and appointment requests automatically',
+    iconName: 'IconCalendar',
+    status: 'connected',
+    accountLabel: 'Auto-Sync Active',
+  },
+  {
+    id: 'slack',
+    name: 'Slack',
+    category: 'work',
+    description: 'Channels, DMs, workspace mentions, and executive thread triaging',
+    iconName: 'IconBrandSlack',
+    status: 'disconnected',
+  },
+  {
+    id: 'discord',
+    name: 'Discord',
+    category: 'work',
+    description: 'Server channels, direct messages, and bot command triggers',
+    iconName: 'IconBrandDiscord',
+    status: 'disconnected',
+  },
+  {
+    id: 'telegram',
+    name: 'Telegram',
+    category: 'messaging',
+    description: 'Bot API integration for priority direct messaging and channel alerts',
+    iconName: 'IconBrandTelegram',
+    status: 'disconnected',
+  },
+  {
+    id: 'imessage',
+    name: 'iMessage',
+    category: 'messaging',
+    description: 'Native macOS messaging bridge for priority contact triaging',
+    iconName: 'IconBrandApple',
+    status: 'disconnected',
+  },
+  {
+    id: 'linkedin',
+    name: 'LinkedIn',
+    category: 'social',
+    description: 'Executive network outreach and build-in-public content briefs',
+    iconName: 'IconBrandLinkedin',
+    status: 'connected',
+    accountLabel: 'Content Engine Active',
+  },
+  {
+    id: 'twitter',
+    name: 'Twitter / X',
+    category: 'social',
+    description: 'High-signal DMs, social mentions, and viral thread drafting',
+    iconName: 'IconBrandX',
+    status: 'connected',
+    accountLabel: 'Content Engine Active',
+  },
+  {
+    id: 'whatsapp',
+    name: 'WhatsApp',
+    category: 'messaging',
+    description: 'Priority direct messages and scheduled status updates',
+    iconName: 'IconBrandWhatsapp',
+    status: 'disconnected',
+  },
+  {
+    id: 'teams',
+    name: 'Microsoft Teams',
+    category: 'work',
+    description: 'Enterprise conversations and Bot Framework bridge',
+    iconName: 'IconBrandTeams',
+    status: 'disconnected',
+  },
+];
+
 interface QueueStore {
   items: QueueItem[];
   socialPosts: SocialPost[];
+  channels: ChannelConfig[];
   calendarEvents: SyncedCalendarEvent[];
   activeTab: TabType;
   isLoading: boolean;
@@ -102,6 +189,10 @@ interface QueueStore {
   updateDraft: (id: string, text: string) => void;
   regenerateDraft: (id: string, tone: 'shorter' | 'formal' | 'availability') => void;
   setTestOverrideRecipient: (email: string | null) => void;
+
+  // Multi-Channel Actions
+  connectChannel: (channelId: string, apiKey?: string, webhookUrl?: string) => void;
+  disconnectChannel: (channelId: string) => void;
 
   // Social Post Actions (LinkedIn & Twitter/X)
   approveSocialPost: (id: string, editedContent?: string) => Promise<void>;
@@ -128,6 +219,7 @@ interface QueueStore {
 export const useQueueStore = create<QueueStore>((set, get) => ({
   items: INITIAL_MOCK_ITEMS,
   socialPosts: INITIAL_SOCIAL_POSTS,
+  channels: INITIAL_CHANNELS,
   calendarEvents: [
     {
       id: 'cal-1',
@@ -233,6 +325,34 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   setTestOverrideRecipient: (email: string | null) => {
     set({ testOverrideRecipient: email });
+  },
+
+  connectChannel: (channelId: string, apiKey?: string, webhookUrl?: string) => {
+    set((state) => ({
+      channels: state.channels.map((c) =>
+        c.id === channelId
+          ? { ...c, status: 'connected', apiKey, webhookUrl, accountLabel: 'Active Bridge' }
+          : c
+      ),
+    }));
+
+    const ch = get().channels.find((c) => c.id === channelId);
+    if (ch) {
+      get().sendDesktopNotification(
+        `🔌 Channel Connected: ${ch.name}`,
+        `Successfully integrated ${ch.name} into Wardyn Multi-Channel Hub.`
+      );
+    }
+  },
+
+  disconnectChannel: (channelId: string) => {
+    set((state) => ({
+      channels: state.channels.map((c) =>
+        c.id === channelId
+          ? { ...c, status: 'disconnected', accountLabel: undefined, apiKey: undefined, webhookUrl: undefined }
+          : c
+      ),
+    }));
   },
 
   approveItem: async (id: string, editedDraft?: string) => {
@@ -445,6 +565,14 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const { invoke } = await import('@tauri-apps/api/core');
         const email = await invoke<string | null>('get_gmail_auth_status');
         set({ gmailAccount: email });
+
+        if (email) {
+          set((state) => ({
+            channels: state.channels.map((c) =>
+              c.id === 'gmail' ? { ...c, status: 'connected', accountLabel: email } : c
+            ),
+          }));
+        }
       } catch (err) {
         console.error('Failed to check Gmail status:', err);
       }
@@ -457,6 +585,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const { invoke } = await import('@tauri-apps/api/core');
         const email = await invoke<string>('start_gmail_auth');
         set({ gmailAccount: email });
+        set((state) => ({
+          channels: state.channels.map((c) =>
+            c.id === 'gmail' ? { ...c, status: 'connected', accountLabel: email } : c
+          ),
+        }));
         await get().syncGmail();
         await get().sendDesktopNotification(
           '🔒 Wardyn Account Connected',
@@ -474,6 +607,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('disconnect_gmail');
         set({ gmailAccount: null });
+        set((state) => ({
+          channels: state.channels.map((c) =>
+            c.id === 'gmail' ? { ...c, status: 'disconnected', accountLabel: undefined } : c
+          ),
+        }));
         await get().sendDesktopNotification(
           'Wardyn Disconnected',
           'Gmail credentials cleared securely.'

@@ -4,6 +4,7 @@ import { TodayBrief } from './components/TodayBrief';
 import { MessagesTab } from './components/MessagesTab';
 import { ContentTab } from './components/ContentTab';
 import { DeadlinesTab } from './components/DeadlinesTab';
+import { ChannelsTab } from './components/ChannelsTab';
 import { SettingsTab } from './components/SettingsTab';
 import { useQueueStore } from './store/useQueueStore';
 
@@ -77,6 +78,8 @@ export default function App() {
         return <ContentTab />;
       case 'deadlines':
         return <DeadlinesTab />;
+      case 'channels':
+        return <ChannelsTab />;
       case 'settings':
         return <SettingsTab />;
       default:

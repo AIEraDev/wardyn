@@ -402,11 +402,13 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             item_id: id,
             recipient: target.sender,
             subject: target.preview,
-            in_reply_to: null,
+            in_reply_to: target.message_id || null,
+            thread_id: target.thread_id || null,
             body_text: finalDraft,
             test_override_recipient: get().testOverrideRecipient,
           },
         });
+
       } catch (err: any) {
         console.error('Failed to send via Gmail API:', err);
         set({ error: err.toString() });

@@ -31,14 +31,15 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
 
             let summary = format!("Deadline: {}", item.preview.chars().take(40).collect::<String>());
             let base = crate::db::now_iso();
-            let start_time = format!("{}T17:00:00Z", &base[..10]);
-            let end_time = format!("{}T18:00:00Z", &base[..10]);
+            // Default to 17:00 WAT (+01:00) for UKVI / visa deadline entries
+            let start_time = format!("{}T17:00:00+01:00", &base[..10]);
+            let end_time = format!("{}T18:00:00+01:00", &base[..10]);
 
             let payload = serde_json::json!({
                 "summary": summary,
                 "description": format!("Auto-created by Wardyn from sender: {}\nPreview: {}", item.sender, item.preview),
-                "start": { "dateTime": start_time },
-                "end": { "dateTime": end_time }
+                "start": { "dateTime": start_time, "timeZone": "Africa/Lagos" },
+                "end": { "dateTime": end_time, "timeZone": "Africa/Lagos" }
             });
 
             let res = client.post("https://www.googleapis.com/calendar/v3/calendars/primary/events")
@@ -87,12 +88,17 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
                 let cal_json: serde_json::Value = resp.json().await.unwrap_or_default();
                 if let Some(events_list) = cal_json["items"].as_array() {
                     for evt in events_list {
+                        let status = evt["status"].as_str().unwrap_or("confirmed");
+                        if status == "cancelled" {
+                            continue;
+                        }
+
                         let evt_id = evt["id"].as_str().unwrap_or("").to_string();
                         let evt_summary = evt["summary"].as_str().unwrap_or("Upcoming Event").to_string();
                         let evt_date = evt["start"]["dateTime"]
                             .as_str()
                             .or_else(|| evt["start"]["date"].as_str())
-                            .unwrap_or("2026-08-01T10:00:00Z")
+                            .unwrap_or("2026-08-01T10:00:00+01:00")
                             .to_string();
 
                         let record = SyncedCalendarEvent {
@@ -111,6 +117,7 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
             }
         }
     }
+
 
     let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
     db::get_synced_calendar_events(&conn).map_err(|e| e.to_string())

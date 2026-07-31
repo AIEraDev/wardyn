@@ -87,11 +87,13 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                 if let Ok(res) = detail_res {
                     if res.status().is_success() {
                         let msg_json: serde_json::Value = res.json().await.unwrap_or_default();
+                        let thread_id = msg_json["threadId"].as_str().map(|s| s.to_string());
                         let snippet = msg_json["snippet"].as_str().unwrap_or("No snippet available").to_string();
 
                         let headers = msg_json["payload"]["headers"].as_array();
                         let mut sender = "Unknown Sender".to_string();
                         let mut subject = "".to_string();
+                        let mut message_id: Option<String> = None;
 
                         if let Some(h_list) = headers {
                             for h in h_list {
@@ -100,6 +102,8 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                                     sender = h["value"].as_str().unwrap_or("Unknown Sender").to_string();
                                 } else if name.eq_ignore_ascii_case("Subject") {
                                     subject = h["value"].as_str().unwrap_or("").to_string();
+                                } else if name.eq_ignore_ascii_case("Message-ID") || name.eq_ignore_ascii_case("Message-Id") {
+                                    message_id = h["value"].as_str().map(|s| s.to_string());
                                 }
                             }
                         }
@@ -131,6 +135,8 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                             confidence: 0.0,
                             created_at: now.clone(),
                             updated_at: now.clone(),
+                            thread_id: thread_id.clone(),
+                            message_id: message_id.clone(),
                         };
 
                         let analysis = ollama::client::classify_and_draft_item(&temp_item).await;
@@ -147,7 +153,10 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                             confidence: analysis.confidence,
                             created_at: now.clone(),
                             updated_at: now,
+                            thread_id,
+                            message_id,
                         };
+
 
                         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
                         if db::insert_queue_item(&conn, &item).is_ok() {

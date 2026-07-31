@@ -101,40 +101,53 @@ export const ContentTab: React.FC = () => {
       </div>
 
       {/* Cadence Scheduling Bar */}
-      <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-[rgba(74,143,194,0.16)] text-[#4A8FC2]">
-            <IconCalendarTime size={18} />
+      <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-[rgba(74,143,194,0.16)] text-[#4A8FC2]">
+              <IconCalendarTime size={18} />
+            </div>
+            <div>
+              <h4 className="text-xs font-semibold text-[#F0F4F8] m-0">Personal Brief Auto-Draft Cadence</h4>
+              <p className="text-[11px] text-[#7A8492] m-0">
+                Auto-drafts brief cards for review. <strong className="text-[#34D399]">Never auto-publishes unattended</strong> — human approval required.
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="text-xs font-semibold text-[#F0F4F8] m-0">Personal LinkedIn Post Frequency</h4>
-            <p className="text-[11px] text-[#7A8492] m-0">Auto-drafts high-impact personal briefs matching your executive voice</p>
+
+          <div className="flex items-center gap-1.5">
+            {(
+              [
+                { id: 'daily', label: '🗓️ Auto-Draft Daily' },
+                { id: 'every_2_days', label: '⚡ Auto-Draft 2 Days' },
+                { id: 'weekly', label: '📅 Auto-Draft Weekly' },
+                { id: 'manual', label: '🖐️ Manual Only' },
+              ] as const
+            ).map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setLinkedInCadence(c.id as PostCadence)}
+                className={`font-mono text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
+                  linkedInCadence === c.id
+                    ? 'bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] border-[rgba(74,143,194,0.35)]'
+                    : 'bg-[#181E27] text-[#7A8492] border-[#242B35] hover:text-[#F0F4F8]'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {(
-            [
-              { id: 'daily', label: '🗓️ Daily (9 AM)' },
-              { id: 'every_2_days', label: '⚡ Every 2 Days (Recommended)' },
-              { id: 'weekly', label: '📅 Weekly' },
-              { id: 'manual', label: '🖐️ Manual' },
-            ] as const
-          ).map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setLinkedInCadence(c.id as PostCadence)}
-              className={`font-mono text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
-                linkedInCadence === c.id
-                  ? 'bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] border-[rgba(74,143,194,0.35)]'
-                  : 'bg-[#181E27] text-[#7A8492] border-[#242B35] hover:text-[#F0F4F8]'
-              }`}
-            >
-              {c.label}
-            </button>
-          ))}
+        {/* Explicit Guardrail Notice */}
+        <div className="p-2.5 bg-[#181E27] rounded-lg border border-[#242B35] flex items-center justify-between font-mono text-[10px] text-[#9AA4B2]">
+          <span className="flex items-center gap-1.5 text-[#34D399]">
+            <IconCheck size={13} /> Strict Guardrail Active: Zero Unattended Publishing
+          </span>
+          <span className="text-[#7A8492]">All posts require manual approval click</span>
         </div>
       </div>
+
 
       {/* 🧠 Network Learning Radar Section (Feed Analysis & Vision AI) */}
       {linkedInSummary?.feed_insights && linkedInSummary.feed_insights.length > 0 && (

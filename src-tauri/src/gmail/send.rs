@@ -7,6 +7,7 @@ pub struct SendEmailRequest {
     pub recipient: String,
     pub subject: String,
     pub in_reply_to: Option<String>,
+    pub thread_id: Option<String>,
     pub body_text: String,
     pub test_override_recipient: Option<String>,
 }
@@ -38,7 +39,6 @@ pub async fn send_gmail_reply(
         None => return Err("Gmail is not connected. Please authenticate first.".into()),
     };
 
-
     let target_recipient = if let Some(ref override_email) = req.test_override_recipient {
         if !override_email.trim().is_empty() {
             override_email.trim()
@@ -52,24 +52,32 @@ pub async fn send_gmail_reply(
     // Construct RFC 2822 MIME message string
     let mut mime_message = String::new();
     mime_message.push_str(&format!("To: {}\r\n", target_recipient));
-    mime_message.push_str(&format!("Subject: Re: {}\r\n", req.subject.replace("Re: ", "").replace("RE: ", "")));
-    
+    let clean_subj = req.subject.replace("Re: ", "").replace("RE: ", "");
+    mime_message.push_str(&format!("Subject: Re: {}\r\n", clean_subj));
+
     if let Some(ref reply_header) = req.in_reply_to {
         if !reply_header.trim().is_empty() {
             mime_message.push_str(&format!("In-Reply-To: {}\r\n", reply_header.trim()));
             mime_message.push_str(&format!("References: {}\r\n", reply_header.trim()));
         }
     }
-    
+
     mime_message.push_str("Content-Type: text/plain; charset=UTF-8\r\n\r\n");
     mime_message.push_str(&req.body_text);
 
     // URL-safe Base64 Encoding as required by Gmail API raw field
     let raw_base64 = base64_url_encode(mime_message.as_bytes());
 
-    let send_payload = serde_json::json!({
+    let mut send_payload = serde_json::json!({
         "raw": raw_base64
     });
+
+    if let Some(ref th_id) = req.thread_id {
+        if !th_id.trim().is_empty() {
+            send_payload["threadId"] = serde_json::json!(th_id.trim());
+        }
+    }
+
 
     let client = reqwest::Client::new();
     let res = client.post("https://gmail.googleapis.com/gmail/v1/users/me/messages/send")

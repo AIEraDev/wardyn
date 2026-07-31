@@ -70,10 +70,16 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             flagged INTEGER NOT NULL,
             confidence REAL NOT NULL,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            thread_id TEXT,
+            message_id TEXT
         )",
         [],
     )?;
+
+    // Safe column migrations for existing databases
+    conn.execute("ALTER TABLE queue_items ADD COLUMN thread_id TEXT;", []).ok();
+    conn.execute("ALTER TABLE queue_items ADD COLUMN message_id TEXT;", []).ok();
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS credentials (
@@ -102,7 +108,7 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 }
 
 pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
-    let mut stmt = conn.prepare("SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at FROM queue_items ORDER BY created_at DESC")?;
+    let mut stmt = conn.prepare("SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id FROM queue_items ORDER BY created_at DESC")?;
     let items_iter = stmt.query_map([], |row| {
         let flagged_int: i32 = row.get(7)?;
         Ok(QueueItem {
@@ -117,6 +123,8 @@ pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
             confidence: row.get(8)?,
             created_at: row.get(9)?,
             updated_at: row.get(10)?,
+            thread_id: row.get(11)?,
+            message_id: row.get(12)?,
         })
     })?;
 
@@ -129,8 +137,8 @@ pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
 
 pub fn insert_queue_item(conn: &Connection, item: &QueueItem) -> Result<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO queue_items (id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT OR IGNORE INTO queue_items (id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             item.id,
             item.source,
@@ -142,11 +150,14 @@ pub fn insert_queue_item(conn: &Connection, item: &QueueItem) -> Result<()> {
             if item.flagged { 1 } else { 0 },
             item.confidence,
             item.created_at,
-            item.updated_at
+            item.updated_at,
+            item.thread_id,
+            item.message_id
         ],
     )?;
     Ok(())
 }
+
 
 pub fn update_status_and_draft(conn: &Connection, id: &str, status: &str, draft: Option<&str>) -> Result<()> {
     let now = now_iso();

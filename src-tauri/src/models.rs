@@ -13,4 +13,7 @@ pub struct QueueItem {
     pub confidence: f64,
     pub created_at: String,
     pub updated_at: String,
+    pub thread_id: Option<String>,
+    pub message_id: Option<String>,
 }
+

@@ -34,7 +34,10 @@ export interface QueueItem {
   confidence: number;
   created_at: string;
   updated_at: string;
+  thread_id?: string | null;
+  message_id?: string | null;
 }
+
 
 export interface SocialPost {
   id: string;

@@ -3,7 +3,7 @@
   <img src="src/wardyn.png" alt="Wardyn Logo" width="130" style="border-radius: 20px;" />
   <br />
   <h1>🛡️ Wardyn</h1>
-  <p><strong>Local-First Desktop Chief-of-Staff & Executive Sentinel</strong></p>
+  <p><strong>Local-First Desktop Chief-of-Staff & Executive Multi-Channel Sentinel</strong></p>
   
   <p>
     <a href="https://github.com/AIEraDev/wardyn"><img src="https://img.shields.io/badge/Tauri-v2.0-blue?logo=tauri" alt="Tauri v2" /></a>
@@ -19,13 +19,15 @@
 
 ## 🎯 Overview
 
-**Wardyn** sits quietly in the background on your desktop, monitors high-signal channels (Gmail & Google Calendar), triages what matters, auto-creates calendar deadlines, and drafts responses in your exact voice. 
+**Wardyn** sits quietly in the background on your desktop, monitors your executive channels (**Gmail, Slack, Discord, Telegram, iMessage, LinkedIn, Twitter/X, WhatsApp, Teams**), triages what matters, auto-creates calendar deadlines, and drafts responses in your exact voice.
 
 It reduces your daily involvement to three simple choices: **Approve**, **Edit**, or **Skip**. **Nothing ever sends without explicit human approval.**
 
 ```
                                   ┌────────────────────────┐
-                                  │   Incoming Messages    │
+                                  │ Multi-Channel Ingestion│
+                                  │ (Gmail, Slack, Telegram│
+                                  │  iMessage, LinkedIn, X)│
                                   └───────────┬────────────┘
                                               │
                                               ▼
@@ -45,8 +47,9 @@ It reduces your daily involvement to three simple choices: **Approve**, **Edit**
 
 ## ✨ Key Features
 
-- 🔐 **Local-First & Private**: Local SQLite storage (`wardyn.db`). Your emails, drafts, and credentials stay securely on your device.
-- 🤖 **Voice-Matched AI Drafting**: Powered by local LLMs (Ollama `qwen2.5` / `llama3`) trained on your specific email tone corpus (*concise, direct, warm, professional*).
+- 🌐 **OpenClaw-Style Multi-Channel Directory**: Native integration hub supporting Gmail, Google Calendar, Slack, Discord, Telegram, iMessage, LinkedIn, Twitter/X, WhatsApp, and Microsoft Teams.
+- 🔐 **Local-First & Private**: Local SQLite storage (`wardyn.db`). Your messages, drafts, and credentials stay securely on your device.
+- 🤖 **Voice-Matched AI Drafting**: Powered by local LLMs (Ollama `qwen2.5` / `llama3`) trained on your specific voice corpus (*concise, direct, warm, professional*).
 - 🛡️ **Confidence Guardrails**: Items with model confidence `< 60%` surface as *"Uncertain — manual review required"* without guessing hallucinated drafts.
 - ⚠️ **Visa & High-Risk Safeguards**: Automatic keyword detection (UKVI, Home Office, Visa deadlines) with warning badges and mandatory multi-step approval confirmation modals before sending.
 - 📅 **Additive Calendar Sync**: Auto-creates Google Calendar events for deadline emails without requiring send approval (reversible and additive).
@@ -56,14 +59,20 @@ It reduces your daily involvement to three simple choices: **Approve**, **Edit**
 
 ---
 
-## 🗺️ Roadmap (Phase 2 Expansion)
+## 🔌 Multi-Channel Directory Support
 
-Wardyn is expanding to become the unified chief-of-staff sentinel across all your communication channels:
-
-- 🟢 **WhatsApp Connector**: Ingest priority direct messages and draft contextual quick replies.
-- 💼 **LinkedIn Connector**: Triage professional network outreach and generate content briefs.
-- 𝕏 **X (Twitter) Connector**: Monitor priority DMs and high-signal social mentions.
-- 💬 **Slack Connector**: Executive triage for urgent workspace mentions and channel threads.
+| Channel | Category | Status | Capability |
+| :--- | :--- | :---: | :--- |
+| ✉️ **Gmail** | Email | Active | PKCE OAuth 2.0 inbox triage, thread monitoring & voice drafting |
+| 📅 **Google Calendar** | Email | Active | Auto-sync deadline events & appointment requests |
+| 💼 **LinkedIn** | Social | Active | Executive network outreach & build-in-public post briefs |
+| 𝕏 **Twitter / X** | Social | Active | High-signal DMs, social mentions & viral thread drafting |
+| 💬 **Slack** | Work | Configurable | Channels, DMs, workspace mentions & thread triaging |
+| 🤖 **Discord** | Work | Configurable | Server channels, direct messages & bot command triggers |
+| ✈️ **Telegram** | Messaging | Configurable | Bot API integration for priority direct messaging |
+| 🍎 **iMessage** | Messaging | Configurable | Native macOS messaging bridge for priority contact triaging |
+| 🟢 **WhatsApp** | Messaging | Configurable | Priority direct messages & scheduled status updates |
+| 🟦 **Microsoft Teams** | Work | Configurable | Enterprise conversations & Bot Framework bridge |
 
 ---
 
@@ -72,7 +81,7 @@ Wardyn is expanding to become the unified chief-of-staff sentinel across all you
 | Layer | Technology | Purpose |
 | :--- | :--- | :--- |
 | **Desktop Shell** | Tauri v2 + Rust | Secure native windowing, OS autostart, system notifications, and background IPC commands |
-| **Frontend UI** | React 19 + TypeScript 5.8 | Reactive daily brief interface, tab navigation, and keyboard/pointer accessibility |
+| **Frontend UI** | React 19 + TypeScript 5.8 | Reactive daily brief interface, multi-channel directory, and keyboard accessibility |
 | **Styling** | Tailwind CSS v4 + Tabler Icons | Custom Sentinel Blue color palette & typography (Inter & JetBrains Mono) |
 | **State Engine** | Zustand 5 | Single source-of-truth state management mirroring local SQLite tables |
 | **Database** | SQLite (`rusqlite`) | Single source-of-truth for queue items, credentials, and calendar event hashes |
@@ -100,7 +109,7 @@ cd wardyn
 npm install
 ```
 
-### 2. Configure Google OAuth Credentials
+### 2. Configure Credentials
 
 Create a `.env` file in the project root:
 
@@ -114,8 +123,6 @@ Edit `.env` with your Google Cloud OAuth 2.0 credentials:
 GOOGLE_CLIENT_ID="your_client_id.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET="your_client_secret"
 ```
-
-*(Note: In Google Cloud Console, select **Application Type: Desktop app** for OAuth credentials).*
 
 ### 3. Run in Development Mode
 

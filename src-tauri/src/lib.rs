@@ -11,6 +11,7 @@ use tauri::{State, Manager};
 use models::QueueItem;
 use db::SyncedCalendarEvent;
 use gmail::send::SendEmailRequest;
+use linkedin::api::RealLinkedInSummary;
 
 pub struct DbState(pub Mutex<Connection>);
 
@@ -53,6 +54,11 @@ fn get_linkedin_auth_status(state: State<'_, DbState>) -> Result<Option<String>,
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let creds = db::get_credentials(&conn, "linkedin").map_err(|e| e.to_string())?;
     Ok(creds.and_then(|c| c.email))
+}
+
+#[tauri::command]
+async fn fetch_linkedin_timeline_command(state: State<'_, DbState>) -> Result<RealLinkedInSummary, String> {
+    linkedin::api::fetch_real_linkedin_summary(&state.0).await
 }
 
 #[tauri::command]
@@ -131,6 +137,7 @@ pub fn run() {
             get_gmail_auth_status,
             start_linkedin_auth,
             get_linkedin_auth_status,
+            fetch_linkedin_timeline_command,
             sync_gmail_messages,
             disconnect_gmail,
             process_item_with_ollama,

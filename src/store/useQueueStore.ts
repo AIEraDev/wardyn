@@ -159,11 +159,11 @@ interface QueueStore {
 }
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
-  items: [], // 100% Live database / API data
+  items: [],
   socialPosts: [],
   channels: INITIAL_CHANNELS,
   calendarEvents: [],
-  linkedInSummary: null,
+  linkedInSummary: null, // ZERO DUMMY DATA: null until fetched from real API
   linkedInAccount: null,
   activeTab: 'today',
   isLoading: false,
@@ -553,36 +553,20 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   syncLinkedInTimeline: async () => {
-    const account = get().linkedInAccount || 'abdulkabirmusa';
-    set({
-      linkedInSummary: {
-        profile_name: account,
-        headline: 'Founder & Software Engineer | Building Wardyn Local-First Sentinel',
-        total_posts_analyzed: 5,
-        total_impressions: '18,650+',
-        top_performing_topic: 'Local-First Desktop Architecture & Tauri v2 Performance',
-        executive_summary: `Ollama local analysis completed for personal profile ${account}: 18.6k total impressions across recent activity. Top engagement driven by local-first Tauri v2 architecture breakdowns and private voice drafting.`,
-        recent_posts: [
-          {
-            id: 'lp-1',
-            text: 'Building local-first desktop software with Tauri v2 and Rust. Why sacrifice privacy for AI intelligence when you can run both locally?',
-            engagement: '5.4k views • 240 likes • 42 comments',
-            date: 'Just now',
-          },
-          {
-            id: 'lp-2',
-            text: 'Shipped Clypra text-effects rewrite. Zero-latency rendering and custom web presets built for modern web apps.',
-            engagement: '3.1k views • 112 likes • 28 comments',
-            date: '3 days ago',
-          },
-        ],
-      },
-    });
-
-    await get().sendDesktopNotification(
-      '💼 LinkedIn Personal Profile Synced',
-      `Ollama summarized personal profile timeline & engagement for ${account}!`
-    );
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const summary = await invoke<LinkedInTimelineSummary>('fetch_linkedin_timeline_command');
+        set({ linkedInSummary: summary });
+        await get().sendDesktopNotification(
+          '💼 LinkedIn Personal Profile Synced',
+          `Fetched real LinkedIn API timeline for ${summary.profile_name}`
+        );
+      } catch (err: any) {
+        console.warn('LinkedIn live API sync error:', err);
+        set({ error: err.toString() });
+      }
+    }
   },
 
   checkGmailStatus: async () => {

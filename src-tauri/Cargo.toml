@@ -23,4 +23,6 @@ urlencoding = "2.1"
 base64 = "0.22"
 dotenvy = "0.15"
 keyring = "3.0"
+lazy_static = "1.5"
+
 

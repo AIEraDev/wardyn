@@ -203,7 +203,16 @@ interface QueueStore {
   fetchWeeklyReview: () => Promise<void>;
   refreshWeeklyReview: () => Promise<void>;
   recordFeedInteraction: (itemId: string, itemSource: string, tags: string, action: string) => Promise<void>;
+
+  // Phase D: Audio Brief & Vault Sync
+  isPlayingAudio: boolean;
+  vaultPath: string | null;
+  speakText: (text: string) => Promise<void>;
+  stopSpeech: () => Promise<void>;
+  fetchVaultPath: () => Promise<void>;
+  setVaultPath: (path: string) => Promise<void>;
 }
+
 
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
@@ -234,6 +243,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   decisions: [],
   weeklyReview: null,
   weeklyReviewLoading: false,
+  isPlayingAudio: false,
+  vaultPath: null,
+
 
 
 
@@ -1016,7 +1028,57 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
     }
   },
+
+  speakText: async (text: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        set({ isPlayingAudio: true });
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('speak_text_command', { text });
+      } catch (err) {
+        console.error('Speech synthesis error:', err);
+        set({ isPlayingAudio: false });
+      }
+    }
+  },
+
+  stopSpeech: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        set({ isPlayingAudio: false });
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('stop_speech_command');
+      } catch (err) {
+        console.error('Stop speech error:', err);
+      }
+    }
+  },
+
+  fetchVaultPath: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const path = await invoke<string | null>('get_vault_path_command');
+        set({ vaultPath: path });
+      } catch (err) {
+        console.error('Fetch vault path error:', err);
+      }
+    }
+  },
+
+  setVaultPath: async (path: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_vault_path_command', { path });
+        set({ vaultPath: path });
+      } catch (err) {
+        console.error('Set vault path error:', err);
+      }
+    }
+  },
 }));
+
 
 
 

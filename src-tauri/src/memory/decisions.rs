@@ -23,8 +23,10 @@ pub fn log_decision(
     };
     let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
     db::save_decision(&conn, &item).map_err(|e| e.to_string())?;
+    crate::vault::sync_decision_to_vault(conn_mutex, &item).ok();
     Ok(item)
 }
+
 
 pub fn fetch_decisions(
     conn_mutex: &std::sync::Mutex<rusqlite::Connection>,

@@ -26,6 +26,7 @@ export default function App() {
   const fetchKnowledgeItems = useQueueStore((state) => state.fetchKnowledgeItems);
   const fetchDecisions = useQueueStore((state) => state.fetchDecisions);
   const fetchWeeklyReview = useQueueStore((state) => state.fetchWeeklyReview);
+  const fetchVaultPath = useQueueStore((state) => state.fetchVaultPath);
 
 
   // 1. Startup Boot Auto-Sync & Notification Listener
@@ -38,11 +39,11 @@ export default function App() {
 
       // Auto-generate morning brief on first launch of the day (cached if already done)
       fetchMorningBrief();
-      // Load personal memory
+      // Load personal memory & vault settings
       fetchKnowledgeItems();
       fetchDecisions();
-      // Load weekly review
       fetchWeeklyReview();
+      fetchVaultPath();
 
 
       // If Gmail is connected, run immediate boot inbox sync & triaging

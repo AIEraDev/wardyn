@@ -34,7 +34,7 @@ pub async fn capture_and_tag(
         db::update_knowledge_item_tags(&conn, &id, &tags, &summary).ok();
     }
 
-    // Return updated item
+    // Return updated item and sync to Markdown vault if path is configured
     let updated = KnowledgeItem {
         id,
         content: item.content,
@@ -44,8 +44,10 @@ pub async fn capture_and_tag(
         source: item.source,
         created_at: item.created_at,
     };
+    crate::vault::sync_knowledge_to_vault(conn_mutex, &updated).ok();
     Ok(updated)
 }
+
 
 async fn auto_tag_with_ollama(content: &str, url: Option<&str>) -> (String, String) {
     let url_line = url.map(|u| format!("URL: {}", u)).unwrap_or_default();

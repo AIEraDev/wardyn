@@ -9,6 +9,9 @@ pub mod feeds;
 pub mod brief;
 pub mod memory;
 pub mod intelligence;
+pub mod speech;
+pub mod vault;
+
 
 
 
@@ -237,6 +240,28 @@ async fn refresh_weekly_review_command(state: State<'_, DbState>) -> Result<Stri
     intelligence::weekly::get_or_generate_weekly_review(&state.0).await
 }
 
+#[tauri::command]
+fn speak_text_command(text: String) -> Result<(), String> {
+    speech::speak_text(&text)
+}
+
+#[tauri::command]
+fn stop_speech_command() {
+    speech::stop_speech();
+}
+
+#[tauri::command]
+fn get_vault_path_command(state: State<'_, DbState>) -> Result<Option<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::get_app_setting(&conn, "vault_path").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_vault_path_command(path: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::set_app_setting(&conn, "vault_path", &path).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok(); // Automatically load .env file
@@ -285,7 +310,11 @@ pub fn run() {
             get_decisions_command,
             record_feed_interaction_command,
             get_weekly_review_command,
-            refresh_weekly_review_command
+            refresh_weekly_review_command,
+            speak_text_command,
+            stop_speech_command,
+            get_vault_path_command,
+            set_vault_path_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

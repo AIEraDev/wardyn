@@ -10,7 +10,10 @@ import {
   IconBrain,
   IconLoader2,
   IconChartBar,
+  IconVolume,
+  IconPlayerStop,
 } from '@tabler/icons-react';
+
 
 import { useQueueStore } from '../store/useQueueStore';
 import { ReplyCard } from './ReplyCard';
@@ -34,7 +37,11 @@ export const TodayBrief: React.FC = () => {
     weeklyReview,
     weeklyReviewLoading,
     refreshWeeklyReview,
+    isPlayingAudio,
+    speakText,
+    stopSpeech,
   } = useQueueStore();
+
 
 
 
@@ -152,17 +159,40 @@ export const TodayBrief: React.FC = () => {
             <span className="text-xs font-semibold text-[#F0F4F8]">Morning Intelligence Brief</span>
             <span className="font-mono text-[10px] bg-[rgba(52,211,153,0.12)] text-[#34D399] px-1.5 py-0.5 rounded border border-[rgba(52,211,153,0.25)]">AI · Local</span>
           </div>
-          <button
-            onClick={refreshMorningBrief}
-            disabled={morningBriefLoading}
-            title="Regenerate Brief"
-            className="p-1.5 text-[#7A8492] hover:text-[#4A8FC2] hover:bg-[rgba(74,143,194,0.1)] rounded-md transition-colors cursor-pointer disabled:opacity-40"
-          >
-            {morningBriefLoading
-              ? <IconLoader2 size={13} className="animate-spin" />
-              : <IconRefresh size={13} />}
-          </button>
+          <div className="flex items-center gap-1">
+            {morningBrief && (
+              <button
+                onClick={() => {
+                  if (isPlayingAudio) {
+                    stopSpeech();
+                  } else {
+                    speakText(morningBrief);
+                  }
+                }}
+                title={isPlayingAudio ? 'Stop Audio' : 'Listen Aloud (macOS Say)'}
+                className={`px-2 py-1 text-xs font-mono rounded-md transition-colors flex items-center gap-1 cursor-pointer ${
+                  isPlayingAudio
+                    ? 'bg-[rgba(239,68,68,0.2)] text-[#EF4444] border border-[rgba(239,68,68,0.3)] animate-pulse'
+                    : 'text-[#7A8492] hover:text-[#4A8FC2] hover:bg-[rgba(74,143,194,0.1)]'
+                }`}
+              >
+                {isPlayingAudio ? <IconPlayerStop size={13} /> : <IconVolume size={13} />}
+                <span>{isPlayingAudio ? 'Stop' : 'Listen'}</span>
+              </button>
+            )}
+            <button
+              onClick={refreshMorningBrief}
+              disabled={morningBriefLoading}
+              title="Regenerate Brief"
+              className="p-1.5 text-[#7A8492] hover:text-[#4A8FC2] hover:bg-[rgba(74,143,194,0.1)] rounded-md transition-colors cursor-pointer disabled:opacity-40"
+            >
+              {morningBriefLoading
+                ? <IconLoader2 size={13} className="animate-spin" />
+                : <IconRefresh size={13} />}
+            </button>
+          </div>
         </div>
+
 
         {/* Body */}
         <div className="px-4 py-3">

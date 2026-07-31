@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh, IconTrash, IconFlame } from '@tabler/icons-react';
+import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh, IconTrash, IconFlame, IconFolder } from '@tabler/icons-react';
+
+
 import { useQueueStore } from '../store/useQueueStore';
 import { SupportedLanguage } from '../i18n/translations';
 
@@ -106,7 +108,18 @@ export const SettingsTab: React.FC = () => {
     syncIntervalMinutes,
     setSyncInterval,
     sendDesktopNotification,
+    vaultPath,
+    setVaultPath,
   } = useQueueStore();
+
+
+  const [vaultInput, setVaultInput] = useState(vaultPath || '');
+  const [vaultSaved, setVaultSaved] = useState(false);
+
+  useEffect(() => {
+    if (vaultPath !== null) setVaultInput(vaultPath);
+  }, [vaultPath]);
+
 
 
   const [installedModels, setInstalledModels] = useState<string[]>([]);
@@ -440,6 +453,55 @@ export const SettingsTab: React.FC = () => {
         </div>
       </div>
 
+      {/* Local Markdown Vault Sync (Obsidian / Logseq) */}
+      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-[#181E27] text-[#4A8FC2] border border-[#242B35]">
+              <IconFolder size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#F0F4F8]">Local Markdown Vault Sync (Obsidian / Logseq)</p>
+              <p className="text-xs text-[#9AA4B2]">Mirror all captures, notes, and decisions into a local directory as .md files</p>
+            </div>
+          </div>
+          {vaultPath && (
+            <span className="font-mono text-[10px] bg-[rgba(52,211,153,0.12)] text-[#34D399] px-2 py-1 rounded border border-[rgba(52,211,153,0.25)]">
+              Active Sync
+            </span>
+          )}
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setVaultPath(vaultInput.trim());
+            setVaultSaved(true);
+            setTimeout(() => setVaultSaved(false), 2500);
+          }}
+          className="flex gap-2 pt-1"
+        >
+          <input
+            id="vault-path-input"
+            type="text"
+            value={vaultInput}
+            onChange={(e) => setVaultInput(e.target.value)}
+            placeholder="/Users/username/Documents/ObsidianVault"
+            className="flex-1 bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+          />
+          <button
+            type="submit"
+            className="px-3 py-2 bg-[#4A8FC2] text-black text-xs font-semibold rounded-lg hover:bg-[#5b9bd1] transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            {vaultSaved ? <IconCheck size={13} /> : <IconFolder size={13} />}
+            {vaultSaved ? 'Saved!' : 'Save Path'}
+          </button>
+        </form>
+        <p className="text-[10px] text-[#4A5568] font-mono">
+          Each capture and decision creates a `.md` file with clean YAML frontmatter for automatic Obsidian Graph linking.
+        </p>
+      </div>
+
       {/* Tone & Corpus Preferences */}
       <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
         <div className="flex items-center gap-3">
@@ -458,3 +520,4 @@ export const SettingsTab: React.FC = () => {
     </div>
   );
 };
+

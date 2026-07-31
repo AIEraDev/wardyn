@@ -61,84 +61,6 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         [],
     )?;
 
-    // Check if queue_items is empty; if so, insert Phase 1 mock seed items
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM queue_items", [], |r| r.get(0))?;
-    if count == 0 {
-        let mock_items = vec![
-            QueueItem {
-                id: "q-1".into(),
-                source: "gmail".into(),
-                kind: "reply".into(),
-                sender: "UK Visas and Immigration <noreply@homeoffice.gov.uk>".into(),
-                preview: "Additional documents required for your Global Talent application".into(),
-                draft_text: Some("Thanks for the update, I have attached the requested reference letters and will follow up by Friday.".into()),
-                status: "pending".into(),
-                flagged: true,
-                confidence: 0.94,
-                created_at: "2026-07-30T10:00:00Z".into(),
-                updated_at: "2026-07-30T10:00:00Z".into(),
-            },
-            QueueItem {
-                id: "q-2".into(),
-                source: "gmail".into(),
-                kind: "reply".into(),
-                sender: "Stackkith Organizers <hello@stackkith.org>".into(),
-                preview: "Can you confirm the workshop time for next event?".into(),
-                draft_text: Some("Confirmed, workshop starts 3pm WAT, I will share the meet link Thursday morning.".into()),
-                status: "pending".into(),
-                flagged: false,
-                confidence: 0.88,
-                created_at: "2026-07-30T11:30:00Z".into(),
-                updated_at: "2026-07-30T11:30:00Z".into(),
-            },
-            QueueItem {
-                id: "q-3".into(),
-                source: "gmail".into(),
-                kind: "reply".into(),
-                sender: "Venture Partner <investor@capital.io>".into(),
-                preview: "Quick sync regarding Clypra text-effects rewrite milestone".into(),
-                draft_text: None,
-                status: "pending".into(),
-                flagged: false,
-                confidence: 0.42,
-                created_at: "2026-07-30T14:15:00Z".into(),
-                updated_at: "2026-07-30T14:15:00Z".into(),
-            },
-        ];
-
-        for item in mock_items {
-            conn.execute(
-                "INSERT INTO queue_items (id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                params![
-                    item.id,
-                    item.source,
-                    item.kind,
-                    item.sender,
-                    item.preview,
-                    item.draft_text,
-                    item.status,
-                    if item.flagged { 1 } else { 0 },
-                    item.confidence,
-                    item.created_at,
-                    item.updated_at
-                ],
-            )?;
-        }
-
-        // Seed initial mock calendar sync log for Phase 1 mockup consistency
-        conn.execute(
-            "INSERT OR IGNORE INTO calendar_events (id, queue_item_id, event_id, summary, event_date, created_at)
-             VALUES ('cal-1', 'q-1', 'evt-101', 'UKVI Document Deadline', '2026-08-01T17:00:00Z', '2026-07-30T10:00:00Z')",
-            [],
-        )?;
-        conn.execute(
-            "INSERT OR IGNORE INTO calendar_events (id, queue_item_id, event_id, summary, event_date, created_at)
-             VALUES ('cal-2', 'q-1', 'evt-102', 'Global Talent Follow-up', '2026-08-05T12:00:00Z', '2026-07-30T10:00:00Z')",
-            [],
-        )?;
-    }
-
     Ok(())
 }
 
@@ -190,7 +112,7 @@ pub fn insert_queue_item(conn: &Connection, item: &QueueItem) -> Result<()> {
 }
 
 pub fn update_status_and_draft(conn: &Connection, id: &str, status: &str, draft: Option<&str>) -> Result<()> {
-    let now = "2026-07-30T23:30:00Z";
+    let now = "2026-07-31T01:50:00Z";
     conn.execute(
         "UPDATE queue_items SET status = ?1, draft_text = ?2, updated_at = ?3 WHERE id = ?4",
         params![status, draft, now, id],

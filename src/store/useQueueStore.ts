@@ -11,71 +11,6 @@ export interface SyncedCalendarEvent {
   created_at: string;
 }
 
-const INITIAL_MOCK_ITEMS: QueueItem[] = [
-  {
-    id: 'q-1',
-    source: 'gmail',
-    kind: 'reply',
-    sender: 'UK Visas and Immigration <noreply@homeoffice.gov.uk>',
-    preview: 'Additional documents required for your Global Talent application',
-    draft_text: 'Thanks for the update, I have attached the requested reference letters and will follow up by Friday.',
-    status: 'pending',
-    flagged: true,
-    confidence: 0.94,
-    created_at: '2026-07-30T10:00:00Z',
-    updated_at: '2026-07-30T10:00:00Z',
-  },
-  {
-    id: 'q-2',
-    source: 'gmail',
-    kind: 'reply',
-    sender: 'Stackkith Organizers <hello@stackkith.org>',
-    preview: 'Can you confirm the workshop time for next event?',
-    draft_text: 'Confirmed, workshop starts 3pm WAT, I will share the meet link Thursday morning.',
-    status: 'pending',
-    flagged: false,
-    confidence: 0.88,
-    created_at: '2026-07-30T11:30:00Z',
-    updated_at: '2026-07-30T11:30:00Z',
-  },
-  {
-    id: 'q-3',
-    source: 'gmail',
-    kind: 'reply',
-    sender: 'Venture Partner <investor@capital.io>',
-    preview: 'Quick sync regarding Clypra text-effects rewrite milestone',
-    draft_text: null,
-    status: 'pending',
-    flagged: false,
-    confidence: 0.42,
-    created_at: '2026-07-30T14:15:00Z',
-    updated_at: '2026-07-30T14:15:00Z',
-  },
-];
-
-const INITIAL_SOCIAL_POSTS: SocialPost[] = [
-  {
-    id: 'soc-1',
-    platform: 'linkedin',
-    topic: 'Clypra Text-Effects Milestone',
-    content: 'Shipped the core text-effects engine rewrite in Clypra this week. Clean API, zero-latency rendering, and 30+ visual presets ported. Building tools that feel like magic. #BuildInPublic #WebDev #ReactJS',
-    hashtags: ['#BuildInPublic', '#WebDev', '#ReactJS'],
-    media_cue: '20s screen recording of the effect picker in action',
-    status: 'pending',
-    created_at: '2026-07-30T09:00:00Z',
-  },
-  {
-    id: 'soc-2',
-    platform: 'twitter',
-    topic: 'Wardyn Local-First Chief of Staff Launch',
-    content: 'Why build another cloud email wrapper when you can have a local-first desktop chief of staff?\n\nIntroducing Wardyn 🛡️\n\n1/ Runs locally on Tauri + Rust\n2/ Voice-matched drafts via local Ollama LLM\n3/ Zero unattended sends\n\nCode live on GitHub 🚀 #Tauri #Rust #BuildInPublic',
-    hashtags: ['#Tauri', '#Rust', '#BuildInPublic'],
-    media_cue: 'Screenshot of Wardyn Sentinel Blue dark mode dashboard',
-    status: 'pending',
-    created_at: '2026-07-30T11:00:00Z',
-  },
-];
-
 const INITIAL_CHANNELS: ChannelConfig[] = [
   {
     id: 'gmail',
@@ -91,8 +26,7 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     category: 'email',
     description: 'Auto-sync deadline events and appointment requests automatically',
     iconName: 'IconCalendar',
-    status: 'connected',
-    accountLabel: 'Auto-Sync Active',
+    status: 'disconnected',
   },
   {
     id: 'slack',
@@ -130,7 +64,7 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     id: 'linkedin',
     name: 'LinkedIn',
     category: 'social',
-    description: 'Executive network outreach, personal profile (abdulkabirmusa) timeline ingestion & content briefs',
+    description: 'Executive network outreach, personal profile timeline ingestion & content briefs',
     iconName: 'IconBrandLinkedin',
     status: 'disconnected',
   },
@@ -140,8 +74,7 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     category: 'social',
     description: 'High-signal DMs, social mentions, and viral thread drafting',
     iconName: 'IconBrandX',
-    status: 'connected',
-    accountLabel: 'Content Engine Active',
+    status: 'disconnected',
   },
   {
     id: 'whatsapp',
@@ -226,27 +159,10 @@ interface QueueStore {
 }
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
-  items: INITIAL_MOCK_ITEMS,
-  socialPosts: INITIAL_SOCIAL_POSTS,
+  items: [], // 100% Live database / API data
+  socialPosts: [],
   channels: INITIAL_CHANNELS,
-  calendarEvents: [
-    {
-      id: 'cal-1',
-      queue_item_id: 'q-1',
-      event_id: 'evt-101',
-      summary: 'UKVI Document Deadline',
-      event_date: '2026-08-01T17:00:00Z',
-      created_at: '2026-07-30T10:00:00Z',
-    },
-    {
-      id: 'cal-2',
-      queue_item_id: 'q-1',
-      event_id: 'evt-102',
-      summary: 'Global Talent Follow-up',
-      event_date: '2026-08-05T12:00:00Z',
-      created_at: '2026-07-30T10:00:00Z',
-    },
-  ],
+  calendarEvents: [],
   linkedInSummary: null,
   linkedInAccount: null,
   activeTab: 'today',
@@ -344,7 +260,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         set({ isLoading: false });
       }
     } catch (err: any) {
-      console.warn('Backend IPC not active, using local store:', err);
+      console.warn('Backend IPC not active:', err);
       set({ isLoading: false });
     }
   },
@@ -683,8 +599,18 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             ),
           }));
         }
+
+        const linkedinAccount = await invoke<string | null>('get_linkedin_auth_status');
+        if (linkedinAccount) {
+          set({ linkedInAccount: linkedinAccount });
+          set((state) => ({
+            channels: state.channels.map((c) =>
+              c.id === 'linkedin' ? { ...c, status: 'connected', accountLabel: linkedinAccount } : c
+            ),
+          }));
+        }
       } catch (err) {
-        console.error('Failed to check Gmail status:', err);
+        console.error('Failed to check auth status:', err);
       }
     }
   },

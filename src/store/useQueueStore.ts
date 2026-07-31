@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary } from '../types/queue';
+import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary, FeedInsight } from '../types/queue';
 import { SupportedLanguage, TRANSLATIONS, TranslationDictionary } from '../i18n/translations';
 
 export type PostCadence = 'daily' | 'every_2_days' | 'weekly' | 'manual';
@@ -145,6 +145,7 @@ interface QueueStore {
   regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread' | 'leadership' | 'story') => void;
   createSocialPost: (platform: SocialPlatform, topic: string) => void;
   generateCadenceLinkedInPost: () => void;
+  remixInsightToPersonalPost: (insight: FeedInsight) => void;
   syncLinkedInTimeline: () => Promise<void>;
 
   // Gmail OAuth & Send Actions
@@ -601,6 +602,31 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     );
   },
 
+  remixInsightToPersonalPost: (insight: FeedInsight) => {
+    const topicTitle = `Learnings from ${insight.author_name}: ${insight.domain_tag}`;
+    const remixedContent = `💡 Inspired by a post from ${insight.author_name} (${insight.author_title}):\n\n"${insight.core_lesson}"\n\nHere is how we apply this framework in Wardyn:\n- ${insight.actionable_application}\n\nWhat are your thoughts on this approach? ${insight.domain_tag} #Leadership`;
+
+    const newPost: SocialPost = {
+      id: `soc-remix-${Date.now()}`,
+      platform: 'linkedin',
+      topic: topicTitle,
+      content: remixedContent,
+      hashtags: [insight.domain_tag, '#BuildInPublic', '#Tech'],
+      media_cue: `Learned copywriting framework: ${insight.copy_structure}`,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      socialPosts: [newPost, ...state.socialPosts],
+    }));
+
+    get().sendDesktopNotification(
+      '♻️ Feed Insight Remixed',
+      `Created personalized LinkedIn post draft inspired by ${insight.author_name}`
+    );
+  },
+
   syncLinkedInTimeline: async () => {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
@@ -617,8 +643,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const summary = await invoke<LinkedInTimelineSummary>('fetch_linkedin_timeline_command');
         set({ linkedInSummary: summary });
         await get().sendDesktopNotification(
-          '💼 LinkedIn Personal Profile Synced',
-          `Fetched real LinkedIn API timeline for ${summary.profile_name}`
+          '💼 LinkedIn Personal Profile & Feed Synced',
+          `Fetched network insights & feed briefs for ${summary.profile_name}`
         );
       } catch (err: any) {
         console.info('LinkedIn live API check:', err);

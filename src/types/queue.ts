@@ -46,6 +46,19 @@ export interface SocialPost {
   created_at: string;
 }
 
+export interface FeedInsight {
+  id: string;
+  author_name: string;
+  author_title: string;
+  original_snippet: string;
+  core_lesson: string;
+  copy_structure: string;
+  actionable_application: string;
+  domain_tag: string;
+  engagement: string;
+  created_at: string;
+}
+
 export interface LinkedInTimelineSummary {
   profile_name: string;
   headline: string;
@@ -59,4 +72,5 @@ export interface LinkedInTimelineSummary {
     engagement: string;
     date: string;
   }>;
+  feed_insights?: FeedInsight[];
 }

@@ -11,6 +11,8 @@ import {
   IconChartBar,
   IconCalendarTime,
   IconWand,
+  IconBulb,
+  IconRepeat,
 } from '@tabler/icons-react';
 import { useQueueStore, PostCadence } from '../store/useQueueStore';
 import { SocialPlatform } from '../types/queue';
@@ -26,6 +28,7 @@ export const ContentTab: React.FC = () => {
     regenerateSocialPost,
     createSocialPost,
     generateCadenceLinkedInPost,
+    remixInsightToPersonalPost,
     syncLinkedInTimeline,
   } = useQueueStore();
 
@@ -64,7 +67,7 @@ export const ContentTab: React.FC = () => {
       <div className="flex items-baseline justify-between mb-2">
         <div>
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Content & Personal Post Engine</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn Timeline Intelligence & Cadence Scheduler</p>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn Feed Learning, Network Intelligence & Cadence Scheduler</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Generate Cadence Post Button */}
@@ -127,6 +130,77 @@ export const ContentTab: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* 🧠 Network Learning Radar Section (Feed Analysis & Insights) */}
+      {linkedInSummary?.feed_insights && linkedInSummary.feed_insights.length > 0 && (
+        <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-[rgba(74,143,194,0.16)] text-[#4A8FC2]">
+                <IconBulb size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">Network Learning Radar (Feed Analysis)</h3>
+                <p className="text-xs text-[#7A8492] m-0">Deconstructed insights & copywriting patterns from top network posts</p>
+              </div>
+            </div>
+
+            <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-2.5 py-1 rounded border border-[rgba(52,211,153,0.3)]">
+              3 Insights Distilled
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {linkedInSummary.feed_insights.map((insight) => (
+              <div
+                key={insight.id}
+                className="p-4 rounded-xl bg-[#181E27] border border-[#242B35] flex flex-col justify-between space-y-3 hover:border-[rgba(74,143,194,0.4)] transition-all"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] px-2 py-0.5 rounded border border-[rgba(74,143,194,0.25)]">
+                      {insight.domain_tag}
+                    </span>
+                    <span className="font-mono text-[10px] text-[#7A8492]">{insight.engagement}</span>
+                  </div>
+
+                  <div>
+                    <h5 className="text-xs font-semibold text-[#F0F4F8] m-0">{insight.author_name}</h5>
+                    <p className="text-[10px] text-[#7A8492] font-mono m-0">{insight.author_title}</p>
+                  </div>
+
+                  <p className="text-xs text-[#9AA4B2] italic bg-[#151A21] p-2.5 rounded border border-[#242B35] m-0">
+                    "{insight.original_snippet}"
+                  </p>
+
+                  <div className="space-y-1 pt-1 text-xs">
+                    <p className="text-[#F0F4F8] m-0">
+                      <strong className="text-[#4A8FC2]">💡 Lesson: </strong>
+                      {insight.core_lesson}
+                    </p>
+                    <p className="text-[#9AA4B2] text-[11px] m-0">
+                      <strong className="text-[#E8A23D]">✍️ Pattern: </strong>
+                      {insight.copy_structure}
+                    </p>
+                    <p className="text-[#34D399] text-[11px] m-0">
+                      <strong className="text-[#34D399]">🛠️ Apply: </strong>
+                      {insight.actionable_application}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => remixInsightToPersonalPost(insight)}
+                  className="w-full py-1.5 font-mono text-xs bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] hover:bg-[rgba(74,143,194,0.25)] border border-[rgba(74,143,194,0.35)] rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <IconRepeat size={13} /> Remix & Apply to My Post
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* LinkedIn Executive Profile & Timeline Summary Card */}
       {(platformFilter === 'all' || platformFilter === 'linkedin') && (
@@ -259,7 +333,7 @@ export const ContentTab: React.FC = () => {
       {/* Social Post Cards */}
       {filteredPosts.length === 0 ? (
         <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl text-xs text-[#7A8492]">
-          No active content briefs. Click <strong>Auto-Draft Personal Brief</strong> to generate a post for your scheduled cadence!
+          No active content briefs. Click <strong>Auto-Draft Personal Brief</strong> or <strong>Remix & Apply to My Post</strong> above!
         </div>
       ) : (
         <div className="space-y-4">

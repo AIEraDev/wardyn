@@ -3,14 +3,15 @@ use std::net::TcpListener;
 use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 
-const REDIRECT_URI: &str = "http://127.0.0.1:14220/callback";
-const REDIRECT_URI_ENCODED: &str = "http%3A%2F%2F127.0.0.1%3A14220%2Fcallback";
-
 pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
     let client_id = std::env::var("LINKEDIN_CLIENT_ID").map_err(|_| "LINKEDIN_CLIENT_ID missing from .env. Please set LINKEDIN_CLIENT_ID in your .env file.".to_string())?;
     let client_secret = std::env::var("LINKEDIN_CLIENT_SECRET").map_err(|_| "LINKEDIN_CLIENT_SECRET missing from .env. Please set LINKEDIN_CLIENT_SECRET in your .env file.".to_string())?;
+    
+    // Dynamic redirect URI support (defaults to http://127.0.0.1:14220/callback)
+    let redirect_uri = std::env::var("LINKEDIN_REDIRECT_URI").unwrap_or_else(|_| "http://127.0.0.1:14220/callback".to_string());
+    let redirect_uri_encoded = urlencoding::encode(&redirect_uri);
 
-    // 1. Build LinkedIn OAuth Auth URL with standard OpenID Connect scope
+    // 1. Build LinkedIn OAuth Auth URL
     let auth_url = format!(
         "https://www.linkedin.com/oauth/v2/authorization?\
 response_type=code&\
@@ -18,7 +19,7 @@ client_id={}&\
 redirect_uri={}&\
 scope=openid%20profile%20email",
         client_id,
-        REDIRECT_URI_ENCODED
+        redirect_uri_encoded
     );
 
     // 2. Start local TCP listener on 127.0.0.1:14220
@@ -44,13 +45,12 @@ scope=openid%20profile%20email",
         if request_line.contains("error=") {
             let err_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
                 <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;max-width:540px;'>\
-                <h2 style='color:#E8A23D;margin-top:0;'>LinkedIn OAuth Product Authorization Needed</h2>\
-                <p style='color:#9AA4B2;font-size:14px;line-height:1.5;'>LinkedIn requires enabling the <strong>'Sign In with LinkedIn using OpenID Connect'</strong> product in your app settings.</p>\
+                <h2 style='color:#E8A23D;margin-top:0;'>LinkedIn OAuth Authorization Error</h2>\
+                <p style='color:#9AA4B2;font-size:14px;line-height:1.5;'>Please ensure both products and redirect URLs are configured in your LinkedIn App Console.</p>\
                 <ol style='text-align:left;color:#9AA4B2;font-size:13px;line-height:1.6;padding-left:24px;'>\
                 <li>Go to <a href='https://www.linkedin.com/developers/apps' target='_blank' style='color:#4A8FC2;'>LinkedIn Developer Portal</a>.</li>\
-                <li>Select your App &gt; click the <strong>Products</strong> tab.</li>\
-                <li>Find <strong>'Sign In with LinkedIn using OpenID Connect'</strong> and click <strong>Request Access / Add Product</strong> (Instant 1-click approval).</li>\
-                <li>Once added, return to Wardyn and click <strong>Connect LinkedIn OAuth</strong> again.</li>\
+                <li><strong>Products Tab</strong>: Add <em>'Sign In with LinkedIn using OpenID Connect'</em>.</li>\
+                <li><strong>Auth Tab</strong> &gt; <em>OAuth 2.0 settings</em>: Add Authorized redirect URL: <code>http://127.0.0.1:14220/callback</code></li>\
                 </ol>\
                 </div></body></html>";
             let http_response = format!(
@@ -92,7 +92,7 @@ scope=openid%20profile%20email",
         ("code", code.as_str()),
         ("client_id", client_id.as_str()),
         ("client_secret", client_secret.as_str()),
-        ("redirect_uri", REDIRECT_URI),
+        ("redirect_uri", redirect_uri.as_str()),
     ];
 
     let res = client.post("https://www.linkedin.com/oauth/v2/accessToken")

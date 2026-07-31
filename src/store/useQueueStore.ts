@@ -226,6 +226,14 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       ),
     }));
 
+    // Dispatch Native Desktop Notification for Approval / Edit Send
+    const actionLabel = editedDraft !== undefined ? '✍️ Edited Reply Sent' : '✅ Reply Approved & Sent';
+    const overrideNotice = get().testOverrideRecipient ? ` (to test target: ${get().testOverrideRecipient})` : '';
+    await get().sendDesktopNotification(
+      actionLabel,
+      `Sent response to ${target.sender}${overrideNotice}`
+    );
+
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
@@ -247,6 +255,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   skipItem: async (id: string) => {
+    const target = get().items.find((i) => i.id === id);
+
     set((state) => ({
       items: state.items.map((item) =>
         item.id === id
@@ -258,6 +268,13 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           : item
       ),
     }));
+
+    if (target) {
+      await get().sendDesktopNotification(
+        '⏭️ Item Skipped',
+        `Skipped reply card for ${target.sender}`
+      );
+    }
 
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
@@ -299,6 +316,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           : item
       ),
     }));
+
+    get().sendDesktopNotification(
+      `✨ Draft Refined (${tone.toUpperCase()})`,
+      `Updated reply draft for ${target.sender}`
+    );
   },
 
   checkGmailStatus: async () => {
@@ -321,7 +343,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         set({ gmailAccount: email });
         await get().syncGmail();
         await get().sendDesktopNotification(
-          'Wardyn Account Connected',
+          '🔒 Wardyn Account Connected',
           `Successfully authenticated Gmail account: ${email}`
         );
       } catch (err: any) {
@@ -336,6 +358,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('disconnect_gmail');
         set({ gmailAccount: null });
+        await get().sendDesktopNotification(
+          'Wardyn Disconnected',
+          'Gmail credentials cleared securely.'
+        );
       } catch (err) {
         console.error('Failed to disconnect Gmail:', err);
       }
@@ -351,10 +377,19 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         await get().syncCalendarDeadlines();
 
         if (newItemsCount > 0) {
-          await get().sendDesktopNotification(
-            'New Messages Triaged',
-            `Wardyn fetched and triaged ${newItemsCount} new message(s) awaiting approval.`
-          );
+          const latestItems = get().items;
+          const urgentFlagged = latestItems.find((i) => i.flagged && i.status === 'pending');
+          if (urgentFlagged) {
+            await get().sendDesktopNotification(
+              '⚠️ Urgent Visa / Deadline Alert',
+              `Action Required: ${urgentFlagged.sender} — ${urgentFlagged.preview}`
+            );
+          } else {
+            await get().sendDesktopNotification(
+              '📩 New Messages Triaged',
+              `Wardyn fetched and triaged ${newItemsCount} new message(s) awaiting approval.`
+            );
+          }
         }
       } catch (err: any) {
         if (err.toString().includes('revoked') || err.toString().includes('expired')) {

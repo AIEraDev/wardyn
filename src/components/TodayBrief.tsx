@@ -16,7 +16,7 @@ export const TodayBrief: React.FC = () => {
     items,
     calendarEvents,
     isLoading,
-    gmailAccount,
+    gmailAccounts,
     checkGmailStatus,
     connectGmail,
     syncGmail,
@@ -24,6 +24,7 @@ export const TodayBrief: React.FC = () => {
     testOverrideRecipient,
     setTestOverrideRecipient,
   } = useQueueStore();
+
 
   const [showSafetyInput, setShowSafetyInput] = useState(false);
   const [scratchEmail, setScratchEmail] = useState('');
@@ -68,11 +69,11 @@ export const TodayBrief: React.FC = () => {
           </button>
 
           {/* Gmail Auth / Status Badge */}
-          {gmailAccount ? (
+          {gmailAccounts.length > 0 ? (
             <div className="flex items-center gap-2">
               <span className="font-mono text-[11px] bg-[#151A21] text-[#4A8FC2] px-2.5 py-1 rounded-md border border-[rgba(74,143,194,0.3)] flex items-center gap-1.5">
                 <IconPlugConnected size={13} />
-                {gmailAccount}
+                {gmailAccounts.length === 1 ? gmailAccounts[0] : `${gmailAccounts.length} Connected Inboxes`}
               </span>
               <button
                 onClick={syncGmail}
@@ -85,9 +86,9 @@ export const TodayBrief: React.FC = () => {
           ) : (
             <button
               onClick={connectGmail}
-              className="font-mono text-xs bg-[#4A8FC2] text-black px-3 py-1 rounded-md font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1.5 cursor-pointer"
+              className="font-mono text-[11px] bg-[#4A8FC2] text-black px-3 py-1 rounded-md font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1 cursor-pointer"
             >
-              <IconMail size={14} />
+              <IconMail size={13} />
               Connect Gmail
             </button>
           )}
@@ -95,22 +96,22 @@ export const TodayBrief: React.FC = () => {
           <span className="font-mono text-xs bg-[rgba(232,162,61,0.15)] text-[#E8A23D] px-2.5 py-1 rounded-md font-medium border border-[rgba(232,162,61,0.3)]">
             {reviewCount} to review
           </span>
+
         </div>
       </div>
 
-      {/* Safety Test Scratch Email Input Bar */}
+      {/* Safety Override Form */}
       {showSafetyInput && (
-        <form onSubmit={handleSetScratchEmail} className="mb-4 p-3 rounded-lg bg-[#151A21] border border-[#242B35] flex items-center gap-3">
-          <label className="text-xs text-[#9AA4B2] whitespace-nowrap">Scratch Email Target:</label>
+        <form onSubmit={handleSetScratchEmail} className="mb-4 p-3 rounded-xl bg-[#151A21] border border-[#242B35] flex items-center gap-2">
           <input
             type="email"
             value={scratchEmail}
             onChange={(e) => setScratchEmail(e.target.value)}
-            placeholder="e.g. test@yourdomain.com"
-            className="flex-1 bg-[#181E27] text-xs text-[#F0F4F8] px-3 py-1.5 rounded border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+            placeholder="Enter test recipient email (e.g. scratch@yourdomain.com)..."
+            className="flex-1 bg-[#181E27] text-xs text-[#F0F4F8] p-2 rounded border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
           />
-          <button type="submit" className="text-xs bg-[#4A8FC2] text-black px-3 py-1.5 rounded font-medium cursor-pointer">
-            Save Target
+          <button type="submit" className="text-xs bg-[#4A8FC2] text-black px-3 py-2 rounded-lg font-medium cursor-pointer">
+            Set Target
           </button>
           {testOverrideRecipient && (
             <button
@@ -119,7 +120,7 @@ export const TodayBrief: React.FC = () => {
                 setTestOverrideRecipient(null);
                 setScratchEmail('');
               }}
-              className="text-xs text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
+              className="text-xs text-[#E8A23D] hover:underline cursor-pointer"
             >
               Clear
             </button>
@@ -128,14 +129,14 @@ export const TodayBrief: React.FC = () => {
       )}
 
       {/* STATE 1: New User / Unauthenticated Onboarding State */}
-      {!gmailAccount && (
+      {gmailAccounts.length === 0 && (
         <div className="mb-5 p-5 rounded-xl bg-gradient-to-r from-[#151A21] to-[#181E27] border border-[#242B35] space-y-3">
           <div className="flex items-center gap-2 text-[#4A8FC2]">
             <IconSparkles size={18} />
             <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">Welcome to Wardyn</h3>
           </div>
           <p className="text-xs text-[#9AA4B2] leading-relaxed">
-            Wardyn is your local-first chief-of-staff. Connect your Gmail account to start triaging high-signal messages and drafting responses in your voice.
+            Wardyn is your local-first chief-of-staff. Connect your Gmail accounts to start triaging high-signal messages and drafting responses in your voice.
           </p>
           <button
             onClick={connectGmail}
@@ -167,7 +168,7 @@ export const TodayBrief: React.FC = () => {
           <p className="text-xs text-[#7A8492] max-w-sm mx-auto">
             You have no pending items awaiting approval. Click below to check for new messages.
           </p>
-          {gmailAccount && (
+          {gmailAccounts.length > 0 && (
             <button
               onClick={syncGmail}
               className="mt-2 font-mono text-xs bg-[#181E27] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] px-3 py-1.5 rounded-lg hover:bg-[rgba(74,143,194,0.16)] transition-colors inline-flex items-center gap-1.5 cursor-pointer"

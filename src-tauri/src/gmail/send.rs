@@ -17,13 +17,27 @@ pub async fn send_gmail_reply(
 ) -> Result<String, String> {
     let creds_opt = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
-        db::get_credentials(&conn, "gmail").map_err(|e| e.to_string())?
+        let all_creds = db::get_all_gmail_credentials(&conn).unwrap_or_default();
+        let matched = all_creds.iter().find(|c| {
+            if let Some(ref em) = c.email {
+                let clean = em.replace('@', "_at_");
+                req.item_id.contains(&clean)
+            } else {
+                false
+            }
+        }).cloned();
+
+        match matched {
+            Some(c) => Some(c),
+            None => db::get_credentials(&conn, "gmail").unwrap_or(None),
+        }
     };
 
     let creds = match creds_opt {
         Some(c) => c,
         None => return Err("Gmail is not connected. Please authenticate first.".into()),
     };
+
 
     let target_recipient = if let Some(ref override_email) = req.test_override_recipient {
         if !override_email.trim().is_empty() {

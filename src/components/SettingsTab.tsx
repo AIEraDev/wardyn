@@ -92,7 +92,7 @@ const FREE_MODEL_CATALOG: CatalogModel[] = [
 
 export const SettingsTab: React.FC = () => {
   const {
-    gmailAccount,
+    gmailAccounts,
     connectGmail,
     disconnectGmail,
     language,
@@ -107,6 +107,7 @@ export const SettingsTab: React.FC = () => {
     setSyncInterval,
     sendDesktopNotification,
   } = useQueueStore();
+
 
   const [installedModels, setInstalledModels] = useState<string[]>([]);
   const [installingModelId, setInstallingModelId] = useState<string | null>(null);
@@ -306,41 +307,49 @@ export const SettingsTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Gmail Connection Card */}
-      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+      {/* Gmail Integration Card */}
+      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] border border-[rgba(74,143,194,0.35)]">
               <IconMail size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Gmail Integration</p>
-              <p className="text-xs text-[#9AA4B2]">OAuth 2.0 Read & Send Connector</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">Gmail Multi-Account Integration</p>
+              <p className="text-xs text-[#9AA4B2]">OAuth 2.0 Read & Send Connectors</p>
             </div>
           </div>
 
-          {gmailAccount ? (
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-xs text-[#34D399]">{gmailAccount}</span>
-              <button
-                type="button"
-                onClick={disconnectGmail}
-                className="text-xs text-[#E8A23D] hover:underline cursor-pointer"
-              >
-                Disconnect
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={connectGmail}
-              className="text-xs font-medium text-black bg-[#4A8FC2] px-3.5 py-1.5 rounded-lg hover:bg-[#5b9bd1] transition-colors font-mono cursor-pointer"
-            >
-              {t('connect_gmail')}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={connectGmail}
+            className="text-xs font-medium text-black bg-[#4A8FC2] px-3.5 py-1.5 rounded-lg hover:bg-[#5b9bd1] transition-colors font-mono cursor-pointer"
+          >
+            {gmailAccounts.length > 0 ? '+ Connect Another Gmail Account' : t('connect_gmail')}
+          </button>
         </div>
+
+        {gmailAccounts.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-[#242B35]">
+            <p className="font-mono text-[10px] text-[#7A8492] uppercase m-0">Active Connected Inboxes:</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {gmailAccounts.map((acc) => (
+                <div key={acc} className="flex items-center justify-between bg-[#181E27] p-2.5 rounded-lg border border-[#242B35] text-xs">
+                  <span className="font-mono text-[#34D399] text-xs truncate mr-2">✓ {acc}</span>
+                  <button
+                    type="button"
+                    onClick={() => disconnectGmail(acc)}
+                    className="text-xs text-[#E8A23D] hover:underline cursor-pointer shrink-0 font-mono"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
 
       {/* Auto-Start on System Boot / Login Card */}
       <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">

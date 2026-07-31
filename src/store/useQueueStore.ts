@@ -116,7 +116,9 @@ interface QueueStore {
   isLoading: boolean;
   error: string | null;
   gmailAccount: string | null;
+  gmailAccounts: string[];
   testOverrideRecipient: string | null;
+
 
   // Preferences & i18n
   language: SupportedLanguage;
@@ -159,8 +161,9 @@ interface QueueStore {
   // Gmail OAuth & Send Actions
   checkGmailStatus: () => Promise<void>;
   connectGmail: () => Promise<void>;
-  disconnectGmail: () => Promise<void>;
+  disconnectGmail: (email?: string) => Promise<void>;
   syncGmail: () => Promise<void>;
+
 
   // Ollama Actions
   processItemWithOllama: (id: string) => Promise<void>;
@@ -192,7 +195,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   isLoading: false,
   error: null,
   gmailAccount: null,
+  gmailAccounts: [],
   testOverrideRecipient: null,
+
   language: 'en',
   notificationsEnabled: true,
   autoStartEnabled: false,
@@ -715,13 +720,21 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const email = await invoke<string | null>('get_gmail_auth_status');
-        set({ gmailAccount: email });
+        const res = await invoke<string[] | string | null>('get_gmail_auth_status');
+        const list: string[] = Array.isArray(res) ? res : (res ? [res] : []);
+        set({ gmailAccounts: list, gmailAccount: list[0] || null });
 
-        if (email) {
+        if (list.length > 0) {
+          const label = list.length === 1 ? list[0] : `${list.length} Connected Accounts`;
           set((state) => ({
             channels: state.channels.map((c) =>
-              c.id === 'gmail' ? { ...c, status: 'connected', accountLabel: email } : c
+              c.id === 'gmail' ? { ...c, status: 'connected', accountLabel: label } : c
+            ),
+          }));
+        } else {
+          set((state) => ({
+            channels: state.channels.map((c) =>
+              c.id === 'gmail' ? { ...c, status: 'disconnected', accountLabel: undefined } : c
             ),
           }));
         }
@@ -746,16 +759,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const email = await invoke<string>('start_gmail_auth');
-        set({ gmailAccount: email });
-        set((state) => ({
-          channels: state.channels.map((c) =>
-            c.id === 'gmail' ? { ...c, status: 'connected', accountLabel: email } : c
-          ),
-        }));
+        await get().checkGmailStatus();
         await get().syncGmail();
         await get().sendDesktopNotification(
-          '🔒 Wardyn Account Connected',
-          `Successfully authenticated Gmail account: ${email}`
+          '🔒 Gmail Account Connected',
+          `Successfully authenticated: ${email}`
         );
       } catch (err: any) {
         set({ error: err.toString() });
@@ -763,26 +771,22 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
-  disconnectGmail: async () => {
+  disconnectGmail: async (targetEmail?: string) => {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('disconnect_gmail');
-        set({ gmailAccount: null });
-        set((state) => ({
-          channels: state.channels.map((c) =>
-            c.id === 'gmail' ? { ...c, status: 'disconnected', accountLabel: undefined } : c
-          ),
-        }));
+        await invoke('disconnect_gmail', { email: targetEmail || null });
+        await get().checkGmailStatus();
         await get().sendDesktopNotification(
-          'Wardyn Disconnected',
-          'Gmail credentials cleared securely.'
+          'Gmail Disconnected',
+          targetEmail ? `Cleared credentials for ${targetEmail}` : 'Cleared all Gmail credentials.'
         );
       } catch (err) {
         console.error('Failed to disconnect Gmail:', err);
       }
     }
   },
+
 
   syncGmail: async () => {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {

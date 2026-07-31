@@ -39,11 +39,19 @@ async fn start_gmail_auth(state: State<'_, DbState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_gmail_auth_status(state: State<'_, DbState>) -> Result<Option<String>, String> {
+fn get_gmail_auth_status(state: State<'_, DbState>) -> Result<Vec<String>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let creds = db::get_credentials(&conn, "gmail").map_err(|e| e.to_string())?;
-    Ok(creds.and_then(|c| c.email))
+    let all = db::get_all_gmail_credentials(&conn).map_err(|e| e.to_string())?;
+    let emails: Vec<String> = all.into_iter().filter_map(|c| c.email).collect();
+    Ok(emails)
 }
+
+#[tauri::command]
+fn disconnect_gmail(email: Option<String>, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::delete_gmail_credentials(&conn, email.as_deref()).map_err(|e| e.to_string())
+}
+
 
 #[tauri::command]
 async fn start_linkedin_auth(state: State<'_, DbState>) -> Result<String, String> {
@@ -67,11 +75,8 @@ async fn sync_gmail_messages(state: State<'_, DbState>) -> Result<usize, String>
     gmail::sync::sync_gmail_messages(&state.0).await
 }
 
-#[tauri::command]
-fn disconnect_gmail(state: State<'_, DbState>) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    db::delete_credentials(&conn, "gmail").map_err(|e| e.to_string())
-}
+
+
 
 #[tauri::command]
 async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Result<QueueItem, String> {

@@ -105,13 +105,19 @@ prompt=consent",
         None
     };
 
+    let service_key = match &email {
+        Some(addr) => format!("gmail:{}", addr),
+        None => "gmail".into(),
+    };
+
     let creds = GmailCredentials {
-        service: "gmail".into(),
+        service: service_key,
         access_token,
         refresh_token,
         expires_at,
         email,
     };
+
 
     let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
     db::save_credentials(&conn, &creds).map_err(|e| e.to_string())?;

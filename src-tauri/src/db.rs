@@ -183,14 +183,53 @@ pub fn get_credentials(conn: &Connection, service: &str) -> Result<Option<GmailC
             email: row.get(4)?,
         }))
     } else {
-        Ok(None)
+        // Fallback for gmail: search any gmail:*
+        if service == "gmail" {
+            let all = get_all_gmail_credentials(conn)?;
+            Ok(all.into_iter().next())
+        } else {
+            Ok(None)
+        }
     }
+}
+
+pub fn get_all_gmail_credentials(conn: &Connection) -> Result<Vec<GmailCredentials>> {
+    let mut stmt = conn.prepare("SELECT service, access_token, refresh_token, expires_at, email FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(GmailCredentials {
+            service: row.get(0)?,
+            access_token: row.get(1)?,
+            refresh_token: row.get(2)?,
+            expires_at: row.get(3)?,
+            email: row.get(4)?,
+        })
+    })?;
+
+    let mut list = Vec::new();
+    for r in rows {
+        list.push(r?);
+    }
+    Ok(list)
 }
 
 pub fn delete_credentials(conn: &Connection, service: &str) -> Result<()> {
     conn.execute("DELETE FROM credentials WHERE service = ?1", params![service])?;
     Ok(())
 }
+
+pub fn delete_gmail_credentials(conn: &Connection, email: Option<&str>) -> Result<()> {
+    match email {
+        Some(e) => {
+            let key = format!("gmail:{}", e);
+            conn.execute("DELETE FROM credentials WHERE service = ?1 OR email = ?2", params![key, e])?;
+        }
+        None => {
+            conn.execute("DELETE FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'", [])?;
+        }
+    }
+    Ok(())
+}
+
 
 pub fn get_synced_calendar_events(conn: &Connection) -> Result<Vec<SyncedCalendarEvent>> {
     let mut stmt = conn.prepare("SELECT id, queue_item_id, event_id, summary, event_date, created_at FROM calendar_events ORDER BY created_at DESC")?;

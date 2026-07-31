@@ -18,7 +18,7 @@ export default function App() {
   const syncCalendarDeadlines = useQueueStore((state) => state.syncCalendarDeadlines);
   const syncLinkedInTimeline = useQueueStore((state) => state.syncLinkedInTimeline);
   const syncIntervalMinutes = useQueueStore((state) => state.syncIntervalMinutes);
-  const gmailAccount = useQueueStore((state) => state.gmailAccount);
+  const gmailAccounts = useQueueStore((state) => state.gmailAccounts);
 
   // 1. Startup Boot Auto-Sync & Notification Listener
   useEffect(() => {
@@ -29,8 +29,8 @@ export default function App() {
       await syncLinkedInTimeline();
 
       // If Gmail is connected, run immediate boot inbox sync & triaging
-      const currentAccount = useQueueStore.getState().gmailAccount;
-      if (currentAccount) {
+      const currentAccounts = useQueueStore.getState().gmailAccounts;
+      if (currentAccounts.length > 0) {
         await syncGmail();
       }
     };
@@ -65,7 +65,7 @@ export default function App() {
   useEffect(() => {
     const intervalMs = syncIntervalMinutes * 60 * 1000;
     const timer = setInterval(async () => {
-      if (gmailAccount) {
+      if (gmailAccounts.length > 0) {
         await syncGmail();
       }
       // Continuous background fetching & local AI model learning from LinkedIn
@@ -73,7 +73,8 @@ export default function App() {
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [gmailAccount, syncIntervalMinutes, syncGmail, syncLinkedInTimeline]);
+  }, [gmailAccounts, syncIntervalMinutes, syncGmail, syncLinkedInTimeline]);
+
 
   const renderActiveTab = () => {
     switch (activeTab) {

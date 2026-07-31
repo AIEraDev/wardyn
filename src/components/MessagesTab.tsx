@@ -36,7 +36,7 @@ const CategoryPill: React.FC<{ cat: CategoryKey }> = ({ cat }) => {
 };
 
 export const MessagesTab: React.FC = () => {
-  const { items, gmailAccount, syncGmail, isLoading } = useQueueStore();
+  const { items, gmailAccounts, syncGmail, isLoading } = useQueueStore();
   const gmailItems = items.filter((i) => i.source === 'gmail');
   const [activeFilter, setActiveFilter] = useState<CategoryKey>('all');
 
@@ -53,11 +53,14 @@ export const MessagesTab: React.FC = () => {
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Messages</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Triaged Gmail · All Categories</p>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">
+            Triaged Gmail {gmailAccounts.length > 1 ? `(${gmailAccounts.length} Accounts)` : ''} · All Categories
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          {gmailAccount && (
+          {gmailAccounts.length > 0 && (
             <button
+
               onClick={syncGmail}
               className="font-mono text-xs bg-[#151A21] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] px-2.5 py-1 rounded-md flex items-center gap-1.5 hover:bg-[#181E27] transition-colors cursor-pointer"
             >
@@ -71,7 +74,7 @@ export const MessagesTab: React.FC = () => {
       </div>
 
       {/* Category Filter Tabs */}
-      {gmailAccount && gmailItems.length > 0 && (
+      {gmailAccounts.length > 0 && gmailItems.length > 0 && (
         <div className="flex items-center gap-1.5 mb-4 flex-wrap">
           {(Object.keys(CATEGORY_META) as CategoryKey[]).map((cat) => {
             const meta = CATEGORY_META[cat];
@@ -107,15 +110,16 @@ export const MessagesTab: React.FC = () => {
         <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl text-xs text-[#7A8492]">
           Loading messages...
         </div>
-      ) : !gmailAccount ? (
+      ) : gmailAccounts.length === 0 ? (
         <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl space-y-2">
           <IconMail size={24} className="mx-auto text-[#4A8FC2]" />
           <h4 className="text-sm font-medium text-[#F0F4F8] m-0">Gmail Not Connected</h4>
           <p className="text-xs text-[#7A8492] max-w-sm mx-auto">
-            Connect your Gmail account on the Today tab or Settings tab to begin triaging messages.
+            Connect your Gmail account on the Today tab, Channels tab, or Settings tab to begin triaging messages.
           </p>
         </div>
       ) : filteredItems.length === 0 ? (
+
         <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl space-y-2">
           <IconInbox size={24} className="mx-auto text-[#34D399]" />
           <h4 className="text-sm font-medium text-[#F0F4F8] m-0">No {CATEGORY_META[activeFilter].label} Messages</h4>

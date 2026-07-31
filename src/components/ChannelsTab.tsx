@@ -32,7 +32,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 };
 
 export const ChannelsTab: React.FC = () => {
-  const { channels, connectChannel, disconnectChannel, connectGmail, connectLinkedIn } = useQueueStore();
+  const { channels, connectChannel, disconnectChannel, connectGmail, disconnectGmail, gmailAccounts, connectLinkedIn } = useQueueStore();
   const [selectedCategory, setSelectedCategory] = useState<'all' | ChannelCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [configuringChannelId, setConfiguringChannelId] = useState<string | null>(null);
@@ -105,13 +105,14 @@ export const ChannelsTab: React.FC = () => {
         </div>
       </div>
 
-      {/* OpenClaw-Style Multi-Channel Directory Grid */}
+      {/* Directory Grid */}
       <div className="grid grid-cols-2 gap-4">
         {filteredChannels.map((channel) => {
           const Icon = ICON_MAP[channel.iconName] || IconPlugConnected;
           const isConnected = channel.status === 'connected';
           const isConfiguring = configuringChannelId === channel.id;
           const isOAuthChannel = channel.id === 'gmail' || channel.id === 'linkedin';
+          const isGmail = channel.id === 'gmail';
 
           return (
             <div
@@ -143,7 +144,7 @@ export const ChannelsTab: React.FC = () => {
                         : 'bg-[#151A21] text-[#7A8492] border border-[#242B35]'
                     }`}
                   >
-                    {isConnected ? 'Active Bridge' : 'Available'}
+                    {isConnected ? (isGmail ? `${gmailAccounts.length} Account${gmailAccounts.length > 1 ? 's' : ''}` : 'Active Bridge') : 'Available'}
                   </span>
                 </div>
 
@@ -152,7 +153,26 @@ export const ChannelsTab: React.FC = () => {
                   {channel.description}
                 </p>
 
-                {channel.accountLabel && (
+                {/* Gmail Multi-Account List */}
+                {isGmail && gmailAccounts.length > 0 && (
+                  <div className="space-y-1.5 mb-3">
+                    <p className="font-mono text-[10px] text-[#7A8492] uppercase m-0">Connected Inboxes:</p>
+                    {gmailAccounts.map((acc) => (
+                      <div key={acc} className="flex items-center justify-between bg-[#181E27] p-2 rounded border border-[#242B35] text-xs">
+                        <span className="font-mono text-[#4A8FC2] text-[11px] truncate mr-2">{acc}</span>
+                        <button
+                          type="button"
+                          onClick={() => disconnectGmail(acc)}
+                          className="font-mono text-[10px] text-[#E8A23D] hover:underline shrink-0 cursor-pointer"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!isGmail && channel.accountLabel && (
                   <p className="font-mono text-[11px] text-[#4A8FC2] mb-3 truncate">
                     • {channel.accountLabel}
                   </p>
@@ -217,7 +237,15 @@ export const ChannelsTab: React.FC = () => {
                 </form>
               ) : (
                 <div className="pt-2 border-t border-[#242B35]">
-                  {isConnected ? (
+                  {isGmail ? (
+                    <button
+                      type="button"
+                      onClick={() => connectGmail()}
+                      className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono"
+                    >
+                      <IconPlus size={14} /> {gmailAccounts.length > 0 ? 'Connect Another Gmail Account' : 'Connect Gmail OAuth'}
+                    </button>
+                  ) : isConnected ? (
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-[#4A8FC2] font-mono flex items-center gap-1">
                         <IconCheck size={13} /> Integrated
@@ -236,16 +264,15 @@ export const ChannelsTab: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        if (isOAuthChannel) {
-                          if (channel.id === 'gmail') connectGmail();
-                          if (channel.id === 'linkedin') connectLinkedIn();
+                        if (channel.id === 'linkedin') {
+                          connectLinkedIn();
                         } else {
                           setConfiguringChannelId(channel.id);
                         }
                       }}
                       className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono"
                     >
-                      <IconPlus size={14} /> {isOAuthChannel ? (channel.id === 'gmail' ? 'Connect Gmail OAuth' : 'Connect LinkedIn OAuth') : 'Configure Channel'}
+                      <IconPlus size={14} /> {channel.id === 'linkedin' ? 'Connect LinkedIn OAuth' : 'Configure Channel'}
                     </button>
                   )}
                 </div>
@@ -257,3 +284,4 @@ export const ChannelsTab: React.FC = () => {
     </div>
   );
 };
+

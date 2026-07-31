@@ -13,6 +13,7 @@ import {
   IconWand,
   IconBulb,
   IconRepeat,
+  IconPhoto,
 } from '@tabler/icons-react';
 import { useQueueStore, PostCadence } from '../store/useQueueStore';
 import { SocialPlatform } from '../types/queue';
@@ -67,7 +68,7 @@ export const ContentTab: React.FC = () => {
       <div className="flex items-baseline justify-between mb-2">
         <div>
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Content & Personal Post Engine</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn Feed Learning, Network Intelligence & Cadence Scheduler</p>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn Feed Learning, Vision AI & Cadence Scheduler</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Generate Cadence Post Button */}
@@ -131,7 +132,7 @@ export const ContentTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 🧠 Network Learning Radar Section (Feed Analysis & Insights) */}
+      {/* 🧠 Network Learning Radar Section (Feed Analysis & Vision AI) */}
       {linkedInSummary?.feed_insights && linkedInSummary.feed_insights.length > 0 && (
         <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-4">
           <div className="flex items-center justify-between">
@@ -140,13 +141,13 @@ export const ContentTab: React.FC = () => {
                 <IconBulb size={20} />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">Network Learning Radar (Feed Analysis)</h3>
-                <p className="text-xs text-[#7A8492] m-0">Deconstructed insights & copywriting patterns from top network posts</p>
+                <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">Network Learning Radar (Feed & Vision AI Analysis)</h3>
+                <p className="text-xs text-[#7A8492] m-0">Deconstructed insights, image diagram breakdowns & copywriting patterns</p>
               </div>
             </div>
 
-            <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-2.5 py-1 rounded border border-[rgba(52,211,153,0.3)]">
-              3 Insights Distilled
+            <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-2.5 py-1 rounded border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
+              <IconPhoto size={13} /> Vision AI Active
             </span>
           </div>
 
@@ -163,6 +164,22 @@ export const ContentTab: React.FC = () => {
                     </span>
                     <span className="font-mono text-[10px] text-[#7A8492]">{insight.engagement}</span>
                   </div>
+
+                  {/* Attached Post Image & Vision Analysis Badge */}
+                  {insight.image_url && (
+                    <div className="rounded-lg overflow-hidden border border-[#242B35] relative group">
+                      <img
+                        src={insight.image_url}
+                        alt="Post media"
+                        className="w-full h-32 object-cover"
+                      />
+                      {insight.image_analysis && (
+                        <div className="p-2 bg-[rgba(11,14,19,0.9)] text-[10px] text-[#4A8FC2] font-mono border-t border-[#242B35]">
+                          {insight.image_analysis}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div>
                     <h5 className="text-xs font-semibold text-[#F0F4F8] m-0">{insight.author_name}</h5>

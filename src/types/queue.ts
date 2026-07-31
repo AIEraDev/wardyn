@@ -56,6 +56,8 @@ export interface FeedInsight {
   actionable_application: string;
   domain_tag: string;
   engagement: string;
+  image_url?: string;
+  image_analysis?: string;
   created_at: string;
 }
 

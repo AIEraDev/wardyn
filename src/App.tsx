@@ -11,15 +11,29 @@ export default function App() {
   const activeTab = useQueueStore((state) => state.activeTab);
   const setActiveTab = useQueueStore((state) => state.setActiveTab);
   const fetchItems = useQueueStore((state) => state.fetchItems);
+  const checkGmailStatus = useQueueStore((state) => state.checkGmailStatus);
   const syncGmail = useQueueStore((state) => state.syncGmail);
+  const syncCalendarDeadlines = useQueueStore((state) => state.syncCalendarDeadlines);
   const syncIntervalMinutes = useQueueStore((state) => state.syncIntervalMinutes);
   const gmailAccount = useQueueStore((state) => state.gmailAccount);
 
-  // 1. Initial items fetch & notification action listener
+  // 1. Startup Boot Auto-Sync & Notification Listener
   useEffect(() => {
-    fetchItems();
+    const initBootSentinel = async () => {
+      await fetchItems();
+      await checkGmailStatus();
+      await syncCalendarDeadlines();
 
-    // Listen for notification click events to bring window to focus
+      // If Gmail is connected, run immediate boot inbox sync & triaging
+      const currentAccount = useQueueStore.getState().gmailAccount;
+      if (currentAccount) {
+        await syncGmail();
+      }
+    };
+
+    initBootSentinel();
+
+    // Listen for notification click events to bring window into focus
     const setupNotificationListener = async () => {
       try {
         if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
@@ -39,7 +53,7 @@ export default function App() {
     };
 
     setupNotificationListener();
-  }, [fetchItems, setActiveTab]);
+  }, [fetchItems, checkGmailStatus, syncCalendarDeadlines, syncGmail, setActiveTab]);
 
   // 2. Background Periodic Inbox Sync Interval
   useEffect(() => {

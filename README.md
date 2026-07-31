@@ -1,7 +1,9 @@
 <div align="center">
   <br />
+  <img src="https://raw.githubusercontent.com/AIEraDev/wardyn/main/src/wardyn.png" alt="Wardyn Logo" width="130" style="border-radius: 20px;" />
+  <br />
   <h1>🛡️ Wardyn</h1>
-  <p><strong>Local-First Desktop Chief-of-Staff & Executive Email Sentinel</strong></p>
+  <p><strong>Local-First Desktop Chief-of-Staff & Executive Sentinel</strong></p>
   
   <p>
     <a href="https://github.com/AIEraDev/wardyn"><img src="https://img.shields.io/badge/Tauri-v2.0-blue?logo=tauri" alt="Tauri v2" /></a>
@@ -48,9 +50,20 @@ It reduces your daily involvement to three simple choices: **Approve**, **Edit**
 - 🛡️ **Confidence Guardrails**: Items with model confidence `< 60%` surface as *"Uncertain — manual review required"* without guessing hallucinated drafts.
 - ⚠️ **Visa & High-Risk Safeguards**: Automatic keyword detection (UKVI, Home Office, Visa deadlines) with warning badges and mandatory multi-step approval confirmation modals before sending.
 - 📅 **Additive Calendar Sync**: Auto-creates Google Calendar events for deadline emails without requiring send approval (reversible and additive).
-- 🔔 **Native System Notifications**: macOS notifications alert you when new items arrive in the background. Clicking a notification focuses Wardyn directly onto the review card.
+- 🔔 **Native System Notifications & Actions**: Real-time notifications alert you on message arrivals, approvals, edits, skips, and urgent alerts. Clicking a notification brings Wardyn to focus.
 - ⚡ **Laptop Startup Diligence**: Runs automatically on system boot (`tauri-plugin-autostart`) to triage your inbox before you open your laptop.
 - 🎨 **Sentinel Blue Design System**: Custom borderless dark mode UI (`#0B0E13` Ink, `#151A21` Surface, `#4A8FC2` Sentinel Blue) with seamless macOS Overlay Titlebar.
+
+---
+
+## 🗺️ Roadmap (Phase 2 Expansion)
+
+Wardyn is expanding to become the unified chief-of-staff sentinel across all your communication channels:
+
+- 🟢 **WhatsApp Connector**: Ingest priority direct messages and draft contextual quick replies.
+- 💼 **LinkedIn Connector**: Triage professional network outreach and generate content briefs.
+- 𝕏 **X (Twitter) Connector**: Monitor priority DMs and high-signal social mentions.
+- 💬 **Slack Connector**: Executive triage for urgent workspace mentions and channel threads.
 
 ---
 
@@ -121,9 +134,9 @@ The compiled native executable will be saved in `src-tauri/target/release/`.
 
 ## 🔒 Safety & Privacy Principles
 
-1. **Zero Unattended Sends**: Wardyn will **NEVER** send an email automatically under any circumstance. Sending requires an explicit human click on **Approve** or **Save & Approve**.
+1. **Zero Unattended Sends**: Wardyn will **NEVER** send a message automatically under any circumstance. Sending requires an explicit human click on **Approve** or **Save & Approve**.
 2. **Local AI Execution**: Ollama runs entirely on your local machine (`http://localhost:11434`). Your emails and voice corpus are never uploaded to third-party AI APIs.
-3. **Additive Calendar Creation**: Calendar event creation is additive and reversible, automatically syncing deadlines while keeping email sending locked behind manual review.
+3. **Additive Calendar Creation**: Calendar event creation is additive and reversible, automatically syncing deadlines while keeping sending locked behind manual review.
 
 ---
 

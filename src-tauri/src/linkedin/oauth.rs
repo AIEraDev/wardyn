@@ -43,9 +43,15 @@ scope=openid%20profile%20email",
 
         if request_line.contains("error=") {
             let err_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
-                <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;'>\
-                <h2 style='color:#E8A23D;margin-top:0;'>LinkedIn OAuth Authorization Error</h2>\
-                <p style='color:#9AA4B2;'>Please check that 'Sign In with LinkedIn using OpenID Connect' product is added in your LinkedIn Developer Console.</p>\
+                <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;max-width:540px;'>\
+                <h2 style='color:#E8A23D;margin-top:0;'>LinkedIn OAuth Product Authorization Needed</h2>\
+                <p style='color:#9AA4B2;font-size:14px;line-height:1.5;'>LinkedIn requires enabling the <strong>'Sign In with LinkedIn using OpenID Connect'</strong> product in your app settings.</p>\
+                <ol style='text-align:left;color:#9AA4B2;font-size:13px;line-height:1.6;padding-left:24px;'>\
+                <li>Go to <a href='https://www.linkedin.com/developers/apps' target='_blank' style='color:#4A8FC2;'>LinkedIn Developer Portal</a>.</li>\
+                <li>Select your App &gt; click the <strong>Products</strong> tab.</li>\
+                <li>Find <strong>'Sign In with LinkedIn using OpenID Connect'</strong> and click <strong>Request Access / Add Product</strong> (Instant 1-click approval).</li>\
+                <li>Once added, return to Wardyn and click <strong>Connect LinkedIn OAuth</strong> again.</li>\
+                </ol>\
                 </div></body></html>";
             let http_response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

@@ -309,6 +309,41 @@ pub fn delete_gmail_credentials(conn: &Connection, email: Option<&str>) -> Resul
     Ok(())
 }
 
+pub fn get_sender_history(conn: &Connection, sender: &str, limit: usize) -> Result<Vec<QueueItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id
+         FROM queue_items
+         WHERE sender = ?1 OR sender LIKE ?2
+         ORDER BY created_at DESC LIMIT ?3"
+    )?;
+    let pattern = format!("%{}%", sender);
+    let rows = stmt.query_map(params![sender, pattern, limit as i64], |row| {
+        let flagged_int: i32 = row.get(7)?;
+        Ok(QueueItem {
+            id: row.get(0)?,
+            source: row.get(1)?,
+            kind: row.get(2)?,
+            sender: row.get(3)?,
+            preview: row.get(4)?,
+            draft_text: row.get(5)?,
+            status: row.get(6)?,
+            flagged: flagged_int != 0,
+            confidence: row.get(8)?,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+            thread_id: row.get(11)?,
+            message_id: row.get(12)?,
+        })
+    })?;
+
+    let mut list = Vec::new();
+    for r in rows {
+        list.push(r?);
+    }
+    Ok(list)
+}
+
+
 
 
 pub fn get_synced_calendar_events(conn: &Connection) -> Result<Vec<SyncedCalendarEvent>> {

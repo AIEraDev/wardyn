@@ -31,22 +31,25 @@ pub async fn classify_and_draft_item(
         Err(_) => Client::new(),
     };
 
-    let recent_edits = if let Some(mutex) = conn_mutex {
+    let (recent_edits, sender_history) = if let Some(mutex) = conn_mutex {
         if let Ok(conn) = mutex.lock() {
-            crate::db::get_recent_voice_edits(&conn, 5).unwrap_or_default()
+            let edits = crate::db::get_recent_voice_edits(&conn, 5).unwrap_or_default();
+            let history = crate::db::get_sender_history(&conn, &item.sender, 5).unwrap_or_default();
+            (edits, history)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         }
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
 
     let prompt_text = format!(
         "{}\n\nINCOMING MESSAGE TO CLASSIFY:\nSender: {}\nPreview: {}\n",
-        get_system_prompt(&recent_edits),
+        get_system_prompt(&recent_edits, &sender_history),
         item.sender,
         item.preview
     );
+
 
 
     let models = [

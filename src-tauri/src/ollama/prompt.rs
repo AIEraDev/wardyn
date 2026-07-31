@@ -1,6 +1,9 @@
 const VOICE_CORPUS: &str = include_str!("corpus.txt");
 
-pub fn get_system_prompt(recent_edits: &[crate::db::VoiceEdit]) -> String {
+pub fn get_system_prompt(
+    recent_edits: &[crate::db::VoiceEdit],
+    sender_history: &[crate::models::QueueItem],
+) -> String {
     let mut edits_section = String::new();
     if !recent_edits.is_empty() {
         edits_section.push_str("\n\nRECENT USER EDIT PREFERENCES & CORRECTIONS (Prefer user's revised phrasing):\n");
@@ -8,6 +11,18 @@ pub fn get_system_prompt(recent_edits: &[crate::db::VoiceEdit]) -> String {
             edits_section.push_str(&format!(
                 "- Initial Candidate Draft: \"{}\"\n  User Preferred Revision: \"{}\"\n",
                 edit.original_draft, edit.edited_draft
+            ));
+        }
+    }
+
+    let mut history_section = String::new();
+    if !sender_history.is_empty() {
+        history_section.push_str("\n\nHISTORICAL THREAD CONTEXT (Past interactions with this sender):\n");
+        for item in sender_history {
+            let date_str = if item.created_at.len() >= 10 { &item.created_at[..10] } else { "recent" };
+            history_section.push_str(&format!(
+                "- [{}] Sender: {} | Preview: \"{}\"\n",
+                date_str, item.sender, item.preview
             ));
         }
     }
@@ -21,7 +36,7 @@ Below are authentic past sent messages from the user. Match this exact style, se
 
 ---
 {}
----{}
+---{}{}
 
 YOUR TASK:
 Analyze the incoming message sender and preview. Output ONLY a valid JSON object with the following schema:
@@ -33,7 +48,9 @@ Analyze the incoming message sender and preview. Output ONLY a valid JSON object
 
 Do not include any explanation or markdown formatting outside the JSON object."#,
         VOICE_CORPUS,
-        edits_section
+        edits_section,
+        history_section
     )
 }
+
 

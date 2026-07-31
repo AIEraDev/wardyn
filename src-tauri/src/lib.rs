@@ -110,6 +110,11 @@ async fn install_ollama_model_command(model_name: String) -> Result<String, Stri
 }
 
 #[tauri::command]
+async fn delete_ollama_model_command(model_name: String) -> Result<String, String> {
+    ollama::client::delete_ollama_model(model_name).await
+}
+
+#[tauri::command]
 async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Vec<SyncedCalendarEvent>, String> {
     calendar::sync::sync_calendar_deadlines(&state.0).await
 }
@@ -154,6 +159,7 @@ pub fn run() {
             process_item_with_ollama,
             get_installed_ollama_models_command,
             install_ollama_model_command,
+            delete_ollama_model_command,
             sync_calendar_deadlines_command,
             open_external_url
         ])

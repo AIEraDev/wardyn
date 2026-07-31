@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh } from '@tabler/icons-react';
+import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh, IconTrash } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
 import { SupportedLanguage } from '../i18n/translations';
 
@@ -69,6 +69,7 @@ export const SettingsTab: React.FC = () => {
 
   const [installedModels, setInstalledModels] = useState<string[]>([]);
   const [installingModelId, setInstallingModelId] = useState<string | null>(null);
+  const [uninstallingModelId, setUninstallingModelId] = useState<string | null>(null);
 
   const fetchModels = async () => {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
@@ -113,6 +114,24 @@ export const SettingsTab: React.FC = () => {
       }
     }
     setInstallingModelId(null);
+  };
+
+  const handleUninstallModel = async (modelId: string, modelName: string) => {
+    setUninstallingModelId(modelId);
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('delete_ollama_model_command', { modelName: modelId });
+        await fetchModels();
+        await sendDesktopNotification(
+          '🗑️ Model Uninstalled',
+          `Removed ${modelName} from device storage.`
+        );
+      } catch (err) {
+        console.error('Model uninstall error:', err);
+      }
+    }
+    setUninstallingModelId(null);
   };
 
   const handleTestNotification = async () => {
@@ -168,7 +187,7 @@ export const SettingsTab: React.FC = () => {
             </div>
             <div>
               <p className="text-sm font-semibold text-[#F0F4F8]">Free Local AI Models Catalog</p>
-              <p className="text-xs text-[#9AA4B2]">Browse & install open-source LLMs running 100% locally on device</p>
+              <p className="text-xs text-[#9AA4B2]">Browse, install & manage open-source LLMs 100% locally on device</p>
             </div>
           </div>
 
@@ -184,6 +203,7 @@ export const SettingsTab: React.FC = () => {
           {FREE_MODEL_CATALOG.map((model) => {
             const isInstalled = installedModels.includes(model.id);
             const isDownloading = installingModelId === model.id;
+            const isDeleting = uninstallingModelId === model.id;
 
             return (
               <div
@@ -201,11 +221,22 @@ export const SettingsTab: React.FC = () => {
                   <p className="text-xs text-[#9AA4B2] m-0">{model.description}</p>
                 </div>
 
-                <div className="shrink-0">
+                <div className="shrink-0 flex items-center gap-2">
                   {isInstalled ? (
-                    <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-3 py-1 rounded-md border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
-                      <IconCheck size={14} /> Installed
-                    </span>
+                    <>
+                      <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-3 py-1 rounded-md border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
+                        <IconCheck size={14} /> Installed
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isDeleting}
+                        onClick={() => handleUninstallModel(model.id, model.name)}
+                        title={`Uninstall ${model.name}`}
+                        className="p-1.5 font-mono text-xs bg-[#151A21] text-[#E8A23D] hover:bg-[rgba(232,162,61,0.15)] border border-[#242B35] rounded-md transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <IconTrash size={14} />
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="button"

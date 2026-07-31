@@ -113,6 +113,26 @@ pub async fn trigger_ollama_model_install(model_name: String) -> Result<String, 
     }
 }
 
+pub async fn delete_ollama_model(model_name: String) -> Result<String, String> {
+    let client = Client::new();
+    let payload = serde_json::json!({
+        "name": model_name
+    });
+
+    let res = client.delete("http://localhost:11434/api/delete")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send delete request to Ollama: {}", e))?;
+
+    if res.status().is_success() {
+        Ok(format!("Successfully uninstalled local model {}", model_name))
+    } else {
+        let err_text = res.text().await.unwrap_or_default();
+        Err(format!("Ollama model deletion failed: {}", err_text))
+    }
+}
+
 fn fallback_rule_based_classify(item: &QueueItem) -> ClassificationResult {
     let lower_sender = item.sender.to_lowercase();
     let lower_preview = item.preview.to_lowercase();

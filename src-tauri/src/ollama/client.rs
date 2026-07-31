@@ -18,7 +18,10 @@ pub struct InstalledModelInfo {
     pub status: String,
 }
 
-pub async fn classify_and_draft_item(item: &QueueItem) -> ClassificationResult {
+pub async fn classify_and_draft_item(
+    item: &QueueItem,
+    conn_mutex: Option<&std::sync::Mutex<rusqlite::Connection>>,
+) -> ClassificationResult {
     let client_res = Client::builder()
         .timeout(Duration::from_secs(8)) // Increased timeout for larger 32B/70B models
         .build();
@@ -28,12 +31,23 @@ pub async fn classify_and_draft_item(item: &QueueItem) -> ClassificationResult {
         Err(_) => Client::new(),
     };
 
+    let recent_edits = if let Some(mutex) = conn_mutex {
+        if let Ok(conn) = mutex.lock() {
+            crate::db::get_recent_voice_edits(&conn, 5).unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
     let prompt_text = format!(
         "{}\n\nINCOMING MESSAGE TO CLASSIFY:\nSender: {}\nPreview: {}\n",
-        get_system_prompt(),
+        get_system_prompt(&recent_edits),
         item.sender,
         item.preview
     );
+
 
     let models = [
         "llama3:70b",

@@ -397,6 +397,16 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
+
+        // Record edit preference pair for continuous voice reinforcement learning
+        if (editedDraft !== undefined && target.draft_text && editedDraft !== target.draft_text) {
+          invoke('record_voice_edit_command', {
+            itemId: id,
+            original: target.draft_text,
+            edited: editedDraft,
+          }).catch(console.error);
+        }
+
         await invoke('send_gmail_reply_command', {
           req: {
             item_id: id,
@@ -408,6 +418,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             test_override_recipient: get().testOverrideRecipient,
           },
         });
+
 
       } catch (err: any) {
         console.error('Failed to send via Gmail API:', err);

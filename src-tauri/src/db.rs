@@ -104,8 +104,59 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS voice_edits (
+            id TEXT PRIMARY KEY,
+            queue_item_id TEXT NOT NULL,
+            original_draft TEXT NOT NULL,
+            edited_draft TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     Ok(())
 }
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct VoiceEdit {
+
+    pub id: String,
+    pub queue_item_id: String,
+    pub original_draft: String,
+    pub edited_draft: String,
+    pub created_at: String,
+}
+
+pub fn record_voice_edit(conn: &Connection, queue_item_id: &str, original_draft: &str, edited_draft: &str) -> Result<()> {
+    let id = format!("ve_{}", now_iso().replace(':', "-"));
+    conn.execute(
+        "INSERT INTO voice_edits (id, queue_item_id, original_draft, edited_draft, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, queue_item_id, original_draft, edited_draft, now_iso()],
+    )?;
+    Ok(())
+}
+
+pub fn get_recent_voice_edits(conn: &Connection, limit: usize) -> Result<Vec<VoiceEdit>> {
+    let mut stmt = conn.prepare("SELECT id, queue_item_id, original_draft, edited_draft, created_at FROM voice_edits ORDER BY created_at DESC LIMIT ?1")?;
+    let rows = stmt.query_map(params![limit as i64], |row| {
+        Ok(VoiceEdit {
+            id: row.get(0)?,
+            queue_item_id: row.get(1)?,
+            original_draft: row.get(2)?,
+            edited_draft: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    })?;
+
+    let mut list = Vec::new();
+    for r in rows {
+        list.push(r?);
+    }
+    Ok(list)
+}
+
 
 pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
     let mut stmt = conn.prepare("SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id FROM queue_items ORDER BY created_at DESC")?;

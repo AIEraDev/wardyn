@@ -1,6 +1,17 @@
 const VOICE_CORPUS: &str = include_str!("corpus.txt");
 
-pub fn get_system_prompt() -> String {
+pub fn get_system_prompt(recent_edits: &[crate::db::VoiceEdit]) -> String {
+    let mut edits_section = String::new();
+    if !recent_edits.is_empty() {
+        edits_section.push_str("\n\nRECENT USER EDIT PREFERENCES & CORRECTIONS (Prefer user's revised phrasing):\n");
+        for edit in recent_edits {
+            edits_section.push_str(&format!(
+                "- Initial Candidate Draft: \"{}\"\n  User Preferred Revision: \"{}\"\n",
+                edit.original_draft, edit.edited_draft
+            ));
+        }
+    }
+
     format!(
         r#"You are Wardyn, an intelligent executive assistant writing draft responses on behalf of the user.
 
@@ -10,17 +21,19 @@ Below are authentic past sent messages from the user. Match this exact style, se
 
 ---
 {}
----
+---{}
 
 YOUR TASK:
 Analyze the incoming message sender and preview. Output ONLY a valid JSON object with the following schema:
 {{
   "flagged": true/false,     // Set to true ONLY if sender or subject is related to UK Visas, UKVI, Home Office, or immigration documents.
-  "draft_text": "...",       // Suggested reply draft matching the corpus above. If confidence < 0.6, set this to null.
+  "draft_text": "...",       // Suggested reply draft matching the corpus and preference corrections above. If confidence < 0.6, set this to null.
   "confidence": 0.95         // Floating point between 0.0 and 1.0 indicating classification & drafting confidence.
 }}
 
 Do not include any explanation or markdown formatting outside the JSON object."#,
-        VOICE_CORPUS
+        VOICE_CORPUS,
+        edits_section
     )
 }
+

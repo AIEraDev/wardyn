@@ -86,7 +86,7 @@ async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Resu
         items.into_iter().find(|i| i.id == id).ok_or_else(|| "Item not found".to_string())?
     };
 
-    let result = ollama::client::classify_and_draft_item(&item).await;
+    let result = ollama::client::classify_and_draft_item(&item, Some(&state.0)).await;
 
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = db::now_iso();
@@ -103,6 +103,12 @@ async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Resu
 
     let updated_items = db::get_all_queue_items(&conn).map_err(|e| e.to_string())?;
     updated_items.into_iter().find(|i| i.id == id).ok_or_else(|| "Item not found".to_string())
+}
+
+#[tauri::command]
+fn record_voice_edit_command(item_id: String, original: String, edited: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::record_voice_edit(&conn, &item_id, &original, &edited).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -174,6 +180,7 @@ pub fn run() {
             sync_gmail_messages,
             disconnect_gmail,
             process_item_with_ollama,
+            record_voice_edit_command,
             get_installed_ollama_models_command,
             install_ollama_model_command,
             delete_ollama_model_command,
@@ -184,3 +191,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

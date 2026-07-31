@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary } from '../types/queue';
 import { SupportedLanguage, TRANSLATIONS, TranslationDictionary } from '../i18n/translations';
 
+export type PostCadence = 'daily' | 'every_2_days' | 'weekly' | 'manual';
+
 export interface SyncedCalendarEvent {
   id: string;
   queue_item_id: string;
@@ -101,6 +103,7 @@ interface QueueStore {
   calendarEvents: SyncedCalendarEvent[];
   linkedInSummary: LinkedInTimelineSummary | null;
   linkedInAccount: string | null;
+  linkedInCadence: PostCadence;
   activeTab: TabType;
   isLoading: boolean;
   error: string | null;
@@ -117,6 +120,7 @@ interface QueueStore {
   setLanguage: (lang: SupportedLanguage) => void;
   t: (key: keyof TranslationDictionary) => string;
   setActiveTab: (tab: TabType) => void;
+  setLinkedInCadence: (cadence: PostCadence) => void;
   toggleNotifications: (enabled: boolean) => void;
   checkAutoStartStatus: () => Promise<void>;
   toggleAutoStart: (enable: boolean) => Promise<void>;
@@ -138,8 +142,9 @@ interface QueueStore {
   // Social Post Actions (LinkedIn & Twitter/X)
   approveSocialPost: (id: string, editedContent?: string) => Promise<void>;
   skipSocialPost: (id: string) => void;
-  regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread') => void;
+  regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread' | 'leadership' | 'story') => void;
   createSocialPost: (platform: SocialPlatform, topic: string) => void;
+  generateCadenceLinkedInPost: () => void;
   syncLinkedInTimeline: () => Promise<void>;
 
   // Gmail OAuth & Send Actions
@@ -165,6 +170,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   calendarEvents: [],
   linkedInSummary: null,
   linkedInAccount: null,
+  linkedInCadence: 'every_2_days',
   activeTab: 'today',
   isLoading: false,
   error: null,
@@ -191,6 +197,15 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   setActiveTab: (tab: TabType) => {
     set({ activeTab: tab });
+  },
+
+  setLinkedInCadence: (cadence: PostCadence) => {
+    set({ linkedInCadence: cadence });
+    const label = cadence === 'daily' ? 'Daily (9:00 AM)' : cadence === 'every_2_days' ? 'Every 2 Days' : cadence === 'weekly' ? 'Weekly' : 'Manual';
+    get().sendDesktopNotification(
+      '🗓️ Post Cadence Updated',
+      `LinkedIn personal post auto-drafting frequency set to: ${label}`
+    );
   },
 
   toggleNotifications: (enabled: boolean) => {
@@ -503,17 +518,21 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
-  regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread') => {
+  regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread' | 'leadership' | 'story') => {
     const target = get().socialPosts.find((p) => p.id === id);
     if (!target) return;
 
     let newContent = target.content;
     if (tone === 'punchy') {
-      newContent = `Shipped ${target.topic}. Clean, zero-latency, and lightning fast. 🚀 #BuildInPublic`;
+      newContent = `Shipped ${target.topic}. Clean, zero-latency, and lightning fast. 🚀 #BuildInPublic #AI`;
     } else if (tone === 'detailed') {
-      newContent = `Deep dive into ${target.topic}:\n- Architectural design & state management\n- Benchmark performance results\n- Lessons learned building local-first apps. #Tech`;
+      newContent = `Deep dive into ${target.topic}:\n- Architectural design & local state management\n- Real-world benchmark performance\n- Key lessons learned building local-first executive software. #Tech #AI`;
     } else if (tone === 'thread') {
       newContent = `1/ How we built ${target.topic}:\n\n2/ The key challenge was local state performance...\n\n3/ Here is what we learned 🧵 #IndieHacker`;
+    } else if (tone === 'leadership') {
+      newContent = `Building great software isn't just about code — it's about reducing executive cognitive load.\n\nHere is how we approached ${target.topic}:\n\n1. Prioritize user privacy.\n2. Local-first AI fallback.\n3. High-signal automation.\n\nWhat's your approach? #Leadership #Tech`;
+    } else if (tone === 'story') {
+      newContent = `A few weeks ago, we noticed a major bottleneck in our workflow.\n\nInstead of patching symptoms, we rebuilt ${target.topic} from scratch.\n\nThe result? Zero latency, 100% data privacy, and full executive control. #BuildInPublic`;
     }
 
     set((state) => ({
@@ -549,6 +568,36 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     get().sendDesktopNotification(
       `✍️ New ${platform.toUpperCase()} Brief Generated`,
       `Created social post brief for "${topic}"`
+    );
+  },
+
+  generateCadenceLinkedInPost: () => {
+    const topics = [
+      'Local-First Executive Chief-of-Staff Software Architecture',
+      'AI Multilingual Triage & High-Signal Inbox Management',
+      'Building Latency-Free Native Desktop Apps with Tauri & Rust',
+      'Privately Hosting Open-Source 70B Frontier LLMs Locally',
+    ];
+    const chosenTopic = topics[Math.floor(Math.random() * topics.length)];
+
+    const newPost: SocialPost = {
+      id: `soc-cadence-${Date.now()}`,
+      platform: 'linkedin',
+      topic: chosenTopic,
+      content: `💡 Scheduled Personal Brief: ${chosenTopic}\n\nHere is a quick breakdown of what we're building:\n\n- Zero cloud dependencies for user privacy\n- Instant local AI response generation\n- Seamless OAuth multi-channel sync\n\nHow are you optimizing your executive workflow this week? #BuildInPublic #AI #Leadership`,
+      hashtags: ['#BuildInPublic', '#AI', '#Tech', '#Leadership'],
+      media_cue: 'System architecture diagram or clean workflow GIF',
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      socialPosts: [newPost, ...state.socialPosts],
+    }));
+
+    get().sendDesktopNotification(
+      '🗓️ Cadence Post Draft Ready',
+      `Auto-generated personal LinkedIn post brief for: "${chosenTopic}"`
     );
   },
 

@@ -9,18 +9,23 @@ import {
   IconPlus,
   IconRefresh,
   IconChartBar,
+  IconCalendarTime,
+  IconWand,
 } from '@tabler/icons-react';
-import { useQueueStore } from '../store/useQueueStore';
+import { useQueueStore, PostCadence } from '../store/useQueueStore';
 import { SocialPlatform } from '../types/queue';
 
 export const ContentTab: React.FC = () => {
   const {
     socialPosts,
     linkedInSummary,
+    linkedInCadence,
+    setLinkedInCadence,
     approveSocialPost,
     skipSocialPost,
     regenerateSocialPost,
     createSocialPost,
+    generateCadenceLinkedInPost,
     syncLinkedInTimeline,
   } = useQueueStore();
 
@@ -54,14 +59,21 @@ export const ContentTab: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 min-w-0">
+    <div className="flex-1 min-w-0 space-y-6">
       {/* Header Bar */}
-      <div className="flex items-baseline justify-between mb-4">
+      <div className="flex items-baseline justify-between mb-2">
         <div>
-          <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Content Briefs</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn Timeline Intelligence & Executive Social Briefs</p>
+          <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Content & Personal Post Engine</h1>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn Timeline Intelligence & Cadence Scheduler</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Generate Cadence Post Button */}
+          <button
+            onClick={generateCadenceLinkedInPost}
+            className="font-mono text-xs bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] px-3 py-1 rounded-md font-medium border border-[rgba(74,143,194,0.35)] hover:bg-[rgba(74,143,194,0.25)] transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <IconWand size={14} /> Auto-Draft Personal Brief
+          </button>
           {/* Sync Timeline Button */}
           <button
             onClick={handleTimelineSync}
@@ -69,25 +81,61 @@ export const ContentTab: React.FC = () => {
             className="font-mono text-xs bg-[#151A21] text-[#4A8FC2] px-3 py-1 rounded-md font-medium border border-[rgba(74,143,194,0.3)] hover:bg-[#181E27] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
             <IconRefresh size={13} className={isSyncingTimeline ? 'animate-spin' : ''} />
-            {isSyncingTimeline ? 'Syncing Timeline...' : 'Sync LinkedIn Activity'}
+            {isSyncingTimeline ? 'Syncing...' : 'Sync Feed'}
           </button>
           <button
             onClick={() => setShowNewModal(true)}
             className="font-mono text-xs bg-[#4A8FC2] text-black px-3 py-1 rounded-md font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1 cursor-pointer"
           >
-            <IconPlus size={14} /> New Social Brief
+            <IconPlus size={14} /> Custom Topic
           </button>
+        </div>
+      </div>
+
+      {/* Cadence Scheduling Bar */}
+      <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-lg bg-[rgba(74,143,194,0.16)] text-[#4A8FC2]">
+            <IconCalendarTime size={18} />
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold text-[#F0F4F8] m-0">Personal LinkedIn Post Frequency</h4>
+            <p className="text-[11px] text-[#7A8492] m-0">Auto-drafts high-impact personal briefs matching your executive voice</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {(
+            [
+              { id: 'daily', label: '🗓️ Daily (9 AM)' },
+              { id: 'every_2_days', label: '⚡ Every 2 Days (Recommended)' },
+              { id: 'weekly', label: '📅 Weekly' },
+              { id: 'manual', label: '🖐️ Manual' },
+            ] as const
+          ).map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setLinkedInCadence(c.id as PostCadence)}
+              className={`font-mono text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
+                linkedInCadence === c.id
+                  ? 'bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] border-[rgba(74,143,194,0.35)]'
+                  : 'bg-[#181E27] text-[#7A8492] border-[#242B35] hover:text-[#F0F4F8]'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* LinkedIn Executive Profile & Timeline Summary Card */}
       {(platformFilter === 'all' || platformFilter === 'linkedin') && (
         linkedInSummary ? (
-          <div className="mb-5 p-5 rounded-xl bg-[rgba(74,143,194,0.08)] border border-[rgba(74,143,194,0.35)] shadow-[0_0_15px_rgba(74,143,194,0.05)]">
+          <div className="p-5 rounded-xl bg-[rgba(74,143,194,0.08)] border border-[rgba(74,143,194,0.35)] shadow-[0_0_15px_rgba(74,143,194,0.05)]">
             <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[rgba(74,143,194,0.2)]">
               <div className="flex items-center gap-2">
                 <IconBrandLinkedin size={18} className="text-[#4A8FC2]" />
-                <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">LinkedIn Profile & Timeline Brief</h3>
+                <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">LinkedIn Network Intelligence Brief</h3>
               </div>
               <div className="flex items-center gap-3 font-mono text-xs">
                 <span className="text-[#4A8FC2] flex items-center gap-1">
@@ -102,7 +150,7 @@ export const ContentTab: React.FC = () => {
             </p>
 
             <p className="text-xs text-[#F0F4F8] leading-relaxed bg-[#151A21] p-3 rounded-lg border border-[#242B35] mb-3">
-              <strong className="text-[#4A8FC2]">Chief-of-Staff Summary: </strong>
+              <strong className="text-[#4A8FC2]">Chief-of-Staff Network Digest: </strong>
               {linkedInSummary.executive_summary}
             </p>
 
@@ -117,14 +165,14 @@ export const ContentTab: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="mb-5 p-4 rounded-xl bg-[#151A21] border border-[#242B35] text-center flex items-center justify-between">
+          <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] text-center flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-[rgba(74,143,194,0.12)] text-[#4A8FC2]">
                 <IconBrandLinkedin size={20} />
               </div>
               <div className="text-left">
                 <h4 className="text-xs font-semibold text-[#F0F4F8] m-0">No LinkedIn Timeline Data Synced Yet</h4>
-                <p className="text-[11px] text-[#7A8492] m-0">Click Sync LinkedIn Activity to fetch timeline posts and generate executive AI summary.</p>
+                <p className="text-[11px] text-[#7A8492] m-0">Click Sync Feed to fetch timeline posts and generate executive AI summary.</p>
               </div>
             </div>
             <button
@@ -132,14 +180,14 @@ export const ContentTab: React.FC = () => {
               disabled={isSyncingTimeline}
               className="font-mono text-xs bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] px-3 py-1.5 rounded-lg font-medium border border-[rgba(74,143,194,0.35)] hover:bg-[rgba(74,143,194,0.25)] transition-colors cursor-pointer shrink-0"
             >
-              Sync LinkedIn Activity
+              Sync Feed
             </button>
           </div>
         )
       )}
 
       {/* Platform Filter Tabs */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2">
         <button
           onClick={() => setPlatformFilter('all')}
           className={`font-mono text-xs px-3 py-1 rounded-md transition-colors cursor-pointer ${
@@ -174,7 +222,7 @@ export const ContentTab: React.FC = () => {
 
       {/* New Brief Creation Form */}
       {showNewModal && (
-        <form onSubmit={handleCreateSubmit} className="mb-4 p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+        <form onSubmit={handleCreateSubmit} className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">Generate Social Brief</h4>
             <select
@@ -190,7 +238,7 @@ export const ContentTab: React.FC = () => {
             type="text"
             value={newTopic}
             onChange={(e) => setNewTopic(e.target.value)}
-            placeholder="Enter milestone topic (e.g. Shipped new auth flow or Launched v2 release)..."
+            placeholder="Enter milestone topic (e.g. Shipped local-first architecture or Raised seed round)..."
             className="w-full bg-[#181E27] text-xs text-[#F0F4F8] p-2.5 rounded border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
           />
           <div className="flex items-center gap-2">
@@ -211,7 +259,7 @@ export const ContentTab: React.FC = () => {
       {/* Social Post Cards */}
       {filteredPosts.length === 0 ? (
         <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl text-xs text-[#7A8492]">
-          No active content briefs for this filter.
+          No active content briefs. Click <strong>Auto-Draft Personal Brief</strong> to generate a post for your scheduled cadence!
         </div>
       ) : (
         <div className="space-y-4">
@@ -282,10 +330,24 @@ export const ContentTab: React.FC = () => {
                 {/* Quick Tone Pills & Action Buttons */}
                 {!isPosted && (
                   <div className="space-y-3 pt-1 border-t border-[#242B35]">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono text-[10px] text-[#7A8492] flex items-center gap-1 mr-1">
-                        <IconSparkles size={11} /> Refine:
+                        <IconSparkles size={11} /> Tone:
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => regenerateSocialPost(post.id, 'leadership')}
+                        className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#151A21] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] transition-colors cursor-pointer"
+                      >
+                        Thought Leadership
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => regenerateSocialPost(post.id, 'story')}
+                        className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#151A21] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] transition-colors cursor-pointer"
+                      >
+                        Storytelling
+                      </button>
                       <button
                         type="button"
                         onClick={() => regenerateSocialPost(post.id, 'punchy')}
@@ -298,14 +360,7 @@ export const ContentTab: React.FC = () => {
                         onClick={() => regenerateSocialPost(post.id, 'detailed')}
                         className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#151A21] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] transition-colors cursor-pointer"
                       >
-                        Detailed
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => regenerateSocialPost(post.id, 'thread')}
-                        className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#151A21] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] transition-colors cursor-pointer"
-                      >
-                        Thread
+                        Technical Deep Dive
                       </button>
                     </div>
 
@@ -335,10 +390,10 @@ export const ContentTab: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => approveSocialPost(post.id)}
-                            className="px-3.5 py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.16)] border border-[rgba(74,143,194,0.35)] rounded-lg hover:bg-[rgba(74,143,194,0.25)] transition-colors cursor-pointer"
+                            className="px-3.5 py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.16)] border border-[rgba(74,143,194,0.35)] rounded-lg hover:bg-[rgba(74,143,194,0.25)] transition-colors cursor-pointer font-mono"
                           >
                             <IconCheck size={14} className="inline mr-1 -mt-0.5" />
-                            Approve & Queue Post
+                            Approve & Post to LinkedIn
                           </button>
                           <button
                             type="button"

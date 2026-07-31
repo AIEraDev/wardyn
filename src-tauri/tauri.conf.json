@@ -28,7 +28,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' tauri: asset: https://api.linkedin.com https://www.linkedin.com https://googleapis.com https://*.googleapis.com http://localhost:11434 http://127.0.0.1:14220; script-src 'self' 'unsafe-inline' 'unsafe-eval' tauri: asset:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' tauri: asset: data: blob: https:; connect-src 'self' tauri: asset: ipc: http://localhost:1420 http://localhost:11434 http://127.0.0.1:14220 https://api.linkedin.com https://www.linkedin.com https://*.googleapis.com https://fonts.googleapis.com;"
     }
   },
   "bundle": {

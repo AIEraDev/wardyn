@@ -245,7 +245,7 @@ export const ChannelsTab: React.FC = () => {
                       }}
                       className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono"
                     >
-                      <IconPlus size={14} /> {isOAuthChannel ? 'Connect LinkedIn OAuth' : 'Configure Channel'}
+                      <IconPlus size={14} /> {isOAuthChannel ? (channel.id === 'gmail' ? 'Connect Gmail OAuth' : 'Connect LinkedIn OAuth') : 'Configure Channel'}
                     </button>
                   )}
                 </div>

@@ -84,6 +84,11 @@ async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Ve
     calendar::sync::sync_calendar_deadlines(&state.0).await
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    open::that(url).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok(); // Automatically load .env file
@@ -114,7 +119,8 @@ pub fn run() {
             sync_gmail_messages,
             disconnect_gmail,
             process_item_with_ollama,
-            sync_calendar_deadlines_command
+            sync_calendar_deadlines_command,
+            open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

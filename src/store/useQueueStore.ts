@@ -496,12 +496,20 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       console.warn('Clipboard write warning:', err);
     }
 
-    // 2. Launch system browser to platform share URL
+    // 2. Launch system browser to platform share URL via Rust open_external_url
     const shareUrl = target.platform === 'linkedin'
       ? `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(finalContent)}`
       : `https://twitter.com/intent/tweet?text=${encodeURIComponent(finalContent)}`;
 
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('open_external_url', { url: shareUrl });
+      } catch (err) {
+        console.warn('Tauri open_external_url fallback:', err);
+        window.open(shareUrl, '_blank');
+      }
+    } else if (typeof window !== 'undefined') {
       window.open(shareUrl, '_blank');
     }
 

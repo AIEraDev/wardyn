@@ -76,24 +76,24 @@ const INITIAL_SOCIAL_POSTS: SocialPost[] = [
 ];
 
 const INITIAL_LINKEDIN_SUMMARY: LinkedInTimelineSummary = {
-  profile_name: 'Executive Leader',
+  profile_name: 'abdulkabirmusa',
   headline: 'Founder & Software Engineer | Building Wardyn Local-First Sentinel',
   total_posts_analyzed: 5,
-  total_impressions: '14,280+',
-  top_performing_topic: 'Local-First AI Architecture & Tauri Desktop Development',
-  executive_summary: 'Recent activity shows strong engagement on build-in-public technical milestones. Key themes: High performance Tauri v2 desktop architecture, local LLM voice-matched drafting, and local-first data privacy.',
+  total_impressions: '18,650+',
+  top_performing_topic: 'Local-First Desktop Architecture & Tauri v2 Performance',
+  executive_summary: 'Ollama local analysis completed for abdulkabirmusa: 18.6k total impressions across recent activity. Top engagement driven by local-first Tauri v2 architecture breakdowns and private voice drafting.',
   recent_posts: [
     {
       id: 'lp-1',
       text: 'Building local-first desktop software with Tauri v2 and Rust. Why sacrifice privacy for AI intelligence when you can run both locally?',
-      engagement: '4.2k views • 182 likes • 34 comments',
-      date: '2 days ago',
+      engagement: '5.4k views • 240 likes • 42 comments',
+      date: 'Just now',
     },
     {
       id: 'lp-2',
       text: 'Shipped Clypra text-effects rewrite. Zero-latency rendering and custom web presets built for modern web apps.',
-      engagement: '2.8k views • 94 likes • 19 comments',
-      date: '5 days ago',
+      engagement: '3.1k views • 112 likes • 28 comments',
+      date: '3 days ago',
     },
   ],
 };
@@ -152,10 +152,10 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     id: 'linkedin',
     name: 'LinkedIn',
     category: 'social',
-    description: 'Executive network outreach, timeline ingestion & build-in-public content briefs',
+    description: 'Executive network outreach, personal profile (abdulkabirmusa) timeline ingestion & content briefs',
     iconName: 'IconBrandLinkedin',
     status: 'connected',
-    accountLabel: 'Timeline Brief Active',
+    accountLabel: 'abdulkabirmusa',
   },
   {
     id: 'twitter',
@@ -190,6 +190,7 @@ interface QueueStore {
   channels: ChannelConfig[];
   calendarEvents: SyncedCalendarEvent[];
   linkedInSummary: LinkedInTimelineSummary | null;
+  linkedInAccount: string | null;
   activeTab: TabType;
   isLoading: boolean;
   error: string | null;
@@ -217,6 +218,9 @@ interface QueueStore {
   // Multi-Channel Actions
   connectChannel: (channelId: string, apiKey?: string, webhookUrl?: string) => void;
   disconnectChannel: (channelId: string) => void;
+
+  // LinkedIn OAuth Actions
+  connectLinkedIn: () => Promise<void>;
 
   // Social Post Actions (LinkedIn & Twitter/X)
   approveSocialPost: (id: string, editedContent?: string) => Promise<void>;
@@ -264,6 +268,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     },
   ],
   linkedInSummary: INITIAL_LINKEDIN_SUMMARY,
+  linkedInAccount: 'abdulkabirmusa',
   activeTab: 'today',
   isLoading: false,
   error: null,
@@ -354,6 +359,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   connectChannel: (channelId: string, apiKey?: string, webhookUrl?: string) => {
+    if (channelId === 'linkedin') {
+      get().connectLinkedIn();
+      return;
+    }
+
     set((state) => ({
       channels: state.channels.map((c) =>
         c.id === channelId
@@ -379,6 +389,28 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           : c
       ),
     }));
+  },
+
+  connectLinkedIn: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const profileName = await invoke<string>('start_linkedin_auth');
+        set({ linkedInAccount: profileName });
+        set((state) => ({
+          channels: state.channels.map((c) =>
+            c.id === 'linkedin' ? { ...c, status: 'connected', accountLabel: profileName } : c
+          ),
+        }));
+        await get().syncLinkedInTimeline();
+        await get().sendDesktopNotification(
+          '💼 LinkedIn Personal Profile Connected',
+          `Authenticated profile for: ${profileName}`
+        );
+      } catch (err: any) {
+        set({ error: err.toString() });
+      }
+    }
   },
 
   approveItem: async (id: string, editedDraft?: string) => {
@@ -612,14 +644,15 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   syncLinkedInTimeline: async () => {
+    const account = get().linkedInAccount || 'abdulkabirmusa';
     set({
       linkedInSummary: {
-        profile_name: 'Executive Leader',
+        profile_name: account,
         headline: 'Founder & Software Engineer | Building Wardyn Local-First Sentinel',
         total_posts_analyzed: 5,
         total_impressions: '18,650+',
         top_performing_topic: 'Local-First Desktop Architecture & Tauri v2 Performance',
-        executive_summary: 'Ollama local analysis completed: 18.6k total impressions across recent activity. Top engagement driven by local-first Tauri v2 architecture breakdowns and private voice drafting.',
+        executive_summary: `Ollama local analysis completed for personal profile ${account}: 18.6k total impressions across recent activity. Top engagement driven by local-first Tauri v2 architecture breakdowns and private voice drafting.`,
         recent_posts: [
           {
             id: 'lp-1',
@@ -638,8 +671,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     });
 
     await get().sendDesktopNotification(
-      '💼 LinkedIn Timeline Synced',
-      'Ollama summarized your recent profile posts & engagement metrics!'
+      '💼 LinkedIn Personal Profile Synced',
+      `Ollama summarized personal profile timeline & engagement for ${account}!`
     );
   },
 

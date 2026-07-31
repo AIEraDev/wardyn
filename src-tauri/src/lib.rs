@@ -1,6 +1,7 @@
 pub mod models;
 pub mod db;
 pub mod gmail;
+pub mod linkedin;
 pub mod ollama;
 pub mod calendar;
 
@@ -39,6 +40,18 @@ async fn start_gmail_auth(state: State<'_, DbState>) -> Result<String, String> {
 fn get_gmail_auth_status(state: State<'_, DbState>) -> Result<Option<String>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let creds = db::get_credentials(&conn, "gmail").map_err(|e| e.to_string())?;
+    Ok(creds.and_then(|c| c.email))
+}
+
+#[tauri::command]
+async fn start_linkedin_auth(state: State<'_, DbState>) -> Result<String, String> {
+    linkedin::oauth::start_linkedin_oauth_flow(&state.0).await
+}
+
+#[tauri::command]
+fn get_linkedin_auth_status(state: State<'_, DbState>) -> Result<Option<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let creds = db::get_credentials(&conn, "linkedin").map_err(|e| e.to_string())?;
     Ok(creds.and_then(|c| c.email))
 }
 
@@ -116,6 +129,8 @@ pub fn run() {
             skip_queue_item,
             start_gmail_auth,
             get_gmail_auth_status,
+            start_linkedin_auth,
+            get_linkedin_auth_status,
             sync_gmail_messages,
             disconnect_gmail,
             process_item_with_ollama,

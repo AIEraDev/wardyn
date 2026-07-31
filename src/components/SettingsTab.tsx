@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh, IconTrash } from '@tabler/icons-react';
+import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh, IconTrash, IconFlame } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
 import { SupportedLanguage } from '../i18n/translations';
 
@@ -8,43 +8,84 @@ interface CatalogModel {
   name: string;
   provider: string;
   size: string;
+  tier: 'standard' | 'power';
   description: string;
 }
 
 const FREE_MODEL_CATALOG: CatalogModel[] = [
+  // --- Frontier High-Power Models (7B – 70B) ---
+  {
+    id: 'llama3:70b',
+    name: 'Llama 3 70B (Frontier)',
+    provider: 'Meta AI',
+    size: '40.0 GB',
+    tier: 'power',
+    description: 'GPT-4 level frontier performance for complex executive reasoning & writing.',
+  },
+  {
+    id: 'qwen2.5:32b',
+    name: 'Qwen 2.5 32B',
+    provider: 'Alibaba Cloud (Open Source)',
+    size: '19.0 GB',
+    tier: 'power',
+    description: 'Top-tier enterprise multilingual model with high-precision structured outputs.',
+  },
+  {
+    id: 'mixtral:8x7b',
+    name: 'Mixtral 8x7B MoE',
+    provider: 'Mistral AI',
+    size: '26.0 GB',
+    tier: 'power',
+    description: 'Mixture-of-Experts architecture. Ultra-fast inference with 47B capacity.',
+  },
+  {
+    id: 'gemma2:27b',
+    name: 'Gemma 2 27B',
+    provider: 'Google DeepMind',
+    size: '16.0 GB',
+    tier: 'power',
+    description: "Google DeepMind's flagship open model with state-of-the-art accuracy.",
+  },
+  {
+    id: 'deepseek-coder:33b',
+    name: 'DeepSeek Coder 33B',
+    provider: 'DeepSeek AI',
+    size: '19.0 GB',
+    tier: 'power',
+    description: 'Specialized high-capacity code synthesis, system architecture & JSON formatting.',
+  },
+
+  // --- Compact & Balanced Models (2B – 8B) ---
   {
     id: 'qwen2.5',
-    name: 'Qwen 2.5',
+    name: 'Qwen 2.5 7B (Recommended)',
     provider: 'Alibaba Cloud (Open Source)',
     size: '4.7 GB',
-    description: 'Recommended. Exceptional multi-language reasoning & precise voice drafting.',
+    tier: 'standard',
+    description: 'Recommended default. Exceptional balance of speed, tone matching & multi-language.',
   },
   {
     id: 'llama3',
-    name: 'Llama 3',
+    name: 'Llama 3 8B',
     provider: 'Meta AI',
     size: '4.7 GB',
-    description: 'State-of-the-art general intelligence for executive summaries & drafts.',
+    tier: 'standard',
+    description: 'Balanced general intelligence for executive summaries & drafts.',
   },
   {
     id: 'mistral',
     name: 'Mistral 7B',
     provider: 'Mistral AI',
     size: '4.1 GB',
+    tier: 'standard',
     description: 'Ultra-fast, concise natural language processing & high-speed triaging.',
-  },
-  {
-    id: 'gemma',
-    name: 'Gemma 7B',
-    provider: 'Google DeepMind',
-    size: '5.0 GB',
-    description: 'Lightweight & powerful open model built by Google DeepMind.',
   },
   {
     id: 'phi3',
     name: 'Phi-3 Mini',
     provider: 'Microsoft AI',
     size: '2.2 GB',
+    tier: 'standard',
     description: 'Lightweight compact model optimized for devices with low RAM.',
   },
 ];
@@ -76,7 +117,7 @@ export const SettingsTab: React.FC = () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const models = await invoke<Array<{ name: string; size_gb: string }>>('get_installed_ollama_models_command');
-        const names = models.map((m) => m.name.split(':')[0]);
+        const names = models.map((m) => m.name);
         setInstalledModels(names);
       } catch (err) {
         console.warn('Failed to fetch installed Ollama models:', err);
@@ -92,8 +133,8 @@ export const SettingsTab: React.FC = () => {
   const handleInstallModel = async (modelId: string, modelName: string) => {
     setInstallingModelId(modelId);
     await sendDesktopNotification(
-      '📥 Downloading Free Local Model',
-      `Pulling ${modelName} to local Ollama runtime...`
+      '📥 Downloading High-Performance Local Model',
+      `Pulling ${modelName} (${modelId}) to local Ollama runtime...`
     );
 
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
@@ -102,7 +143,7 @@ export const SettingsTab: React.FC = () => {
         await invoke('install_ollama_model_command', { modelName: modelId });
         await fetchModels();
         await sendDesktopNotification(
-          '✅ Free Local Model Ready',
+          '✅ High-Performance Model Ready',
           `Successfully installed ${modelName}! Wardyn is now powered by ${modelName}.`
         );
       } catch (err: any) {
@@ -146,7 +187,7 @@ export const SettingsTab: React.FC = () => {
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">{t('settings')}</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Language, Free Local Models, Autostart & Connectors</p>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Language, Frontier AI Models, Autostart & Connectors</p>
         </div>
       </div>
 
@@ -186,8 +227,8 @@ export const SettingsTab: React.FC = () => {
               <IconCpu size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Free Local AI Models Catalog</p>
-              <p className="text-xs text-[#9AA4B2]">Browse, install & manage open-source LLMs 100% locally on device</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">High-Performance Local AI Models Catalog</p>
+              <p className="text-xs text-[#9AA4B2]">From 2B compact to 70B GPT-4 class frontier open models</p>
             </div>
           </div>
 
@@ -201,18 +242,28 @@ export const SettingsTab: React.FC = () => {
 
         <div className="space-y-3">
           {FREE_MODEL_CATALOG.map((model) => {
-            const isInstalled = installedModels.includes(model.id);
+            const isInstalled = installedModels.some((m) => m === model.id || m.startsWith(`${model.id}:`));
             const isDownloading = installingModelId === model.id;
             const isDeleting = uninstallingModelId === model.id;
+            const isPowerTier = model.tier === 'power';
 
             return (
               <div
                 key={model.id}
-                className="p-3.5 rounded-lg bg-[#181E27] border border-[#242B35] flex items-center justify-between gap-4"
+                className={`p-3.5 rounded-lg border flex items-center justify-between gap-4 transition-all ${
+                  isPowerTier
+                    ? 'bg-[#181E27] border-[rgba(232,162,61,0.3)] shadow-[0_0_10px_rgba(232,162,61,0.04)]'
+                    : 'bg-[#181E27] border-[#242B35]'
+                }`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-semibold text-[#F0F4F8]">{model.name}</span>
+                    {isPowerTier && (
+                      <span className="font-mono text-[10px] text-[#E8A23D] bg-[rgba(232,162,61,0.15)] px-2 py-0.5 rounded border border-[rgba(232,162,61,0.3)] flex items-center gap-1">
+                        <IconFlame size={11} /> High-Power
+                      </span>
+                    )}
                     <span className="font-mono text-[10px] text-[#7A8492] px-2 py-0.5 rounded bg-[#151A21] border border-[#242B35]">
                       {model.provider}
                     </span>

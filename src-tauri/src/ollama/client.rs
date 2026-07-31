@@ -20,7 +20,7 @@ pub struct InstalledModelInfo {
 
 pub async fn classify_and_draft_item(item: &QueueItem) -> ClassificationResult {
     let client_res = Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(8)) // Increased timeout for larger 32B/70B models
         .build();
 
     let client = match client_res {
@@ -35,7 +35,18 @@ pub async fn classify_and_draft_item(item: &QueueItem) -> ClassificationResult {
         item.preview
     );
 
-    let models = ["qwen2.5", "llama3", "mistral", "gemma", "llama2", "phi3"];
+    let models = [
+        "llama3:70b",
+        "qwen2.5:32b",
+        "mixtral:8x7b",
+        "gemma2:27b",
+        "deepseek-coder:33b",
+        "qwen2.5",
+        "llama3",
+        "mistral",
+        "gemma",
+        "phi3",
+    ];
 
     for model in models {
         let body = serde_json::json!({

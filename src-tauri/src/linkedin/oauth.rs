@@ -10,16 +10,19 @@ pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>
     // Dynamic redirect URI support (defaults to http://127.0.0.1:14220/callback)
     let redirect_uri = std::env::var("LINKEDIN_REDIRECT_URI").unwrap_or_else(|_| "http://127.0.0.1:14220/callback".to_string());
     let redirect_uri_encoded = urlencoding::encode(&redirect_uri);
+    let state_token = format!("wardyn_state_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
 
-    // 1. Build LinkedIn OAuth Auth URL
+    // 1. Build LinkedIn OAuth Auth URL with required state parameter and openid scope
     let auth_url = format!(
         "https://www.linkedin.com/oauth/v2/authorization?\
 response_type=code&\
 client_id={}&\
 redirect_uri={}&\
+state={}&\
 scope=openid%20profile%20email",
         client_id,
-        redirect_uri_encoded
+        redirect_uri_encoded,
+        state_token
     );
 
     // 2. Start local TCP listener on 127.0.0.1:14220

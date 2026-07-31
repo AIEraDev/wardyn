@@ -163,7 +163,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   socialPosts: [],
   channels: INITIAL_CHANNELS,
   calendarEvents: [],
-  linkedInSummary: null, // ZERO DUMMY DATA: null until fetched from real API
+  linkedInSummary: null,
   linkedInAccount: null,
   activeTab: 'today',
   isLoading: false,
@@ -556,6 +556,15 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
+        const authStatus = await invoke<string | null>('get_linkedin_auth_status');
+        if (!authStatus) {
+          await get().sendDesktopNotification(
+            '💼 LinkedIn Account Unsynced',
+            'Click "Connect LinkedIn OAuth" in Channels or Settings to connect your personal profile.'
+          );
+          return;
+        }
+
         const summary = await invoke<LinkedInTimelineSummary>('fetch_linkedin_timeline_command');
         set({ linkedInSummary: summary });
         await get().sendDesktopNotification(
@@ -563,8 +572,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           `Fetched real LinkedIn API timeline for ${summary.profile_name}`
         );
       } catch (err: any) {
-        console.warn('LinkedIn live API sync error:', err);
-        set({ error: err.toString() });
+        console.info('LinkedIn live API check:', err);
       }
     }
   },

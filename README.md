@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <img src="https://raw.githubusercontent.com/AIEraDev/wardyn/main/src/wardyn.png" alt="Wardyn Logo" width="130" style="border-radius: 20px;" />
+  <img src="src/wardyn.png" alt="Wardyn Logo" width="130" style="border-radius: 20px;" />
   <br />
   <h1>🛡️ Wardyn</h1>
   <p><strong>Local-First Desktop Chief-of-Staff & Executive Sentinel</strong></p>

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { QueueItem, QueueItemStatus, TabType } from '../types/queue';
+import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform } from '../types/queue';
 
 export interface SyncedCalendarEvent {
   id: string;
@@ -52,8 +52,32 @@ const INITIAL_MOCK_ITEMS: QueueItem[] = [
   },
 ];
 
+const INITIAL_SOCIAL_POSTS: SocialPost[] = [
+  {
+    id: 'soc-1',
+    platform: 'linkedin',
+    topic: 'Clypra Text-Effects Milestone',
+    content: 'Shipped the core text-effects engine rewrite in Clypra this week. Clean API, zero-latency rendering, and 30+ visual presets ported. Building tools that feel like magic.',
+    hashtags: ['#BuildInPublic', '#WebDev', '#ReactJS', '#TypeScript'],
+    media_cue: '20s screen recording of the effect picker in action',
+    status: 'pending',
+    created_at: '2026-07-30T09:00:00Z',
+  },
+  {
+    id: 'soc-2',
+    platform: 'twitter',
+    topic: 'Wardyn Local-First Chief of Staff Launch',
+    content: 'Why build another cloud email wrapper when you can have a local-first desktop chief of staff?\n\nIntroducing Wardyn 🛡️\n\n1/ Runs locally on Tauri + Rust\n2/ Voice-matched drafts via local Ollama LLM\n3/ Zero unattended sends\n\nCode live on GitHub 🚀',
+    hashtags: ['#Tauri', '#Rust', '#IndieHacker', '#BuildInPublic'],
+    media_cue: 'Screenshot of Wardyn Sentinel Blue dark mode dashboard',
+    status: 'pending',
+    created_at: '2026-07-30T11:00:00Z',
+  },
+];
+
 interface QueueStore {
   items: QueueItem[];
+  socialPosts: SocialPost[];
   calendarEvents: SyncedCalendarEvent[];
   activeTab: TabType;
   isLoading: boolean;
@@ -79,6 +103,12 @@ interface QueueStore {
   regenerateDraft: (id: string, tone: 'shorter' | 'formal' | 'availability') => void;
   setTestOverrideRecipient: (email: string | null) => void;
 
+  // Social Post Actions (LinkedIn & Twitter/X)
+  approveSocialPost: (id: string, editedContent?: string) => Promise<void>;
+  skipSocialPost: (id: string) => void;
+  regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread') => void;
+  createSocialPost: (platform: SocialPlatform, topic: string) => void;
+
   // Gmail OAuth & Send Actions
   checkGmailStatus: () => Promise<void>;
   connectGmail: () => Promise<void>;
@@ -97,6 +127,7 @@ interface QueueStore {
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
   items: INITIAL_MOCK_ITEMS,
+  socialPosts: INITIAL_SOCIAL_POSTS,
   calendarEvents: [
     {
       id: 'cal-1',
@@ -226,7 +257,6 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       ),
     }));
 
-    // Dispatch Native Desktop Notification for Approval / Edit Send
     const actionLabel = editedDraft !== undefined ? '✍️ Edited Reply Sent' : '✅ Reply Approved & Sent';
     const overrideNotice = get().testOverrideRecipient ? ` (to test target: ${get().testOverrideRecipient})` : '';
     await get().sendDesktopNotification(
@@ -320,6 +350,92 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     get().sendDesktopNotification(
       `✨ Draft Refined (${tone.toUpperCase()})`,
       `Updated reply draft for ${target.sender}`
+    );
+  },
+
+  approveSocialPost: async (id: string, editedContent?: string) => {
+    const target = get().socialPosts.find((p) => p.id === id);
+    if (!target) return;
+
+    const finalContent = editedContent !== undefined ? editedContent : target.content;
+
+    set((state) => ({
+      socialPosts: state.socialPosts.map((post) =>
+        post.id === id
+          ? { ...post, status: 'posted', content: finalContent }
+          : post
+      ),
+    }));
+
+    const platformLabel = target.platform === 'linkedin' ? 'LinkedIn' : 'Twitter / X';
+    await get().sendDesktopNotification(
+      `🚀 ${platformLabel} Post Approved`,
+      `Approved and queued post: "${target.topic}"`
+    );
+  },
+
+  skipSocialPost: (id: string) => {
+    const target = get().socialPosts.find((p) => p.id === id);
+    set((state) => ({
+      socialPosts: state.socialPosts.map((post) =>
+        post.id === id ? { ...post, status: 'skipped' } : post
+      ),
+    }));
+
+    if (target) {
+      get().sendDesktopNotification(
+        '⏭️ Social Brief Skipped',
+        `Skipped ${target.platform.toUpperCase()} post brief for ${target.topic}`
+      );
+    }
+  },
+
+  regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread') => {
+    const target = get().socialPosts.find((p) => p.id === id);
+    if (!target) return;
+
+    let newContent = target.content;
+    if (tone === 'punchy') {
+      newContent = `Shipped ${target.topic}. Clean, zero-latency, and lightning fast. 🚀`;
+    } else if (tone === 'detailed') {
+      newContent = `Deep dive into ${target.topic}:\n- Architectural design & state management\n- Benchmark performance results\n- Lessons learned building local-first apps.`;
+    } else if (tone === 'thread') {
+      newContent = `1/ How we built ${target.topic}:\n\n2/ The key challenge was local state performance...\n\n3/ Here is what we learned 🧵`;
+    }
+
+    set((state) => ({
+      socialPosts: state.socialPosts.map((post) =>
+        post.id === id ? { ...post, content: newContent } : post
+      ),
+    }));
+
+    get().sendDesktopNotification(
+      `✨ Social Brief Refined (${tone.toUpperCase()})`,
+      `Updated ${target.platform.toUpperCase()} draft content`
+    );
+  },
+
+  createSocialPost: (platform: SocialPlatform, topic: string) => {
+    const newPost: SocialPost = {
+      id: `soc-${Date.now()}`,
+      platform,
+      topic,
+      content: platform === 'linkedin'
+        ? `Excited to announce: ${topic}. Building in public and pushing the boundaries of executive chief-of-staff software.`
+        : `1/ Quick breakdown on ${topic} 🧵\n\nBuilding local-first apps with Tauri & React.`,
+      hashtags: ['#BuildInPublic', '#Tech', '#AI'],
+      media_cue: 'Demo screenshot / screen recording',
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    };
+
+    set((state) => ({
+      socialPosts: [newPost, ...state.socialPosts],
+    }));
+
+    get().sendDesktopNotification(
+      `✍️ New ${platform.toUpperCase()} Brief Generated`,
+      `Created social post brief for "${topic}"`
     );
   },
 

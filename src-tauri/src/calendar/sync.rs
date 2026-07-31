@@ -18,6 +18,7 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
     if let Some(creds) = creds_opt {
         let client = reqwest::Client::new();
 
+        // 1. Auto-create Google Calendar events for flagged emails
         for item in &flagged_items {
             let already_synced = {
                 let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
@@ -28,7 +29,6 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
                 continue;
             }
 
-            // Construct Google Calendar Event payload
             let summary = format!("Deadline: {}", item.preview.chars().take(40).collect::<String>());
             let start_time = "2026-08-01T17:00:00Z";
             let end_time = "2026-08-01T18:00:00Z";
@@ -68,6 +68,42 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
 
             let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
             db::record_calendar_event(&conn, &record).ok();
+        }
+
+        // 2. Fetch upcoming events from Google Calendar API
+        let list_url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=10&timeMin=2026-07-31T00:00:00Z";
+        let cal_res = client.get(list_url)
+            .bearer_auth(&creds.access_token)
+            .send()
+            .await;
+
+        if let Ok(resp) = cal_res {
+            if resp.status().is_success() {
+                let cal_json: serde_json::Value = resp.json().await.unwrap_or_default();
+                if let Some(events_list) = cal_json["items"].as_array() {
+                    for evt in events_list {
+                        let evt_id = evt["id"].as_str().unwrap_or("").to_string();
+                        let evt_summary = evt["summary"].as_str().unwrap_or("Upcoming Event").to_string();
+                        let evt_date = evt["start"]["dateTime"]
+                            .as_str()
+                            .or_else(|| evt["start"]["date"].as_str())
+                            .unwrap_or("2026-08-01T10:00:00Z")
+                            .to_string();
+
+                        let record = SyncedCalendarEvent {
+                            id: format!("gcal_{}", evt_id),
+                            queue_item_id: format!("gcal_item_{}", evt_id),
+                            event_id: evt_id,
+                            summary: evt_summary,
+                            event_date: evt_date,
+                            created_at: "2026-07-31T01:45:00Z".into(),
+                        };
+
+                        let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+                        db::record_calendar_event(&conn, &record).ok();
+                    }
+                }
+            }
         }
     }
 

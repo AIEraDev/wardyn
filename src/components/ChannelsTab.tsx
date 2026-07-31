@@ -32,7 +32,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 };
 
 export const ChannelsTab: React.FC = () => {
-  const { channels, connectChannel, disconnectChannel, connectGmail } = useQueueStore();
+  const { channels, connectChannel, disconnectChannel, connectGmail, connectLinkedIn } = useQueueStore();
   const [selectedCategory, setSelectedCategory] = useState<'all' | ChannelCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [configuringChannelId, setConfiguringChannelId] = useState<string | null>(null);
@@ -49,6 +49,8 @@ export const ChannelsTab: React.FC = () => {
     e.preventDefault();
     if (channelId === 'gmail') {
       connectGmail();
+    } else if (channelId === 'linkedin') {
+      connectLinkedIn();
     } else {
       connectChannel(channelId, apiKeyInput || 'api_key_sample', webhookUrlInput || undefined);
     }
@@ -109,6 +111,7 @@ export const ChannelsTab: React.FC = () => {
           const Icon = ICON_MAP[channel.iconName] || IconPlugConnected;
           const isConnected = channel.status === 'connected';
           const isConfiguring = configuringChannelId === channel.id;
+          const isOAuthChannel = channel.id === 'gmail' || channel.id === 'linkedin';
 
           return (
             <div
@@ -159,8 +162,25 @@ export const ChannelsTab: React.FC = () => {
               {/* Action Controls */}
               {isConfiguring ? (
                 <form onSubmit={(e) => handleConnectSubmit(e, channel.id)} className="space-y-2 pt-2 border-t border-[#242B35]">
-                  {channel.id === 'gmail' ? (
-                    <p className="text-xs text-[#9AA4B2]">Will open Google OAuth PKCE authentication in system browser.</p>
+                  {isOAuthChannel ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-[#9AA4B2]">Will open official browser OAuth 2.0 PKCE authentication window.</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          className="px-3 py-1.5 text-xs font-medium text-black bg-[#4A8FC2] rounded-lg hover:bg-[#5b9bd1] cursor-pointer font-mono"
+                        >
+                          Connect with OAuth (Browser)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfiguringChannelId(null)}
+                          className="px-3 py-1 text-xs text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <>
                       <input
@@ -177,23 +197,23 @@ export const ChannelsTab: React.FC = () => {
                         placeholder="Webhook URL (optional)..."
                         className="w-full bg-[#151A21] text-xs text-[#F0F4F8] p-2 rounded border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
                       />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          className="px-3 py-1 text-xs font-medium text-black bg-[#4A8FC2] rounded hover:bg-[#5b9bd1] cursor-pointer"
+                        >
+                          Connect Channel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfiguringChannelId(null)}
+                          className="px-3 py-1 text-xs text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </>
                   )}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="submit"
-                      className="px-3 py-1 text-xs font-medium text-black bg-[#4A8FC2] rounded hover:bg-[#5b9bd1] cursor-pointer"
-                    >
-                      Connect Channel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfiguringChannelId(null)}
-                      className="px-3 py-1 text-xs text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
                 </form>
               ) : (
                 <div className="pt-2 border-t border-[#242B35]">
@@ -202,7 +222,7 @@ export const ChannelsTab: React.FC = () => {
                       <span className="text-[11px] text-[#4A8FC2] font-mono flex items-center gap-1">
                         <IconCheck size={13} /> Integrated
                       </span>
-                      {channel.id !== 'calendar' && channel.id !== 'linkedin' && channel.id !== 'twitter' && (
+                      {channel.id !== 'calendar' && (
                         <button
                           type="button"
                           onClick={() => disconnectChannel(channel.id)}
@@ -215,10 +235,17 @@ export const ChannelsTab: React.FC = () => {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setConfiguringChannelId(channel.id)}
-                      className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        if (isOAuthChannel) {
+                          if (channel.id === 'gmail') connectGmail();
+                          if (channel.id === 'linkedin') connectLinkedIn();
+                        } else {
+                          setConfiguringChannelId(channel.id);
+                        }
+                      }}
+                      className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono"
                     >
-                      <IconPlus size={14} /> Configure Channel
+                      <IconPlus size={14} /> {isOAuthChannel ? 'Connect LinkedIn OAuth' : 'Configure Channel'}
                     </button>
                   )}
                 </div>

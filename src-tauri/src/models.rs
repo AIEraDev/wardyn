@@ -15,5 +15,7 @@ pub struct QueueItem {
     pub updated_at: String,
     pub thread_id: Option<String>,
     pub message_id: Option<String>,
+    pub urgency: Option<String>, // "high" | "low"
 }
+
 

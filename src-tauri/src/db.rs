@@ -80,6 +80,8 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     // Safe column migrations for existing databases
     conn.execute("ALTER TABLE queue_items ADD COLUMN thread_id TEXT;", []).ok();
     conn.execute("ALTER TABLE queue_items ADD COLUMN message_id TEXT;", []).ok();
+    conn.execute("ALTER TABLE queue_items ADD COLUMN urgency TEXT DEFAULT 'high';", []).ok();
+
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS credentials (
@@ -159,7 +161,7 @@ pub fn get_recent_voice_edits(conn: &Connection, limit: usize) -> Result<Vec<Voi
 
 
 pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
-    let mut stmt = conn.prepare("SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id FROM queue_items ORDER BY created_at DESC")?;
+    let mut stmt = conn.prepare("SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency FROM queue_items ORDER BY created_at DESC")?;
     let items_iter = stmt.query_map([], |row| {
         let flagged_int: i32 = row.get(7)?;
         Ok(QueueItem {
@@ -176,6 +178,7 @@ pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
             updated_at: row.get(10)?,
             thread_id: row.get(11)?,
             message_id: row.get(12)?,
+            urgency: row.get(13)?,
         })
     })?;
 
@@ -188,8 +191,8 @@ pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
 
 pub fn insert_queue_item(conn: &Connection, item: &QueueItem) -> Result<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO queue_items (id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        "INSERT OR IGNORE INTO queue_items (id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             item.id,
             item.source,
@@ -203,11 +206,13 @@ pub fn insert_queue_item(conn: &Connection, item: &QueueItem) -> Result<()> {
             item.created_at,
             item.updated_at,
             item.thread_id,
-            item.message_id
+            item.message_id,
+            item.urgency.as_deref().unwrap_or("high")
         ],
     )?;
     Ok(())
 }
+
 
 
 pub fn update_status_and_draft(conn: &Connection, id: &str, status: &str, draft: Option<&str>) -> Result<()> {
@@ -311,7 +316,7 @@ pub fn delete_gmail_credentials(conn: &Connection, email: Option<&str>) -> Resul
 
 pub fn get_sender_history(conn: &Connection, sender: &str, limit: usize) -> Result<Vec<QueueItem>> {
     let mut stmt = conn.prepare(
-        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id
+        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency
          FROM queue_items
          WHERE sender = ?1 OR sender LIKE ?2
          ORDER BY created_at DESC LIMIT ?3"
@@ -333,8 +338,10 @@ pub fn get_sender_history(conn: &Connection, sender: &str, limit: usize) -> Resu
             updated_at: row.get(10)?,
             thread_id: row.get(11)?,
             message_id: row.get(12)?,
+            urgency: row.get(13)?,
         })
     })?;
+
 
     let mut list = Vec::new();
     for r in rows {

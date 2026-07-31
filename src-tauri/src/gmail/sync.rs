@@ -137,10 +137,10 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                             updated_at: now.clone(),
                             thread_id: thread_id.clone(),
                             message_id: message_id.clone(),
+                            urgency: Some("high".into()),
                         };
 
                         let analysis = ollama::client::classify_and_draft_item(&temp_item, Some(conn_mutex)).await;
-
 
                         let item = QueueItem {
                             id: item_id,
@@ -156,7 +156,9 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                             updated_at: now,
                             thread_id,
                             message_id,
+                            urgency: analysis.urgency,
                         };
+
 
 
                         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;

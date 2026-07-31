@@ -812,18 +812,23 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         if (newItemsCount > 0) {
           const latestItems = get().items;
           const urgentFlagged = latestItems.find((i) => i.flagged && i.status === 'pending');
+          const highUrgentItem = latestItems.find((i) => (i.urgency === 'high' || !i.urgency) && i.status === 'pending');
+
           if (urgentFlagged) {
             await get().sendDesktopNotification(
               '⚠️ Urgent Visa / Deadline Alert',
               `Action Required: ${urgentFlagged.sender} — ${urgentFlagged.preview}`
             );
-          } else {
+          } else if (highUrgentItem) {
             await get().sendDesktopNotification(
-              '📩 New Messages Triaged',
-              `Wardyn fetched and triaged ${newItemsCount} new message(s) awaiting approval.`
+              '📩 Priority Message Triaged',
+              `High Urgency: ${highUrgentItem.sender} — ${highUrgentItem.preview}`
             );
+          } else {
+            console.log(`[Executive Triage] ${newItemsCount} low-urgency item(s) suppressed from desktop alerts and batched to Daily Digest.`);
           }
         }
+
       } catch (err: any) {
         if (err.toString().includes('revoked') || err.toString().includes('expired')) {
           set({ gmailAccount: null });

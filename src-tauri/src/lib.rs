@@ -92,16 +92,19 @@ async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Resu
 
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = db::now_iso();
+    let urgency_val = result.urgency.as_deref().unwrap_or("high");
     conn.execute(
-        "UPDATE queue_items SET flagged = ?1, draft_text = ?2, confidence = ?3, updated_at = ?4 WHERE id = ?5",
+        "UPDATE queue_items SET flagged = ?1, draft_text = ?2, confidence = ?3, updated_at = ?4, urgency = ?5 WHERE id = ?6",
         rusqlite::params![
             if result.flagged { 1 } else { 0 },
             result.draft_text,
             result.confidence,
             now,
+            urgency_val,
             id
         ],
     ).map_err(|e| e.to_string())?;
+
 
     let updated_items = db::get_all_queue_items(&conn).map_err(|e| e.to_string())?;
     updated_items.into_iter().find(|i| i.id == id).ok_or_else(|| "Item not found".to_string())

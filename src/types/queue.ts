@@ -36,7 +36,9 @@ export interface QueueItem {
   updated_at: string;
   thread_id?: string | null;
   message_id?: string | null;
+  urgency?: 'high' | 'low' | null;
 }
+
 
 
 export interface SocialPost {

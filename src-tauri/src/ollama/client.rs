@@ -7,9 +7,11 @@ use crate::ollama::prompt::get_system_prompt;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClassificationResult {
     pub flagged: bool,
+    pub urgency: Option<String>,
     pub draft_text: Option<String>,
     pub confidence: f64,
 }
+
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InstalledModelInfo {
@@ -193,12 +195,22 @@ fn fallback_rule_based_classify(item: &QueueItem) -> ClassificationResult {
         Some(format!("Received, thanks for sending over details on {}. I will follow up with an update shortly.", extract_topic(&item.preview)))
     };
 
+    let is_low_urgency = lower_preview.contains("newsletter")
+        || lower_preview.contains("unsubscribe")
+        || lower_preview.contains("digest")
+        || lower_preview.contains("weekly update")
+        || lower_preview.contains("promotion");
+
+    let urgency = if is_low_urgency { "low".to_string() } else { "high".to_string() };
+
     ClassificationResult {
         flagged: is_flagged,
+        urgency: Some(urgency),
         draft_text,
         confidence,
     }
 }
+
 
 fn extract_topic(preview: &str) -> String {
     if preview.len() <= 40 {

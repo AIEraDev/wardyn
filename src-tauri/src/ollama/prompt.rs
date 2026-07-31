@@ -42,9 +42,11 @@ YOUR TASK:
 Analyze the incoming message sender and preview. Output ONLY a valid JSON object with the following schema:
 {{
   "flagged": true/false,     // Set to true ONLY if sender or subject is related to UK Visas, UKVI, Home Office, or immigration documents.
+  "urgency": "high",         // Use "high" for direct inquiries, action items, or Visa/UKVI emails. Use "low" for newsletters, social updates, and promotional items.
   "draft_text": "...",       // Suggested reply draft matching the corpus and preference corrections above. If confidence < 0.6, set this to null.
   "confidence": 0.95         // Floating point between 0.0 and 1.0 indicating classification & drafting confidence.
 }}
+
 
 Do not include any explanation or markdown formatting outside the JSON object."#,
         VOICE_CORPUS,

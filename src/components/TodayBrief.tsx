@@ -183,11 +183,41 @@ export const TodayBrief: React.FC = () => {
         pendingItems.map((item) => <ReplyCard key={item.id} item={item} />)
       )}
 
-      {/* Auto-Handled Calendar Footer Line */}
-      <div className="mt-6 flex items-center gap-2 text-xs text-[#7A8492] font-mono">
+      {/* Auto-Handled Calendar Footer Line & Low-Urgency Daily Digest */}
+      {items.some((i) => i.urgency === 'low') && (
+        <div className="mt-6 p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[#E8A23D]">
+              <span className="text-sm">📬</span>
+              <h4 className="text-xs font-semibold text-[#F0F4F8] m-0">Executive Daily Digest (5:00 PM Batch)</h4>
+            </div>
+            <span className="font-mono text-[10px] bg-[rgba(232,162,61,0.15)] text-[#E8A23D] px-2 py-0.5 rounded border border-[rgba(232,162,61,0.3)]">
+              {items.filter((i) => i.urgency === 'low').length} Low-Urgency Items Batched
+            </span>
+          </div>
+          <p className="text-[11px] text-[#7A8492] m-0">
+            Desktop alerts for these low-urgency newsletters and updates were silenced to prevent executive interruption.
+          </p>
+          <div className="pt-2 space-y-1.5 border-t border-[#242B35]">
+            {items
+              .filter((i) => i.urgency === 'low')
+              .slice(0, 3)
+              .map((item) => (
+                <div key={item.id} className="flex items-center justify-between text-xs text-[#9AA4B2] bg-[#181E27] p-2 rounded border border-[#242B35]">
+                  <span className="font-medium text-[#F0F4F8] truncate max-w-[150px]">{item.sender}</span>
+                  <span className="truncate flex-1 mx-3 text-[#7A8492]">{item.preview}</span>
+                  <span className="font-mono text-[10px] text-[#4A8FC2] uppercase">{item.status}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center gap-2 text-xs text-[#7A8492] font-mono">
         <IconCheck size={15} className="text-[#34D399]" />
         <span>{calendarEvents.length} visa deadlines synced to calendar automatically</span>
       </div>
     </div>
   );
 };
+

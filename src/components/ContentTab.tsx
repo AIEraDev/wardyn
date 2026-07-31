@@ -7,6 +7,8 @@ import {
   IconPlayerPlay,
   IconSparkles,
   IconPlus,
+  IconRefresh,
+  IconChartBar,
 } from '@tabler/icons-react';
 import { useQueueStore } from '../store/useQueueStore';
 import { SocialPlatform } from '../types/queue';
@@ -14,10 +16,12 @@ import { SocialPlatform } from '../types/queue';
 export const ContentTab: React.FC = () => {
   const {
     socialPosts,
+    linkedInSummary,
     approveSocialPost,
     skipSocialPost,
     regenerateSocialPost,
     createSocialPost,
+    syncLinkedInTimeline,
   } = useQueueStore();
 
   const [platformFilter, setPlatformFilter] = useState<'all' | 'linkedin' | 'twitter'>('all');
@@ -26,6 +30,7 @@ export const ContentTab: React.FC = () => {
   const [showNewModal, setShowNewModal] = useState(false);
   const [newTopic, setNewTopic] = useState('');
   const [newPlatform, setNewPlatform] = useState<SocialPlatform>('linkedin');
+  const [isSyncingTimeline, setIsSyncingTimeline] = useState(false);
 
   const filteredPosts = socialPosts.filter((p) => {
     if (p.status === 'skipped') return false;
@@ -42,27 +47,75 @@ export const ContentTab: React.FC = () => {
     }
   };
 
+  const handleTimelineSync = async () => {
+    setIsSyncingTimeline(true);
+    await syncLinkedInTimeline();
+    setIsSyncingTimeline(false);
+  };
+
   return (
     <div className="flex-1 min-w-0">
       {/* Header Bar */}
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Content Briefs</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn & Twitter (X) Chief-of-Staff Briefs</p>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn Timeline Intelligence & Executive Social Briefs</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* New Brief Button */}
+          {/* Sync Timeline Button */}
+          <button
+            onClick={handleTimelineSync}
+            disabled={isSyncingTimeline}
+            className="font-mono text-xs bg-[#151A21] text-[#4A8FC2] px-3 py-1 rounded-md font-medium border border-[rgba(74,143,194,0.3)] hover:bg-[#181E27] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <IconRefresh size={13} className={isSyncingTimeline ? 'animate-spin' : ''} />
+            {isSyncingTimeline ? 'Syncing Timeline...' : 'Sync LinkedIn Activity'}
+          </button>
           <button
             onClick={() => setShowNewModal(true)}
             className="font-mono text-xs bg-[#4A8FC2] text-black px-3 py-1 rounded-md font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1 cursor-pointer"
           >
             <IconPlus size={14} /> New Social Brief
           </button>
-          <span className="font-mono text-xs bg-[#151A21] text-[#4A8FC2] px-2.5 py-1 rounded-md border border-[rgba(74,143,194,0.3)]">
-            {filteredPosts.filter((p) => p.status === 'pending').length} Briefs Pending
-          </span>
         </div>
       </div>
+
+      {/* LinkedIn Executive Profile & Timeline Summary Card */}
+      {linkedInSummary && (platformFilter === 'all' || platformFilter === 'linkedin') && (
+        <div className="mb-5 p-5 rounded-xl bg-[rgba(74,143,194,0.08)] border border-[rgba(74,143,194,0.35)] shadow-[0_0_15px_rgba(74,143,194,0.05)]">
+          <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[rgba(74,143,194,0.2)]">
+            <div className="flex items-center gap-2">
+              <IconBrandLinkedin size={18} className="text-[#4A8FC2]" />
+              <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">LinkedIn Profile & Timeline Brief</h3>
+            </div>
+            <div className="flex items-center gap-3 font-mono text-xs">
+              <span className="text-[#4A8FC2] flex items-center gap-1">
+                <IconChartBar size={13} /> {linkedInSummary.total_impressions} Impressions
+              </span>
+              <span className="text-[#7A8492]">• {linkedInSummary.total_posts_analyzed} Posts Analyzed</span>
+            </div>
+          </div>
+
+          <p className="text-xs text-[#9AA4B2] font-mono mb-2">
+            <strong className="text-[#F0F4F8]">{linkedInSummary.profile_name}</strong> — {linkedInSummary.headline}
+          </p>
+
+          <p className="text-xs text-[#F0F4F8] leading-relaxed bg-[#151A21] p-3 rounded-lg border border-[#242B35] mb-3">
+            <strong className="text-[#4A8FC2]">Chief-of-Staff Summary: </strong>
+            {linkedInSummary.executive_summary}
+          </p>
+
+          <div className="space-y-2">
+            <h4 className="font-mono text-[11px] text-[#7A8492] uppercase m-0">Recent Post Analytics:</h4>
+            {linkedInSummary.recent_posts.map((post) => (
+              <div key={post.id} className="p-2.5 rounded bg-[#181E27] border border-[#242B35] text-xs flex items-center justify-between gap-3">
+                <p className="text-[#9AA4B2] truncate m-0 flex-1">{post.text}</p>
+                <span className="font-mono text-[11px] text-[#4A8FC2] shrink-0">{post.engagement}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Platform Filter Tabs */}
       <div className="flex items-center gap-2 mb-4">

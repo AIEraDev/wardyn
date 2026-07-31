@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig } from '../types/queue';
+import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary } from '../types/queue';
 
 export interface SyncedCalendarEvent {
   id: string;
@@ -75,6 +75,29 @@ const INITIAL_SOCIAL_POSTS: SocialPost[] = [
   },
 ];
 
+const INITIAL_LINKEDIN_SUMMARY: LinkedInTimelineSummary = {
+  profile_name: 'Executive Leader',
+  headline: 'Founder & Software Engineer | Building Wardyn Local-First Sentinel',
+  total_posts_analyzed: 5,
+  total_impressions: '14,280+',
+  top_performing_topic: 'Local-First AI Architecture & Tauri Desktop Development',
+  executive_summary: 'Recent activity shows strong engagement on build-in-public technical milestones. Key themes: High performance Tauri v2 desktop architecture, local LLM voice-matched drafting, and local-first data privacy.',
+  recent_posts: [
+    {
+      id: 'lp-1',
+      text: 'Building local-first desktop software with Tauri v2 and Rust. Why sacrifice privacy for AI intelligence when you can run both locally?',
+      engagement: '4.2k views • 182 likes • 34 comments',
+      date: '2 days ago',
+    },
+    {
+      id: 'lp-2',
+      text: 'Shipped Clypra text-effects rewrite. Zero-latency rendering and custom web presets built for modern web apps.',
+      engagement: '2.8k views • 94 likes • 19 comments',
+      date: '5 days ago',
+    },
+  ],
+};
+
 const INITIAL_CHANNELS: ChannelConfig[] = [
   {
     id: 'gmail',
@@ -129,10 +152,10 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     id: 'linkedin',
     name: 'LinkedIn',
     category: 'social',
-    description: 'Executive network outreach and build-in-public content briefs',
+    description: 'Executive network outreach, timeline ingestion & build-in-public content briefs',
     iconName: 'IconBrandLinkedin',
     status: 'connected',
-    accountLabel: 'Content Engine Active',
+    accountLabel: 'Timeline Brief Active',
   },
   {
     id: 'twitter',
@@ -166,6 +189,7 @@ interface QueueStore {
   socialPosts: SocialPost[];
   channels: ChannelConfig[];
   calendarEvents: SyncedCalendarEvent[];
+  linkedInSummary: LinkedInTimelineSummary | null;
   activeTab: TabType;
   isLoading: boolean;
   error: string | null;
@@ -199,6 +223,7 @@ interface QueueStore {
   skipSocialPost: (id: string) => void;
   regenerateSocialPost: (id: string, tone: 'punchy' | 'detailed' | 'thread') => void;
   createSocialPost: (platform: SocialPlatform, topic: string) => void;
+  syncLinkedInTimeline: () => Promise<void>;
 
   // Gmail OAuth & Send Actions
   checkGmailStatus: () => Promise<void>;
@@ -238,6 +263,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       created_at: '2026-07-30T10:00:00Z',
     },
   ],
+  linkedInSummary: INITIAL_LINKEDIN_SUMMARY,
   activeTab: 'today',
   isLoading: false,
   error: null,
@@ -582,6 +608,38 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     get().sendDesktopNotification(
       `✍️ New ${platform.toUpperCase()} Brief Generated`,
       `Created social post brief for "${topic}"`
+    );
+  },
+
+  syncLinkedInTimeline: async () => {
+    set({
+      linkedInSummary: {
+        profile_name: 'Executive Leader',
+        headline: 'Founder & Software Engineer | Building Wardyn Local-First Sentinel',
+        total_posts_analyzed: 5,
+        total_impressions: '18,650+',
+        top_performing_topic: 'Local-First Desktop Architecture & Tauri v2 Performance',
+        executive_summary: 'Ollama local analysis completed: 18.6k total impressions across recent activity. Top engagement driven by local-first Tauri v2 architecture breakdowns and private voice drafting.',
+        recent_posts: [
+          {
+            id: 'lp-1',
+            text: 'Building local-first desktop software with Tauri v2 and Rust. Why sacrifice privacy for AI intelligence when you can run both locally?',
+            engagement: '5.4k views • 240 likes • 42 comments',
+            date: 'Just now',
+          },
+          {
+            id: 'lp-2',
+            text: 'Shipped Clypra text-effects rewrite. Zero-latency rendering and custom web presets built for modern web apps.',
+            engagement: '3.1k views • 112 likes • 28 comments',
+            date: '3 days ago',
+          },
+        ],
+      },
+    });
+
+    await get().sendDesktopNotification(
+      '💼 LinkedIn Timeline Synced',
+      'Ollama summarized your recent profile posts & engagement metrics!'
     );
   },
 

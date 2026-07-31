@@ -45,3 +45,18 @@ export interface SocialPost {
   status: SocialPostStatus;
   created_at: string;
 }
+
+export interface LinkedInTimelineSummary {
+  profile_name: string;
+  headline: string;
+  total_posts_analyzed: number;
+  total_impressions: string;
+  top_performing_topic: string;
+  executive_summary: string;
+  recent_posts: Array<{
+    id: string;
+    text: string;
+    engagement: string;
+    date: string;
+  }>;
+}

@@ -7,26 +7,34 @@ pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>
     let client_id = std::env::var("LINKEDIN_CLIENT_ID").map_err(|_| "LINKEDIN_CLIENT_ID missing from .env. Please set LINKEDIN_CLIENT_ID in your .env file.".to_string())?;
     let client_secret = std::env::var("LINKEDIN_CLIENT_SECRET").map_err(|_| "LINKEDIN_CLIENT_SECRET missing from .env. Please set LINKEDIN_CLIENT_SECRET in your .env file.".to_string())?;
     
-    // Dynamic redirect URI support (defaults to http://127.0.0.1:14220/callback)
-    let redirect_uri = std::env::var("LINKEDIN_REDIRECT_URI").unwrap_or_else(|_| "http://127.0.0.1:14220/callback".to_string());
+    // Configurable redirect URI (defaults to http://localhost:14220/callback)
+    let redirect_uri = std::env::var("LINKEDIN_REDIRECT_URI").unwrap_or_else(|_| "http://localhost:14220/callback".to_string());
     let redirect_uri_encoded = urlencoding::encode(&redirect_uri);
+    
+    // Configurable scope (defaults to OpenID Connect openid profile email)
+    let scope = std::env::var("LINKEDIN_SCOPE").unwrap_or_else(|_| "openid profile email".to_string());
+    let scope_encoded = urlencoding::encode(&scope);
+    
     let state_token = format!("wardyn_state_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
 
-    // 1. Build LinkedIn OAuth Auth URL with required state parameter and openid scope
+    // 1. Build LinkedIn OAuth Auth URL
     let auth_url = format!(
         "https://www.linkedin.com/oauth/v2/authorization?\
 response_type=code&\
 client_id={}&\
 redirect_uri={}&\
 state={}&\
-scope=openid%20profile%20email",
+scope={}",
         client_id,
         redirect_uri_encoded,
-        state_token
+        state_token,
+        scope_encoded
     );
 
-    // 2. Start local TCP listener on 127.0.0.1:14220
-    let listener = TcpListener::bind("127.0.0.1:14220").map_err(|e| format!("Failed to bind local OAuth port 14220: {}", e))?;
+    // 2. Start local TCP listener binding on 0.0.0.0:14220 to catch both localhost and 127.0.0.1 callbacks
+    let listener = TcpListener::bind("0.0.0.0:14220")
+        .or_else(|_| TcpListener::bind("127.0.0.1:14220"))
+        .map_err(|e| format!("Failed to bind local OAuth port 14220: {}", e))?;
     listener.set_nonblocking(false).ok();
 
     // 3. Open system default browser directly via macOS native launcher
@@ -49,12 +57,7 @@ scope=openid%20profile%20email",
             let err_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
                 <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;max-width:540px;'>\
                 <h2 style='color:#E8A23D;margin-top:0;'>LinkedIn OAuth Authorization Error</h2>\
-                <p style='color:#9AA4B2;font-size:14px;line-height:1.5;'>Please ensure both products and redirect URLs are configured in your LinkedIn App Console.</p>\
-                <ol style='text-align:left;color:#9AA4B2;font-size:13px;line-height:1.6;padding-left:24px;'>\
-                <li>Go to <a href='https://www.linkedin.com/developers/apps' target='_blank' style='color:#4A8FC2;'>LinkedIn Developer Portal</a>.</li>\
-                <li><strong>Products Tab</strong>: Add <em>'Sign In with LinkedIn using OpenID Connect'</em>.</li>\
-                <li><strong>Auth Tab</strong> &gt; <em>OAuth 2.0 settings</em>: Add Authorized redirect URL: <code>http://127.0.0.1:14220/callback</code></li>\
-                </ol>\
+                <p style='color:#9AA4B2;font-size:14px;line-height:1.5;'>Please check redirect URI and products in your LinkedIn Developer Console.</p>\
                 </div></body></html>";
             let http_response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

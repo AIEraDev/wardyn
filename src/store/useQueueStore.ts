@@ -57,8 +57,8 @@ const INITIAL_SOCIAL_POSTS: SocialPost[] = [
     id: 'soc-1',
     platform: 'linkedin',
     topic: 'Clypra Text-Effects Milestone',
-    content: 'Shipped the core text-effects engine rewrite in Clypra this week. Clean API, zero-latency rendering, and 30+ visual presets ported. Building tools that feel like magic.',
-    hashtags: ['#BuildInPublic', '#WebDev', '#ReactJS', '#TypeScript'],
+    content: 'Shipped the core text-effects engine rewrite in Clypra this week. Clean API, zero-latency rendering, and 30+ visual presets ported. Building tools that feel like magic. #BuildInPublic #WebDev #ReactJS',
+    hashtags: ['#BuildInPublic', '#WebDev', '#ReactJS'],
     media_cue: '20s screen recording of the effect picker in action',
     status: 'pending',
     created_at: '2026-07-30T09:00:00Z',
@@ -67,8 +67,8 @@ const INITIAL_SOCIAL_POSTS: SocialPost[] = [
     id: 'soc-2',
     platform: 'twitter',
     topic: 'Wardyn Local-First Chief of Staff Launch',
-    content: 'Why build another cloud email wrapper when you can have a local-first desktop chief of staff?\n\nIntroducing Wardyn 🛡️\n\n1/ Runs locally on Tauri + Rust\n2/ Voice-matched drafts via local Ollama LLM\n3/ Zero unattended sends\n\nCode live on GitHub 🚀',
-    hashtags: ['#Tauri', '#Rust', '#IndieHacker', '#BuildInPublic'],
+    content: 'Why build another cloud email wrapper when you can have a local-first desktop chief of staff?\n\nIntroducing Wardyn 🛡️\n\n1/ Runs locally on Tauri + Rust\n2/ Voice-matched drafts via local Ollama LLM\n3/ Zero unattended sends\n\nCode live on GitHub 🚀 #Tauri #Rust #BuildInPublic',
+    hashtags: ['#Tauri', '#Rust', '#BuildInPublic'],
     media_cue: 'Screenshot of Wardyn Sentinel Blue dark mode dashboard',
     status: 'pending',
     created_at: '2026-07-30T11:00:00Z',
@@ -487,10 +487,28 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       ),
     }));
 
+    // 1. Copy approved text copy to system clipboard
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(finalContent);
+      }
+    } catch (err) {
+      console.warn('Clipboard write warning:', err);
+    }
+
+    // 2. Launch system browser to platform share URL
+    const shareUrl = target.platform === 'linkedin'
+      ? `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(finalContent)}`
+      : `https://twitter.com/intent/tweet?text=${encodeURIComponent(finalContent)}`;
+
+    if (typeof window !== 'undefined') {
+      window.open(shareUrl, '_blank');
+    }
+
     const platformLabel = target.platform === 'linkedin' ? 'LinkedIn' : 'Twitter / X';
     await get().sendDesktopNotification(
       `🚀 ${platformLabel} Post Approved`,
-      `Approved and queued post: "${target.topic}"`
+      `Copied to clipboard! Opened ${platformLabel} composer window.`
     );
   },
 
@@ -516,11 +534,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
     let newContent = target.content;
     if (tone === 'punchy') {
-      newContent = `Shipped ${target.topic}. Clean, zero-latency, and lightning fast. 🚀`;
+      newContent = `Shipped ${target.topic}. Clean, zero-latency, and lightning fast. 🚀 #BuildInPublic`;
     } else if (tone === 'detailed') {
-      newContent = `Deep dive into ${target.topic}:\n- Architectural design & state management\n- Benchmark performance results\n- Lessons learned building local-first apps.`;
+      newContent = `Deep dive into ${target.topic}:\n- Architectural design & state management\n- Benchmark performance results\n- Lessons learned building local-first apps. #Tech`;
     } else if (tone === 'thread') {
-      newContent = `1/ How we built ${target.topic}:\n\n2/ The key challenge was local state performance...\n\n3/ Here is what we learned 🧵`;
+      newContent = `1/ How we built ${target.topic}:\n\n2/ The key challenge was local state performance...\n\n3/ Here is what we learned 🧵 #IndieHacker`;
     }
 
     set((state) => ({
@@ -541,8 +559,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       platform,
       topic,
       content: platform === 'linkedin'
-        ? `Excited to announce: ${topic}. Building in public and pushing the boundaries of executive chief-of-staff software.`
-        : `1/ Quick breakdown on ${topic} 🧵\n\nBuilding local-first apps with Tauri & React.`,
+        ? `Excited to announce: ${topic}. Building in public and pushing the boundaries of executive chief-of-staff software. #BuildInPublic #AI`
+        : `1/ Quick breakdown on ${topic} 🧵\n\nBuilding local-first apps with Tauri & React. #BuildInPublic`,
       hashtags: ['#BuildInPublic', '#Tech', '#AI'],
       media_cue: 'Demo screenshot / screen recording',
       status: 'pending',

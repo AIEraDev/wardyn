@@ -34,22 +34,24 @@ export default function App() {
 
     initBootSentinel();
 
-    // Listen for notification click events to bring window into focus
+    // Listen for notification click events safely
     const setupNotificationListener = async () => {
       try {
         if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-          const { onAction } = await import('@tauri-apps/plugin-notification');
-          await onAction(() => {
-            setActiveTab('today');
-            import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-              const win = getCurrentWindow();
-              win.show();
-              win.setFocus();
-            });
-          });
+          const notificationPlugin = await import('@tauri-apps/plugin-notification');
+          if (typeof notificationPlugin.onAction === 'function') {
+            await notificationPlugin.onAction(() => {
+              setActiveTab('today');
+              import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+                const win = getCurrentWindow();
+                win.show();
+                win.setFocus();
+              }).catch(() => {});
+            }).catch(() => {});
+          }
         }
-      } catch (err) {
-        console.warn('Notification action listener registration:', err);
+      } catch (_err) {
+        // Silent catch for notification listener on platforms without registerListener
       }
     };
 

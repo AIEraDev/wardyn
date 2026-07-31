@@ -10,13 +10,13 @@ pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>
     let client_id = std::env::var("LINKEDIN_CLIENT_ID").map_err(|_| "LINKEDIN_CLIENT_ID missing from .env".to_string())?;
     let client_secret = std::env::var("LINKEDIN_CLIENT_SECRET").map_err(|_| "LINKEDIN_CLIENT_SECRET missing from .env".to_string())?;
 
-    // 1. Build LinkedIn OAuth Auth URL
+    // 1. Build LinkedIn OAuth Auth URL with standard OpenID Connect scope
     let auth_url = format!(
         "https://www.linkedin.com/oauth/v2/authorization?\
 response_type=code&\
 client_id={}&\
 redirect_uri={}&\
-scope=openid%20profile%20email%20w_member_social",
+scope=openid%20profile%20email",
         client_id,
         REDIRECT_URI_ENCODED
     );
@@ -35,6 +35,22 @@ scope=openid%20profile%20email%20w_member_social",
     let mut reader = BufReader::new(&stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).map_err(|e| e.to_string())?;
+
+    if request_line.contains("error=") {
+        let err_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
+            <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;'>\
+            <h2 style='color:#E8A23D;margin-top:0;'>LinkedIn OAuth Authorization Error</h2>\
+            <p style='color:#9AA4B2;'>Please check that 'Sign In with LinkedIn using OpenID Connect' product is added in your LinkedIn Developer Console.</p>\
+            </div></body></html>";
+        let http_response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            err_body.len(),
+            err_body
+        );
+        stream.write_all(http_response.as_bytes()).ok();
+        stream.flush().ok();
+        return Err("LinkedIn OAuth returned authorization error".to_string());
+    }
 
     // Parse authorization code from HTTP GET request line
     let code = parse_code_from_http_request(&request_line).ok_or("No authorization code returned in LinkedIn callback")?;

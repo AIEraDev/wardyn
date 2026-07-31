@@ -7,8 +7,8 @@ const REDIRECT_URI: &str = "http://127.0.0.1:14220/callback";
 const REDIRECT_URI_ENCODED: &str = "http%3A%2F%2F127.0.0.1%3A14220%2Fcallback";
 
 pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
-    let client_id = std::env::var("LINKEDIN_CLIENT_ID").map_err(|_| "LINKEDIN_CLIENT_ID missing from .env".to_string())?;
-    let client_secret = std::env::var("LINKEDIN_CLIENT_SECRET").map_err(|_| "LINKEDIN_CLIENT_SECRET missing from .env".to_string())?;
+    let client_id = std::env::var("LINKEDIN_CLIENT_ID").map_err(|_| "LINKEDIN_CLIENT_ID missing from .env. Please set LINKEDIN_CLIENT_ID in your .env file.".to_string())?;
+    let client_secret = std::env::var("LINKEDIN_CLIENT_SECRET").map_err(|_| "LINKEDIN_CLIENT_SECRET missing from .env. Please set LINKEDIN_CLIENT_SECRET in your .env file.".to_string())?;
 
     // 1. Build LinkedIn OAuth Auth URL with standard OpenID Connect scope
     let auth_url = format!(
@@ -25,49 +25,59 @@ scope=openid%20profile%20email",
     let listener = TcpListener::bind("127.0.0.1:14220").map_err(|e| format!("Failed to bind local OAuth port 14220: {}", e))?;
     listener.set_nonblocking(false).ok();
 
-    // 3. Open system browser
-    if let Err(_) = open::that(&auth_url) {
-        println!("Could not automatically open browser, URL: {}", auth_url);
+    // 3. Open system default browser directly via macOS native launcher
+    let launch_res = std::process::Command::new("open")
+        .arg(&auth_url)
+        .spawn();
+
+    if launch_res.is_err() {
+        open::that(&auth_url).ok();
     }
 
-    // 4. Wait for redirect callback connection
-    let (mut stream, _) = listener.accept().map_err(|e| format!("OAuth listener accept error: {}", e))?;
-    let mut reader = BufReader::new(&stream);
-    let mut request_line = String::new();
-    reader.read_line(&mut request_line).map_err(|e| e.to_string())?;
+    // 4. Spawn blocking task to wait for redirect callback without blocking tokio runtime
+    let (code, is_error) = tokio::task::spawn_blocking(move || -> Result<(String, bool), String> {
+        let (mut stream, _) = listener.accept().map_err(|e| format!("OAuth listener accept error: {}", e))?;
+        let mut reader = BufReader::new(&stream);
+        let mut request_line = String::new();
+        reader.read_line(&mut request_line).map_err(|e| e.to_string())?;
 
-    if request_line.contains("error=") {
-        let err_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
+        if request_line.contains("error=") {
+            let err_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
+                <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;'>\
+                <h2 style='color:#E8A23D;margin-top:0;'>LinkedIn OAuth Authorization Error</h2>\
+                <p style='color:#9AA4B2;'>Please check that 'Sign In with LinkedIn using OpenID Connect' product is added in your LinkedIn Developer Console.</p>\
+                </div></body></html>";
+            let http_response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                err_body.len(),
+                err_body
+            );
+            stream.write_all(http_response.as_bytes()).ok();
+            stream.flush().ok();
+            return Ok(("authorization_error".into(), true));
+        }
+
+        let code = parse_code_from_http_request(&request_line).unwrap_or_default();
+
+        let response_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
             <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;'>\
-            <h2 style='color:#E8A23D;margin-top:0;'>LinkedIn OAuth Authorization Error</h2>\
-            <p style='color:#9AA4B2;'>Please check that 'Sign In with LinkedIn using OpenID Connect' product is added in your LinkedIn Developer Console.</p>\
+            <h2 style='color:#4A8FC2;margin-top:0;'>LinkedIn Connected!</h2>\
+            <p style='color:#9AA4B2;'>Wardyn is now authenticated with your personal LinkedIn account (abdulkabirmusa). You can close this window.</p>\
             </div></body></html>";
         let http_response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            err_body.len(),
-            err_body
+            response_body.len(),
+            response_body
         );
         stream.write_all(http_response.as_bytes()).ok();
         stream.flush().ok();
-        return Err("LinkedIn OAuth returned authorization error".to_string());
+
+        Ok((code, false))
+    }).await.map_err(|e| e.to_string())??;
+
+    if is_error || code.is_empty() {
+        return Err("LinkedIn OAuth flow returned an authorization error or missing code.".into());
     }
-
-    // Parse authorization code from HTTP GET request line
-    let code = parse_code_from_http_request(&request_line).ok_or("No authorization code returned in LinkedIn callback")?;
-
-    // Send HTTP HTML response back to user's browser
-    let response_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
-        <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;'>\
-        <h2 style='color:#4A8FC2;margin-top:0;'>LinkedIn Connected!</h2>\
-        <p style='color:#9AA4B2;'>Wardyn is now authenticated with your personal LinkedIn account (abdulkabirmusa). You can close this window.</p>\
-        </div></body></html>";
-    let http_response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        response_body.len(),
-        response_body
-    );
-    stream.write_all(http_response.as_bytes()).ok();
-    stream.flush().ok();
 
     // 5. Exchange code for access token
     let client = reqwest::Client::new();
@@ -92,13 +102,13 @@ scope=openid%20profile%20email",
 
     let token_json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
     let access_token = token_json["access_token"].as_str().ok_or("Missing access_token")?.to_string();
-    let expires_in = token_json["expires_in"].as_i64().unwrap_or(5184000); // 60 days default
+    let expires_in = token_json["expires_in"].as_i64().unwrap_or(5184000);
     let expires_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64 + expires_in;
 
-    // 6. Fetch user personal profile (abdulkabirmusa)
+    // 6. Fetch user personal profile
     let profile_res = client.get("https://api.linkedin.com/v2/userinfo")
         .bearer_auth(&access_token)
         .send()

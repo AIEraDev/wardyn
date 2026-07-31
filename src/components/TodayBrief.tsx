@@ -9,7 +9,9 @@ import {
   IconSparkles,
   IconBrain,
   IconLoader2,
+  IconChartBar,
 } from '@tabler/icons-react';
+
 import { useQueueStore } from '../store/useQueueStore';
 import { ReplyCard } from './ReplyCard';
 
@@ -29,7 +31,11 @@ export const TodayBrief: React.FC = () => {
     morningBrief,
     morningBriefLoading,
     refreshMorningBrief,
+    weeklyReview,
+    weeklyReviewLoading,
+    refreshWeeklyReview,
   } = useQueueStore();
+
 
 
 
@@ -178,6 +184,52 @@ export const TodayBrief: React.FC = () => {
           )}
         </div>
       </div>
+
+
+      {/* ── Weekly Executive Review Card ── */}
+      <div className="mb-6 rounded-xl bg-gradient-to-br from-[#121019] to-[#1C1628] border border-[rgba(155,89,182,0.25)] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(155,89,182,0.15)]">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-[rgba(155,89,182,0.18)] flex items-center justify-center">
+              <IconChartBar size={14} className="text-[#9B59B6]" />
+            </div>
+            <span className="text-xs font-semibold text-[#F0F4F8]">Weekly Executive Review</span>
+            <span className="font-mono text-[10px] bg-[rgba(155,89,182,0.12)] text-[#9B59B6] px-1.5 py-0.5 rounded border border-[rgba(155,89,182,0.25)]">Sunday Synthesis</span>
+          </div>
+          <button
+            onClick={refreshWeeklyReview}
+            disabled={weeklyReviewLoading}
+            title="Regenerate Weekly Review"
+            className="p-1.5 text-[#7A8492] hover:text-[#9B59B6] hover:bg-[rgba(155,89,182,0.1)] rounded-md transition-colors cursor-pointer disabled:opacity-40"
+          >
+            {weeklyReviewLoading
+              ? <IconLoader2 size={13} className="animate-spin" />
+              : <IconRefresh size={13} />}
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-4 py-3">
+          {weeklyReviewLoading && !weeklyReview ? (
+            <div className="space-y-2">
+              {[85, 65, 95, 75].map((w, i) => (
+                <div key={i} className="h-3 bg-[#241B33] rounded animate-pulse" style={{ width: `${w}%` }} />
+              ))}
+              <p className="text-[11px] text-[#7A8492] font-mono pt-1">Synthesising week's decisions, inbox velocity & knowledge captures…</p>
+            </div>
+          ) : weeklyReview ? (
+            <pre className="text-[11.5px] text-[#DCD6F7] leading-relaxed whitespace-pre-wrap font-sans">
+              {weeklyReview}
+            </pre>
+          ) : (
+            <p className="text-[11px] text-[#7A8492]">
+              Weekly review generates automatically every Sunday or click refresh to generate now.
+            </p>
+          )}
+        </div>
+      </div>
+
 
       {/* STATE 1: New User / Unauthenticated Onboarding State */}
       {gmailAccounts.length === 0 && (

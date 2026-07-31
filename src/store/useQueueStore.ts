@@ -196,7 +196,15 @@ interface QueueStore {
   fetchKnowledgeItems: () => Promise<void>;
   saveDecision: (decision: string, rationale: string, alternatives?: string) => Promise<void>;
   fetchDecisions: () => Promise<void>;
+
+  // Phase C: Weekly Review & Interest Learning
+  weeklyReview: string | null;
+  weeklyReviewLoading: boolean;
+  fetchWeeklyReview: () => Promise<void>;
+  refreshWeeklyReview: () => Promise<void>;
+  recordFeedInteraction: (itemId: string, itemSource: string, tags: string, action: string) => Promise<void>;
 }
+
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
   items: [],
@@ -224,6 +232,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   morningBriefLoading: false,
   knowledgeItems: [],
   decisions: [],
+  weeklyReview: null,
+  weeklyReviewLoading: false,
+
 
 
 
@@ -966,6 +977,46 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
     }
   },
+
+  fetchWeeklyReview: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        set({ weeklyReviewLoading: true });
+        const { invoke } = await import('@tauri-apps/api/core');
+        const review = await invoke<string>('get_weekly_review_command');
+        set({ weeklyReview: review, weeklyReviewLoading: false });
+      } catch (err) {
+        console.error('Weekly review fetch error:', err);
+        set({ weeklyReviewLoading: false });
+      }
+    }
+  },
+
+  refreshWeeklyReview: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        set({ weeklyReviewLoading: true, weeklyReview: null });
+        const { invoke } = await import('@tauri-apps/api/core');
+        const review = await invoke<string>('refresh_weekly_review_command');
+        set({ weeklyReview: review, weeklyReviewLoading: false });
+      } catch (err) {
+        console.error('Weekly review refresh error:', err);
+        set({ weeklyReviewLoading: false });
+      }
+    }
+  },
+
+  recordFeedInteraction: async (itemId: string, itemSource: string, tags: string, action: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('record_feed_interaction_command', { itemId, itemSource, tags, action });
+      } catch (err) {
+        console.error('Record feed interaction error:', err);
+      }
+    }
+  },
 }));
+
 
 

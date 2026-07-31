@@ -61,11 +61,15 @@ const KnowledgeCard: React.FC<{ item: KnowledgeItem }> = ({ item }) => {
           href={item.url}
           target="_blank"
           rel="noreferrer"
+          onClick={() => {
+            useQueueStore.getState().recordFeedInteraction(item.id, item.source, item.tags, 'opened');
+          }}
           className="mt-1 text-[11px] text-[#4A8FC2] hover:underline truncate block"
         >
           {item.url.replace(/^https?:\/\//, '').slice(0, 60)}{item.url.length > 63 ? '…' : ''}
         </a>
       )}
+
 
       {tags.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">

@@ -8,6 +8,8 @@ pub mod security;
 pub mod feeds;
 pub mod brief;
 pub mod memory;
+pub mod intelligence;
+
 
 
 
@@ -209,6 +211,31 @@ fn get_decisions_command(state: State<'_, DbState>) -> Result<Vec<db::Decision>,
     memory::decisions::fetch_decisions(&state.0, 50)
 }
 
+#[tauri::command]
+fn record_feed_interaction_command(
+    item_id: String,
+    item_source: String,
+    tags: String,
+    action: String,
+    state: State<'_, DbState>
+) -> Result<(), String> {
+    intelligence::interest::record_user_interaction(&state.0, item_id, item_source, tags, action)
+}
+
+#[tauri::command]
+async fn get_weekly_review_command(state: State<'_, DbState>) -> Result<String, String> {
+    intelligence::weekly::get_or_generate_weekly_review(&state.0).await
+}
+
+#[tauri::command]
+async fn refresh_weekly_review_command(state: State<'_, DbState>) -> Result<String, String> {
+    // Clear current week's review cache then regenerate
+    {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM weekly_reviews", []).ok();
+    }
+    intelligence::weekly::get_or_generate_weekly_review(&state.0).await
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -255,7 +282,10 @@ pub fn run() {
             save_knowledge_item_command,
             get_knowledge_items_command,
             save_decision_command,
-            get_decisions_command
+            get_decisions_command,
+            record_feed_interaction_command,
+            get_weekly_review_command,
+            refresh_weekly_review_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

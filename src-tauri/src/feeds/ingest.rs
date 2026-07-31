@@ -30,7 +30,10 @@ pub async fn run_feed_ingestion(conn_mutex: &std::sync::Mutex<rusqlite::Connecti
         for item in &all_items {
             db::upsert_feed_item(&conn, item).ok();
         }
+        // Reweight feed items according to user interest profile
+        crate::intelligence::interest::reweight_feed_items(&conn).ok();
     }
+
 
     Ok(total)
 }

@@ -165,8 +165,101 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS feed_interactions (
+            id TEXT PRIMARY KEY,
+            item_id TEXT NOT NULL,
+            item_source TEXT NOT NULL,
+            tags TEXT DEFAULT '[]',
+            action TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS weekly_reviews (
+            week TEXT PRIMARY KEY,
+            review_text TEXT NOT NULL,
+            generated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     Ok(())
 }
+
+// ─── Feed Interactions & Weekly Reviews ─────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct FeedInteraction {
+    pub id: String,
+    pub item_id: String,
+    pub item_source: String,
+    pub tags: String,
+    pub action: String,
+    pub created_at: String,
+}
+
+pub fn record_feed_interaction(conn: &Connection, item_id: &str, item_source: &str, tags: &str, action: &str) -> Result<()> {
+    let id = format!("fi_{}", uuid_simple_db());
+    conn.execute(
+        "INSERT INTO feed_interactions (id, item_id, item_source, tags, action, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, item_id, item_source, tags, action, now_iso()],
+    )?;
+    Ok(())
+}
+
+pub fn get_recent_interactions(conn: &Connection, days: i64) -> Result<Vec<FeedInteraction>> {
+    let offset = format!("-{} days", days);
+    let mut stmt = conn.prepare(
+        "SELECT id, item_id, item_source, tags, action, created_at
+         FROM feed_interactions
+         WHERE datetime(created_at) >= datetime('now', ?1)"
+    )?;
+    let rows = stmt.query_map(params![offset], |row| {
+        Ok(FeedInteraction {
+            id: row.get(0)?,
+            item_id: row.get(1)?,
+            item_source: row.get(2)?,
+            tags: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "[]".into()),
+            action: row.get(4)?,
+            created_at: row.get(5)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+pub fn get_weekly_review(conn: &Connection, week: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT review_text FROM weekly_reviews WHERE week = ?1")?;
+    let mut rows = stmt.query(params![week])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn save_weekly_review(conn: &Connection, week: &str, review_text: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO weekly_reviews (week, review_text, generated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(week) DO UPDATE SET review_text=excluded.review_text, generated_at=excluded.generated_at",
+        params![week, review_text, now_iso()],
+    )?;
+    Ok(())
+}
+
+fn uuid_simple_db() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    format!("{:x}", t)
+}
+
 
 // ─── Knowledge Items ─────────────────────────────────────────────────────────
 

@@ -7,6 +7,8 @@ pub mod calendar;
 pub mod security;
 pub mod feeds;
 pub mod brief;
+pub mod memory;
+
 
 
 use std::sync::Mutex;
@@ -171,6 +173,43 @@ async fn refresh_morning_brief_command(state: State<'_, DbState>) -> Result<Stri
     brief::generator::get_or_generate_brief(&state.0).await
 }
 
+#[tauri::command]
+async fn save_knowledge_item_command(
+    content: String,
+    url: Option<String>,
+    source: Option<String>,
+    state: State<'_, DbState>
+) -> Result<db::KnowledgeItem, String> {
+    memory::knowledge::capture_and_tag(
+        &state.0,
+        content,
+        url,
+        source.unwrap_or_else(|| "manual".into()),
+    ).await
+}
+
+#[tauri::command]
+fn get_knowledge_items_command(state: State<'_, DbState>) -> Result<Vec<db::KnowledgeItem>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::get_knowledge_items(&conn, 50).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_decision_command(
+    decision: String,
+    rationale: String,
+    alternatives: Option<String>,
+    state: State<'_, DbState>
+) -> Result<db::Decision, String> {
+    memory::decisions::log_decision(&state.0, decision, rationale, alternatives)
+}
+
+#[tauri::command]
+fn get_decisions_command(state: State<'_, DbState>) -> Result<Vec<db::Decision>, String> {
+    memory::decisions::fetch_decisions(&state.0, 50)
+}
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok(); // Automatically load .env file
@@ -212,7 +251,11 @@ pub fn run() {
             open_external_url,
             publish_linkedin_post_command,
             get_morning_brief_command,
-            refresh_morning_brief_command
+            refresh_morning_brief_command,
+            save_knowledge_item_command,
+            get_knowledge_items_command,
+            save_decision_command,
+            get_decisions_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

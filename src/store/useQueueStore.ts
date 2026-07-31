@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary, FeedInsight } from '../types/queue';
+import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary, FeedInsight, KnowledgeItem, Decision } from '../types/queue';
 import { SupportedLanguage, TRANSLATIONS, TranslationDictionary } from '../i18n/translations';
+
 
 export type PostCadence = 'daily' | 'every_2_days' | 'weekly' | 'manual';
 
@@ -187,6 +188,14 @@ interface QueueStore {
   morningBriefLoading: boolean;
   fetchMorningBrief: () => Promise<void>;
   refreshMorningBrief: () => Promise<void>;
+
+  // Memory: Personal Knowledge Capture & Decision Log
+  knowledgeItems: KnowledgeItem[];
+  decisions: Decision[];
+  saveKnowledgeItem: (content: string, url?: string) => Promise<void>;
+  fetchKnowledgeItems: () => Promise<void>;
+  saveDecision: (decision: string, rationale: string, alternatives?: string) => Promise<void>;
+  fetchDecisions: () => Promise<void>;
 }
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
@@ -213,6 +222,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   analyticsWeeklyData: [],
   morningBrief: null,
   morningBriefLoading: false,
+  knowledgeItems: [],
+  decisions: [],
 
 
 
@@ -900,5 +911,61 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
     }
   },
+
+  saveKnowledgeItem: async (content: string, url?: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const item = await invoke<KnowledgeItem>('save_knowledge_item_command', {
+          content, url: url || null, source: 'manual'
+        });
+        // Optimistically prepend; Ollama tagging happens in background on server
+        set((state) => ({ knowledgeItems: [item, ...state.knowledgeItems] }));
+        // Re-fetch after brief delay to pick up Ollama tags
+        setTimeout(() => get().fetchKnowledgeItems(), 8000);
+      } catch (err) {
+        console.error('Save knowledge item error:', err);
+      }
+    }
+  },
+
+  fetchKnowledgeItems: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const items = await invoke<KnowledgeItem[]>('get_knowledge_items_command');
+        set({ knowledgeItems: items });
+      } catch (err) {
+        console.error('Fetch knowledge items error:', err);
+      }
+    }
+  },
+
+  saveDecision: async (decision: string, rationale: string, alternatives?: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const item = await invoke<Decision>('save_decision_command', {
+          decision, rationale, alternatives: alternatives || null
+        });
+        set((state) => ({ decisions: [item, ...state.decisions] }));
+      } catch (err) {
+        console.error('Save decision error:', err);
+      }
+    }
+  },
+
+  fetchDecisions: async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const items = await invoke<Decision[]>('get_decisions_command');
+        set({ decisions: items });
+      } catch (err) {
+        console.error('Fetch decisions error:', err);
+      }
+    }
+  },
 }));
+
 

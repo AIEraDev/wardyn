@@ -1,7 +1,8 @@
 export type QueueItemStatus = 'pending' | 'approved' | 'edited' | 'skipped' | 'sent';
 export type QueueItemSource = 'gmail' | 'calendar' | 'slack' | 'discord' | 'telegram' | 'imessage' | 'linkedin' | 'twitter' | 'whatsapp' | 'teams';
 export type QueueItemKind = 'reply' | 'deadline' | 'social' | 'dm';
-export type TabType = 'today' | 'messages' | 'content' | 'deadlines' | 'channels' | 'settings' | 'analytics';
+export type TabType = 'today' | 'messages' | 'content' | 'deadlines' | 'channels' | 'settings' | 'analytics' | 'memory';
+
 
 
 export type SocialPlatform = 'linkedin' | 'twitter';
@@ -82,3 +83,23 @@ export interface LinkedInTimelineSummary {
   }>;
   feed_insights?: FeedInsight[];
 }
+
+export interface KnowledgeItem {
+  id: string;
+  content: string;
+  url?: string | null;
+  tags: string; // JSON array string e.g. '["ai","rust"]'
+  summary?: string | null;
+  source: string;
+  created_at: string;
+}
+
+export interface Decision {
+  id: string;
+  decision: string;
+  rationale: string;
+  alternatives?: string | null;
+  outcome?: string | null;
+  created_at: string;
+}
+

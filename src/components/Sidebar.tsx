@@ -8,7 +8,9 @@ import {
   IconGridDots,
   IconSettings,
   IconChartBar,
+  IconBrain,
 } from '@tabler/icons-react';
+
 import { useQueueStore } from '../store/useQueueStore';
 import { TabType } from '../types/queue';
 import { TranslationDictionary } from '../i18n/translations';
@@ -24,9 +26,11 @@ export const Sidebar: React.FC = () => {
     { id: 'content', labelKey: 'content', icon: IconPencil },
     { id: 'analytics', labelKey: 'analytics', icon: IconChartBar },
     { id: 'deadlines', labelKey: 'deadlines', icon: IconCalendar },
+    { id: 'memory', labelKey: 'settings', icon: IconBrain },  // labelKey reused; label overridden below
     { id: 'channels', labelKey: 'channels', icon: IconGridDots },
     { id: 'settings', labelKey: 'settings', icon: IconSettings },
   ];
+
 
   return (
     <div className="w-36 shrink-0 bg-[#151A21] border border-[#242B35] rounded-xl p-3 h-fit relative z-50 pointer-events-auto">
@@ -53,7 +57,9 @@ export const Sidebar: React.FC = () => {
               }`}
             >
               <Icon size={16} className="pointer-events-none shrink-0" />
-              <span className="pointer-events-none truncate">{t(tab.labelKey)}</span>
+              <span className="pointer-events-none truncate">
+                {tab.id === 'memory' ? 'Memory' : t(tab.labelKey)}
+              </span>
             </button>
           );
         })}

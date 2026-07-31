@@ -7,7 +7,9 @@ import { AnalyticsTab } from './components/AnalyticsTab';
 import { DeadlinesTab } from './components/DeadlinesTab';
 import { ChannelsTab } from './components/ChannelsTab';
 import { SettingsTab } from './components/SettingsTab';
+import { MemoryTab } from './components/MemoryTab';
 import { useQueueStore } from './store/useQueueStore';
+
 
 export default function App() {
   const activeTab = useQueueStore((state) => state.activeTab);
@@ -21,6 +23,9 @@ export default function App() {
   const gmailAccounts = useQueueStore((state) => state.gmailAccounts);
 
   const fetchMorningBrief = useQueueStore((state) => state.fetchMorningBrief);
+  const fetchKnowledgeItems = useQueueStore((state) => state.fetchKnowledgeItems);
+  const fetchDecisions = useQueueStore((state) => state.fetchDecisions);
+
 
   // 1. Startup Boot Auto-Sync & Notification Listener
   useEffect(() => {
@@ -32,6 +37,10 @@ export default function App() {
 
       // Auto-generate morning brief on first launch of the day (cached if already done)
       fetchMorningBrief();
+      // Load personal memory
+      fetchKnowledgeItems();
+      fetchDecisions();
+
 
       // If Gmail is connected, run immediate boot inbox sync & triaging
       const currentAccounts = useQueueStore.getState().gmailAccounts;
@@ -96,8 +105,11 @@ export default function App() {
         return <DeadlinesTab />;
       case 'channels':
         return <ChannelsTab />;
+      case 'memory':
+        return <MemoryTab />;
       case 'settings':
         return <SettingsTab />;
+
       default:
         return <TodayBrief />;
     }

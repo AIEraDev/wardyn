@@ -21,16 +21,19 @@ pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) ->
     // No cached brief — run feed ingestion first
     run_feed_ingestion(conn_mutex).await.ok();
 
-    // Gather context: top feed items + pending email count + flagged items + calendar
-    let (feed_items, pending_count, flagged_count, calendar_count) = {
+    // Gather context: top feed items + pending email count + flagged items + calendar + personal memory
+    let (feed_items, pending_count, flagged_count, calendar_count, knowledge_items, recent_decisions) = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         let feeds = db::get_recent_feed_items(&conn, 24, 10).unwrap_or_default();
         let items = db::get_all_queue_items(&conn).unwrap_or_default();
         let pending = items.iter().filter(|i| i.status == "pending").count();
         let flagged = items.iter().filter(|i| i.flagged && i.status == "pending").count();
         let cal = db::get_synced_calendar_events(&conn).unwrap_or_default().len();
-        (feeds, pending, flagged, cal)
+        let knowledge = db::get_knowledge_items(&conn, 5).unwrap_or_default();
+        let decisions = db::get_decisions(&conn, 3).unwrap_or_default();
+        (feeds, pending, flagged, cal, knowledge, decisions)
     };
+
 
     // Build context prompt for Ollama
     let mut feed_section = String::new();
@@ -39,6 +42,26 @@ pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) ->
             "{}. [{}] {} (score: {})\n   URL: {}\n",
             i + 1, item.source.to_uppercase(), item.title, item.score, item.url
         ));
+    }
+
+    let mut personal_section = String::new();
+    if !knowledge_items.is_empty() || !recent_decisions.is_empty() {
+        personal_section.push_str("\nYOUR PERSONAL CONTEXT (recent captures & decisions):\n");
+        for ki in &knowledge_items {
+            let tags: Vec<String> = serde_json::from_str(&ki.tags).unwrap_or_default();
+            personal_section.push_str(&format!(
+                "- [{}] {} {}\n",
+                tags.join(", "),
+                ki.summary.as_deref().unwrap_or(&ki.content.chars().take(80).collect::<String>()),
+                ki.url.as_deref().map(|u| format!("({})", u)).unwrap_or_default()
+            ));
+        }
+        for dec in &recent_decisions {
+            personal_section.push_str(&format!(
+                "- [decision] Chose: {} — Because: {}\n",
+                dec.decision, dec.rationale
+            ));
+        }
     }
 
     let flagged_notice = if flagged_count > 0 {
@@ -50,14 +73,15 @@ pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) ->
     let system_prompt = format!(
         r#"You are Wardyn, a personal intelligence assistant synthesizing a morning executive brief.
 
-Generate a structured, concise Morning Intelligence Brief using the context below. Use markdown-like formatting with emoji section headers. Be specific and actionable — no generic filler.
+Generate a structured, concise Morning Intelligence Brief using the context below. Use markdown-like formatting with emoji section headers. Be specific and actionable — no generic filler. Reference the user's personal context where relevant.
 
 CONTEXT:
 - Pending messages awaiting your reply: {}
 - {}
 - Calendar events synced: {}
-
+{}
 TECHNICAL FEED (last 24h — ranked by signal):
+
 {}
 
 OUTPUT FORMAT (use exactly these sections):
@@ -65,8 +89,9 @@ OUTPUT FORMAT (use exactly these sections):
 📅 CALENDAR & DEADLINES
 📚 TECHNICAL PULSE (top 3-5 items worth reading, with one-line "why it matters")
 💡 PATTERN / INSIGHT (one sharp observation synthesizing today's signal)"#,
-        pending_count, flagged_notice, calendar_count, feed_section
+        pending_count, flagged_notice, calendar_count, personal_section, feed_section
     );
+
 
     let brief = call_ollama_for_brief(&system_prompt).await
         .unwrap_or_else(|_| generate_fallback_brief(pending_count, flagged_count, calendar_count, &feed_items));

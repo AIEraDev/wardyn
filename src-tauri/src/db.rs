@@ -140,8 +140,127 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS knowledge_items (
+            id TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            url TEXT,
+            tags TEXT DEFAULT '[]',
+            summary TEXT,
+            source TEXT DEFAULT 'manual',
+            created_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS decisions (
+            id TEXT PRIMARY KEY,
+            decision TEXT NOT NULL,
+            rationale TEXT NOT NULL,
+            alternatives TEXT,
+            outcome TEXT,
+            created_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     Ok(())
 }
+
+// ─── Knowledge Items ─────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct KnowledgeItem {
+    pub id: String,
+    pub content: String,
+    pub url: Option<String>,
+    pub tags: String,   // JSON array string e.g. '["ai","rust"]'
+    pub summary: Option<String>,
+    pub source: String,
+    pub created_at: String,
+}
+
+pub fn save_knowledge_item(conn: &Connection, item: &KnowledgeItem) -> Result<()> {
+    conn.execute(
+        "INSERT INTO knowledge_items (id, content, url, tags, summary, source, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![item.id, item.content, item.url, item.tags, item.summary, item.source, item.created_at],
+    )?;
+    Ok(())
+}
+
+pub fn update_knowledge_item_tags(conn: &Connection, id: &str, tags: &str, summary: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE knowledge_items SET tags = ?1, summary = ?2 WHERE id = ?3",
+        params![tags, summary, id],
+    )?;
+    Ok(())
+}
+
+pub fn get_knowledge_items(conn: &Connection, limit: usize) -> Result<Vec<KnowledgeItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, content, url, tags, summary, source, created_at
+         FROM knowledge_items ORDER BY created_at DESC LIMIT ?1"
+    )?;
+    let rows = stmt.query_map(params![limit as i64], |row| {
+        Ok(KnowledgeItem {
+            id: row.get(0)?,
+            content: row.get(1)?,
+            url: row.get(2)?,
+            tags: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "[]".into()),
+            summary: row.get(4)?,
+            source: row.get::<_, Option<String>>(5)?.unwrap_or_else(|| "manual".into()),
+            created_at: row.get(6)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+// ─── Decisions ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct Decision {
+    pub id: String,
+    pub decision: String,
+    pub rationale: String,
+    pub alternatives: Option<String>,
+    pub outcome: Option<String>,
+    pub created_at: String,
+}
+
+pub fn save_decision(conn: &Connection, item: &Decision) -> Result<()> {
+    conn.execute(
+        "INSERT INTO decisions (id, decision, rationale, alternatives, outcome, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![item.id, item.decision, item.rationale, item.alternatives, item.outcome, item.created_at],
+    )?;
+    Ok(())
+}
+
+pub fn get_decisions(conn: &Connection, limit: usize) -> Result<Vec<Decision>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, decision, rationale, alternatives, outcome, created_at
+         FROM decisions ORDER BY created_at DESC LIMIT ?1"
+    )?;
+    let rows = stmt.query_map(params![limit as i64], |row| {
+        Ok(Decision {
+            id: row.get(0)?,
+            decision: row.get(1)?,
+            rationale: row.get(2)?,
+            alternatives: row.get(3)?,
+            outcome: row.get(4)?,
+            created_at: row.get(5)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct FeedItem {

@@ -17,6 +17,7 @@ pub mod planner;
 pub mod active_life;
 pub mod tray;
 pub mod research;
+pub mod audio;
 
 
 
@@ -25,7 +26,7 @@ pub mod research;
 
 use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
-use tauri::{State, Manager, AppHandle};
+use tauri::{State, Manager, AppHandle, Emitter};
 use models::QueueItem;
 use db::SyncedCalendarEvent;
 use gmail::send::SendEmailRequest;
@@ -33,6 +34,9 @@ use linkedin::api::RealLinkedInSummary;
 use ollama::client::InstalledModelInfo;
 
 pub struct DbState(pub Mutex<Connection>);
+
+// ─── Audio Recording State ────────────────────────────────────────────────────
+pub struct NativeAudioState(pub audio::AudioRecordingState);
 
 /// Returns current local time as "HH:MM" string for reminder matching.
 fn chrono_hhmm() -> String {
@@ -481,6 +485,44 @@ async fn web_search_command(query: String) -> Result<research::SearchResponse, S
 #[tauri::command]
 async fn summarize_search_command(query: String, results: Vec<research::SearchResult>) -> Result<String, String> {
     research::summarize_results(&query, &results).await
+}
+
+// ─── Native Audio Capture Commands ───────────────────────────────────────────
+
+#[tauri::command]
+async fn start_native_transcription_command(
+    app: AppHandle,
+    state: State<'_, NativeAudioState>,
+) -> Result<(), String> {
+    let running = state.0.running.clone();
+    let transcript = state.0.transcript.clone();
+
+    if running.load(std::sync::atomic::Ordering::SeqCst) {
+        return Ok(()); // already running
+    }
+
+    // Reset transcript for new session
+    *transcript.lock().unwrap() = String::new();
+
+    // Emit status so UI knows recording started
+    let _ = app.emit("transcription-status", "started");
+
+    tokio::spawn(async move {
+        if let Err(e) = audio::start_native_capture(app.clone(), running, transcript).await {
+            eprintln!("[audio] capture error: {}", e);
+            let _ = app.emit("transcription-status", format!("error: {}", e));
+        }
+        let _ = app.emit("transcription-status", "stopped");
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_native_transcription_command(
+    state: State<'_, NativeAudioState>,
+) -> String {
+    audio::stop_native_capture(&state.0.running, &state.0.transcript)
 }
 
 /// Returns whether a Whisper model is installed in Ollama and what its name is.
@@ -994,6 +1036,7 @@ pub fn run() {
 
             app.manage(DbState(inner_conn));
             app.manage(CancelRegistry(Mutex::new(std::collections::HashMap::new())));
+            app.manage(NativeAudioState(audio::AudioRecordingState::default()));
 
             // ── Setup tray icon ──────────────────────────────────────────────
             tray::setup_tray(app)?;
@@ -1099,7 +1142,9 @@ pub fn run() {
             request_microphone_permission_command,
             get_default_microphone_label_command,
             web_search_command,
-            summarize_search_command
+            summarize_search_command,
+            start_native_transcription_command,
+            stop_native_transcription_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,7 +6,6 @@ import {
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 import type { LifeEvent } from "../types/queue";
-
 // ─── Intent meta ─────────────────────────────────────────────────────────────
 
 const INTENT_META: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
@@ -34,218 +33,101 @@ function relDue(iso: string | null) {
   return `in ${diff}d`;
 }
 
-// ─── Speech Recognition & Microphone Hook ────────────────────────────────────
-// Uses MediaRecorder to capture audio in chunks, then sends each chunk to the
-// Tauri backend which transcribes via Ollama Whisper — no webkitSpeechRecognition
-// (which is blocked on http:// in WKWebView).
+// ─── Native Audio Hook ────────────────────────────────────────────────────────
+// Drives recording via Rust/cpal — no WebView mic access, no entitlement issues.
+// Listens to "transcription-delta" Tauri events for live text updates.
 
-function useSpeechRecognition(onResult: (t: string) => void) {
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const shouldListenRef = useRef(false);
-  const accumulatedRef = useRef("");
+function useNativeTranscription(onResult: (t: string) => void) {
+  const [listening, setListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const onResultRef = useRef(onResult);
   useEffect(() => { onResultRef.current = onResult; }, [onResult]);
 
-  const [listening, setListening] = useState(false);
-  const [supported, setSupported] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Volume visualisation — driven by a simple animated level since we have no
+  // Web Audio access (audio stays in Rust). We fake a subtle pulse while active.
   const [volume, setVolume] = useState(0);
+  const volumeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    setSupported(
-      typeof navigator !== "undefined" &&
-      !!navigator.mediaDevices?.getUserMedia &&
-      typeof MediaRecorder !== "undefined"
-    );
-  }, []);
+  const stopVolume = () => {
+    if (volumeTimerRef.current) clearInterval(volumeTimerRef.current);
+    volumeTimerRef.current = null;
+    setVolume(0);
+  };
 
-  const stop = useCallback(() => {
-    shouldListenRef.current = false;
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      try { recorderRef.current.stop(); } catch {}
-    }
-    recorderRef.current = null;
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(t => t.stop());
-      mediaStreamRef.current = null;
-    }
-    if (audioContextRef.current) {
-      try { audioContextRef.current.close(); } catch {}
-      audioContextRef.current = null;
+  const startVolume = () => {
+    volumeTimerRef.current = setInterval(() => {
+      // Animate a gentle pseudo-random level so waveform bars look alive
+      setVolume(Math.round(30 + Math.random() * 50));
+    }, 120);
+  };
+
+  // Event unlistener refs
+  const unlistenDeltaRef = useRef<(() => void) | null>(null);
+  const unlistenStatusRef = useRef<(() => void) | null>(null);
+
+  const stop = useCallback(async () => {
+    stopVolume();
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("stop_native_transcription_command");
+    } catch (e) {
+      console.warn("stop error:", e);
     }
     setListening(false);
-    setVolume(0);
-  }, []);
-
-  const transcribeChunk = useCallback(async (blob: Blob) => {
-    if (blob.size < 500) return; // skip near-empty chunks (silence)
-    try {
-      const arrayBuffer = await blob.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
-      const { invoke } = await import("@tauri-apps/api/core");
-      const text: string = await invoke("transcribe_audio_command", {
-        audioBytes: Array.from(uint8),
-        mimeType: blob.type || "audio/webm",
-      });
-      if (text && text.trim()) {
-        accumulatedRef.current = (accumulatedRef.current + " " + text).trim();
-        onResultRef.current(accumulatedRef.current);
-      }
-    } catch (err: any) {
-      console.warn("Transcription error:", err);
-    }
   }, []);
 
   const start = useCallback(async () => {
     setError(null);
-    setVolume(0);
-    accumulatedRef.current = "";
-
-    // 1. Request mic permission via native macOS API first (like notifications do).
-    //    This triggers the system permission dialog if not yet decided.
-    try {
-      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const status: string = await invoke("request_microphone_permission_command");
-        if (status === "denied") {
-          setError("Microphone access denied. Go to System Settings → Privacy & Security → Microphone and enable Wardyn.");
-          return;
-        }
-      }
-    } catch {
-      // Non-Tauri env or Swift unavailable — proceed and let getUserMedia handle it
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+      setError("Native audio requires the Tauri desktop app.");
+      return;
     }
 
-    // 2. Request mic stream from WebKit.
-    // Use minimal constraints — WKWebView ignores sampleRate/echoCancellation
-    // and may reject the stream if constraints can't be satisfied.
-    // Get the real hardware mic label from macOS to avoid virtual devices (QuickTime etc.)
-    let stream: MediaStream;
     try {
-      let deviceId: string | undefined;
-      try {
-        // Get the native default mic label from AVFoundation
-        let nativeLabel = "";
-        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-          const { invoke } = await import("@tauri-apps/api/core");
-          nativeLabel = await invoke<string>("get_default_microphone_label_command");
-        }
+      const { invoke } = await import("@tauri-apps/api/core");
+      const { listen } = await import("@tauri-apps/api/event");
 
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const mics = devices.filter(d => d.kind === "audioinput");
-
-        // Match by native label first, then fall back to built-in/macbook heuristic
-        const preferred = (nativeLabel
-          ? mics.find(d => d.label.toLowerCase().includes(nativeLabel.toLowerCase().split(" ")[0]))
-          : undefined)
-          ?? mics.find(d =>
-              d.label.toLowerCase().includes("built-in") ||
-              d.label.toLowerCase().includes("macbook") ||
-              d.label.toLowerCase().includes("microphone")
-            )
-          ?? mics[0];
-
-        if (preferred?.deviceId) deviceId = preferred.deviceId;
-      } catch { /* enumeration optional */ }
-
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true
+      // Listen for transcription text chunks
+      unlistenDeltaRef.current = await listen<string>("transcription-delta", (event) => {
+        if (event.payload) onResultRef.current(event.payload);
       });
-      mediaStreamRef.current = stream;
+
+      // Listen for status changes (started / stopped / error)
+      unlistenStatusRef.current = await listen<string>("transcription-status", (event) => {
+        const status = event.payload || "";
+        if (status === "started") {
+          setListening(true);
+          startVolume();
+        } else if (status === "stopped") {
+          setListening(false);
+          stopVolume();
+          unlistenDeltaRef.current?.();
+          unlistenStatusRef.current?.();
+        } else if (status.startsWith("error:")) {
+          setError(status.replace("error: ", ""));
+          setListening(false);
+          stopVolume();
+        }
+      });
+
+      await invoke("start_native_transcription_command");
     } catch (err: any) {
-      // Retry with bare true if deviceId exact constraint failed
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaStreamRef.current = stream;
-      } catch (err2: any) {
-        if (err2.name === "NotAllowedError" || err2.name === "PermissionDeniedError") {
-          setError("Microphone access denied. Go to System Settings → Privacy & Security → Microphone and enable Wardyn.");
-        } else if (err2.name === "NotFoundError") {
-          setError("No microphone found. Connect a microphone and try again.");
-        } else {
-          setError(`Microphone unavailable: ${err2.message}`);
-        }
-        return;
-      }
+      setError(err?.message || "Failed to start recording.");
+      setListening(false);
+      stopVolume();
     }
+  }, []);
 
-    // 2. Watch for track ending unexpectedly (macOS permission revoked mid-session)
-    //    Use a grace period so the handler doesn't fire during initial track setup.
-    const trackStartTime = Date.now();
-    stream.getAudioTracks().forEach(track => {
-      track.onended = () => {
-        // Ignore if track ended within 2s of starting — that's a setup/permission
-        // race in dev mode, not a real mid-session interruption
-        const age = Date.now() - trackStartTime;
-        if (age < 2000) return;
-        if (shouldListenRef.current) {
-          setError("Microphone access was interrupted. Check System Settings → Privacy → Microphone.");
-          stop();
-        }
-      };
-    });
-
-    // 3. Volume visualizer
-    try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioContextClass) {
-        const ctx = new AudioContextClass();
-        audioContextRef.current = ctx;
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 64;
-        source.connect(analyser);
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        const tick = () => {
-          if (!shouldListenRef.current) return;
-          analyser.getByteFrequencyData(dataArray);
-          const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-          setVolume(Math.min(100, Math.round((avg / 128) * 100)));
-          requestAnimationFrame(tick);
-        };
-        tick();
-      }
-    } catch { /* visualizer optional */ }
-
-    // 4. Pick best MIME type — wav is most compatible with Whisper
-    const mimeType = [
-      "audio/wav",
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/ogg;codecs=opus",
-      "audio/mp4",
-    ].find(m => MediaRecorder.isTypeSupported(m)) || "";
-
-    // 5. Start recording — 4s slices for responsive transcription feedback
-    let recorder: MediaRecorder;
-    try {
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-    } catch {
-      // Fallback: let browser pick the format
-      recorder = new MediaRecorder(stream);
-    }
-    recorderRef.current = recorder;
-
-    recorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
-        transcribeChunk(e.data);
-      }
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopVolume();
+      unlistenDeltaRef.current?.();
+      unlistenStatusRef.current?.();
     };
+  }, []);
 
-    recorder.onerror = (e: any) => {
-      console.warn("MediaRecorder error:", e);
-      setError("Recording error. Please try again.");
-      stop();
-    };
-
-    shouldListenRef.current = true;
-    setListening(true);
-    recorder.start(4000); // 4s slices — faster feedback than 8s
-  }, [transcribeChunk, stop]);
-
-  return { listening, supported, error, volume, start, stop };
+  return { listening, error, volume, start, stop, supported: true };
 }
 
 // ─── Plan Preview Card ────────────────────────────────────────────────────────
@@ -331,7 +213,7 @@ export function LifeCaptureModal() {
   }, [open, whisperReady]);
 
   const handleVoiceResult = useCallback((t: string) => setText(t), []);
-  const { listening, supported, error: micError, volume, start, stop } = useSpeechRecognition(handleVoiceResult);
+  const { listening, supported, error: micError, volume, start, stop } = useNativeTranscription(handleVoiceResult);
 
   // When recording stops, if we have text, keep it ready for review — don't auto-submit
   // so user can verify before generating plan

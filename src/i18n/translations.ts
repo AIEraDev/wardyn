@@ -34,6 +34,7 @@ export interface TranslationDictionary {
   new_social_brief: string;
   analytics: string;
   memory: string;
+  research: string;
   productivity: string;
   active_life: string;
 }
@@ -73,6 +74,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     new_social_brief: 'New Social Brief',
     analytics: 'Analytics',
     memory: 'Memory',
+    research: 'Research',
     productivity: 'Productivity',
     active_life: 'Active Life',
   },
@@ -110,6 +112,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     new_social_brief: 'Nouveau Brief Social',
     analytics: 'Analytique',
     memory: 'Mémoire',
+    research: 'Recherche',
     productivity: 'Productivité',
     active_life: 'Vie Active',
   },
@@ -147,6 +150,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     new_social_brief: 'Nuevo Resumen Social',
     analytics: 'Analítica',
     memory: 'Memoria',
+    research: 'Investigación',
     productivity: 'Productividad',
     active_life: 'Vida Activa',
   },
@@ -184,6 +188,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     new_social_brief: 'Neuer Social-Brief',
     analytics: 'Analytik',
     memory: 'Gedächtnis',
+    research: 'Recherche',
     productivity: 'Produktivität',
     active_life: 'Aktives Leben',
   },
@@ -221,6 +226,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     new_social_brief: '新建社交简报',
     analytics: '分析',
     memory: '记忆',
+    research: '研究',
     productivity: '生产力',
     active_life: '积极生活',
   },
@@ -258,6 +264,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     new_social_brief: '新規ソーシャルブリーフ',
     analytics: '分析',
     memory: 'メモリ',
+    research: 'リサーチ',
     productivity: '生産性',
     active_life: 'アクティブライフ',
   },

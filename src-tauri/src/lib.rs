@@ -16,6 +16,7 @@ pub mod productivity;
 pub mod planner;
 pub mod active_life;
 pub mod tray;
+pub mod research;
 
 
 
@@ -425,7 +426,7 @@ print(result)
     }
 }
 
-/// Returns the label of the default hardware microphone so the frontend can
+/// Returns the label of the default hardware microphone
 /// select it by label in enumerateDevices(), avoiding virtual devices like QuickTime.
 #[tauri::command]
 async fn get_default_microphone_label_command() -> Result<String, String> {
@@ -468,6 +469,18 @@ if let dev = session?.devices.first(where: { $0.isConnected && !$0.isSuspended }
     {
         Ok(String::new())
     }
+}
+
+// ─── Research / Web Search Commands ──────────────────────────────────────────
+
+#[tauri::command]
+async fn web_search_command(query: String) -> Result<research::SearchResponse, String> {
+    research::web_search(&query).await
+}
+
+#[tauri::command]
+async fn summarize_search_command(query: String, results: Vec<research::SearchResult>) -> Result<String, String> {
+    research::summarize_results(&query, &results).await
 }
 
 /// Returns whether a Whisper model is installed in Ollama and what its name is.
@@ -1084,7 +1097,9 @@ pub fn run() {
             start_ollama_command,
             check_whisper_status_command,
             request_microphone_permission_command,
-            get_default_microphone_label_command
+            get_default_microphone_label_command,
+            web_search_command,
+            summarize_search_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

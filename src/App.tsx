@@ -12,6 +12,7 @@ import { ProductivityTab } from "./components/ProductivityTab";
 import { StatusBanner } from "./components/StatusBanner";
 import { LifeCaptureModal } from "./components/LifeCaptureModal";
 import { ActiveLifeTab } from "./components/ActiveLifeTab";
+import { ResearchTab } from "./components/ResearchTab";
 import { useQueueStore } from "./store/useQueueStore";
 
 // ─── No-Model Alert Banner ───────────────────────────────────────────────────
@@ -237,6 +238,8 @@ export default function App() {
         return <ProductivityTab />;
       case "active-life":
         return <ActiveLifeTab />;
+      case "research":
+        return <ResearchTab />;
       case "settings":
         return <SettingsTab />;
 

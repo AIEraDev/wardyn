@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   IconShieldCheck, IconLayoutDashboard, IconMail, IconPencil,
   IconCalendar, IconGridDots, IconSettings, IconChartBar,
-  IconBrain, IconCheckbox, IconBolt,
+  IconBrain, IconCheckbox, IconBolt, IconSearch,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 import { TabType } from "../types/queue";
@@ -34,6 +34,7 @@ export const Sidebar: React.FC = () => {
     { id: "active-life",  labelKey: "active_life", icon: IconBolt           },
     { id: "messages",     labelKey: "messages",    icon: IconMail           },
     { id: "content",      labelKey: "content",     icon: IconPencil         },
+    { id: "research",     labelKey: "research",    icon: IconSearch         },
     { id: "analytics",    labelKey: "analytics",   icon: IconChartBar       },
     { id: "productivity", labelKey: "productivity",icon: IconCheckbox       },
     { id: "deadlines",    labelKey: "deadlines",   icon: IconCalendar       },

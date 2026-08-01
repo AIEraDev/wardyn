@@ -49,27 +49,21 @@ export const MessagesTab: React.FC = () => {
     : gmailItems.filter((i) => extractCategory(i.preview) === cat).length;
 
   return (
-    <div className="flex-1 min-w-0">
-      <div className="flex items-baseline justify-between mb-4">
+    <div className="tab-pane">
+      <div className="page-header">
         <div>
-          <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Messages</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">
-            Triaged Gmail {gmailAccounts.length > 1 ? `(${gmailAccounts.length} Accounts)` : ''} · All Categories
+          <h1 className="page-title">Messages</h1>
+          <p className="page-subtitle">
+            Triaged Gmail{gmailAccounts.length > 1 ? ` · ${gmailAccounts.length} Accounts` : ''} · All Categories
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {gmailAccounts.length > 0 && (
-            <button
-
-              onClick={syncGmail}
-              className="font-mono text-xs bg-[#151A21] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] px-2.5 py-1 rounded-md flex items-center gap-1.5 hover:bg-[#181E27] transition-colors cursor-pointer"
-            >
+            <button onClick={syncGmail}>
               <IconRefresh size={13} /> Sync
             </button>
           )}
-          <span className="font-mono text-xs bg-[#151A21] text-[#4A8FC2] px-2.5 py-1 rounded-md border border-[rgba(74,143,194,0.3)]">
-            {gmailItems.length} Total
-          </span>
+          <span className="badge badge-accent">{gmailItems.length} Total</span>
         </div>
       </div>
 
@@ -107,68 +101,53 @@ export const MessagesTab: React.FC = () => {
       )}
 
       {isLoading ? (
-        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl text-xs text-[#7A8492]">
-          Loading messages...
-        </div>
+        <div className="empty-state"><p style={{ fontSize: 12, color: 'var(--text-3)' }}>Loading messages…</p></div>
       ) : gmailAccounts.length === 0 ? (
-        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl space-y-2">
-          <IconMail size={24} className="mx-auto text-[#4A8FC2]" />
-          <h4 className="text-sm font-medium text-[#F0F4F8] m-0">Gmail Not Connected</h4>
-          <p className="text-xs text-[#7A8492] max-w-sm mx-auto">
-            Connect your Gmail account on the Today tab, Channels tab, or Settings tab to begin triaging messages.
+        <div className="empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <IconMail size={24} style={{ color: 'var(--accent)' }} />
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>Gmail Not Connected</h4>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', maxWidth: 300, lineHeight: 1.5 }}>
+            Connect your Gmail account on the Today tab, Channels tab, or Settings tab.
           </p>
         </div>
       ) : filteredItems.length === 0 ? (
-
-        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl space-y-2">
-          <IconInbox size={24} className="mx-auto text-[#34D399]" />
-          <h4 className="text-sm font-medium text-[#F0F4F8] m-0">No {CATEGORY_META[activeFilter].label} Messages</h4>
-          <p className="text-xs text-[#7A8492]">Click Sync to pull the latest from Gmail.</p>
+        <div className="empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <IconInbox size={24} style={{ color: 'var(--success)' }} />
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>No {CATEGORY_META[activeFilter].label} Messages</h4>
+          <p style={{ fontSize: 12, color: 'var(--text-3)' }}>Click Sync to pull the latest from Gmail.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {filteredItems.map((item) => {
             const cat = extractCategory(item.preview);
             const cleanPreview = stripCategoryPrefix(item.preview);
             return (
               <div
                 key={item.id}
-                className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] flex items-center justify-between gap-4 hover:border-[#2E3A4A] transition-colors"
+                className="card"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px' }}
               >
-                <div className="flex items-start gap-3 min-w-0">
-                  <div className="p-2 rounded-lg bg-[#181E27] text-[#4A8FC2] shrink-0 border border-[#242B35]">
-                    <IconMail size={18} />
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0, flex: 1 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border-em)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', flexShrink: 0 }}>
+                    <IconMail size={16} />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-[#F0F4F8] truncate">{item.sender}</p>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.sender}</p>
                       <CategoryPill cat={cat} />
-                      {item.flagged && (
-                        <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(232,162,61,0.15)] text-[#E8A23D] border border-[rgba(232,162,61,0.3)] uppercase">
-                          Flagged
-                        </span>
-                      )}
+                      {item.flagged && <span className="badge badge-warning">Flagged</span>}
                     </div>
-                    <p className="text-xs text-[#9AA4B2] truncate mt-0.5">{cleanPreview}</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cleanPreview}</p>
                   </div>
                 </div>
-
-                <div className="shrink-0 flex items-center gap-2">
-                  <span className="font-mono text-xs text-[#7A8492] uppercase">
-                    {item.status === 'sent' || item.status === 'approved' || item.status === 'edited' ? (
-                      <span className="text-[#34D399] flex items-center gap-1">
-                        <IconCheck size={14} /> Sent
-                      </span>
-                    ) : item.status === 'skipped' ? (
-                      <span className="text-[#7A8492] flex items-center gap-1">
-                        <IconX size={14} /> Skipped
-                      </span>
-                    ) : (
-                      <span className="text-[#E8A23D] flex items-center gap-1">
-                        <IconInbox size={14} /> Pending
-                      </span>
-                    )}
-                  </span>
+                <div style={{ flexShrink: 0 }}>
+                  {item.status === 'sent' || item.status === 'approved' || item.status === 'edited' ? (
+                    <span className="badge badge-success"><IconCheck size={12} /> Sent</span>
+                  ) : item.status === 'skipped' ? (
+                    <span className="badge badge-muted"><IconX size={12} /> Skipped</span>
+                  ) : (
+                    <span className="badge badge-warning"><IconInbox size={12} /> Pending</span>
+                  )}
                 </div>
               </div>
             );

@@ -293,9 +293,22 @@ export default function App() {
         />
       )}
 
-      <div className="flex gap-5 max-w-5xl mx-auto pt-4 relative z-0">
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          maxWidth: 960,
+          margin: "0 auto",
+          padding: "14px 14px 20px",
+          position: "relative",
+          zIndex: 0,
+          alignItems: "flex-start",
+        }}
+      >
         <Sidebar />
-        {renderActiveTab()}
+        <div style={{ flex: 1, minWidth: 0, overflowY: "auto", maxHeight: "calc(100vh - 34px)" }}>
+          {renderActiveTab()}
+        </div>
       </div>
       <LifeCaptureModal />
     </>

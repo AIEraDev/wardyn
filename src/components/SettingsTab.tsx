@@ -148,6 +148,8 @@ export const SettingsTab: React.FC = () => {
   }>({ checked: false, installed: false, modelName: null, ollamaRunning: false });
   const [installingWhisper, setInstallingWhisper] = useState(false);
 
+  const [startingOllama, setStartingOllama] = useState(false);
+
   const checkWhisper = async () => {
     if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
     try {
@@ -161,6 +163,29 @@ export const SettingsTab: React.FC = () => {
         modelName: result.model_name,
         ollamaRunning: result.ollama_running,
       });
+
+      // If Ollama isn't running, start it automatically and re-check
+      if (!result.ollama_running) {
+        setStartingOllama(true);
+        try {
+          await invoke('start_ollama_command');
+          // Give it 3 seconds to boot up, then re-check
+          await new Promise(r => setTimeout(r, 3000));
+          const result2 = await invoke<{ installed: boolean; model_name: string | null; ollama_running: boolean }>(
+            'check_whisper_status_command'
+          );
+          setWhisperStatus({
+            checked: true,
+            installed: result2.installed,
+            modelName: result2.model_name,
+            ollamaRunning: result2.ollama_running,
+          });
+        } catch {
+          // start_ollama failed — user needs to start it manually
+        } finally {
+          setStartingOllama(false);
+        }
+      }
     } catch {
       setWhisperStatus({ checked: true, installed: false, modelName: null, ollamaRunning: false });
     }
@@ -535,8 +560,10 @@ export const SettingsTab: React.FC = () => {
               <p className="text-xs text-[#9AA4B2]">
                 {!whisperStatus.checked
                   ? 'Checking status...'
+                  : startingOllama
+                  ? 'Starting Ollama...'
                   : !whisperStatus.ollamaRunning
-                  ? 'Ollama is not running — start it to use voice capture'
+                  ? 'Ollama is not running — click Check to start it automatically'
                   : whisperStatus.installed
                   ? `Ready — using ${whisperStatus.modelName}`
                   : 'Whisper model not installed — voice capture is unavailable'}
@@ -554,9 +581,13 @@ export const SettingsTab: React.FC = () => {
                 <button
                   type="button"
                   onClick={checkWhisper}
-                  className="font-mono text-xs px-2.5 py-1.5 rounded-md bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#F0F4F8] flex items-center gap-1 cursor-pointer transition-colors"
+                  disabled={startingOllama}
+                  className="font-mono text-xs px-2.5 py-1.5 rounded-md bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#F0F4F8] flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
                 >
-                  <IconRefresh size={13} /> Check
+                  {startingOllama
+                    ? <><IconLoader2 size={13} className="animate-spin" /> Starting Ollama...</>
+                    : <><IconRefresh size={13} /> Check</>
+                  }
                 </button>
                 {whisperStatus.ollamaRunning && (
                   <button
@@ -608,10 +639,10 @@ export const SettingsTab: React.FC = () => {
           </div>
         )}
 
-        {/* How to use note */}
-        {!whisperStatus.installed && whisperStatus.checked && !whisperStatus.ollamaRunning && (
+        {/* How to use note — only shown if auto-start also failed */}
+        {!whisperStatus.installed && whisperStatus.checked && !whisperStatus.ollamaRunning && !startingOllama && (
           <p className="text-[11px] text-[#7A8492] font-mono m-0 pt-1">
-            Run <span className="text-[#F0F4F8] bg-[#0E1318] px-1.5 py-0.5 rounded">ollama serve</span> in your terminal, then click Check.
+            Auto-start failed. Run <span className="text-[#F0F4F8] bg-[#0E1318] px-1.5 py-0.5 rounded">ollama serve</span> in your terminal, then click Check.
           </p>
         )}
         {whisperStatus.installed && (

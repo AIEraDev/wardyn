@@ -8,55 +8,77 @@ lazy_static! {
 
 // ─── Speech-to-Text via Ollama Whisper ───────────────────────────────────────
 
+/// Known whisper model names on the Ollama registry, in preference order.
+/// These are community models since Ollama has no first-party whisper in its library.
+const WHISPER_INSTALL_MODEL: &str = "dimavz/whisper-tiny";
+const WHISPER_CANDIDATES: &[&str] = &[
+    "dimavz/whisper-tiny",
+    "dimavz/whisper-base",
+    "dimavz/whisper-small",
+    "dimavz/whisper-medium",
+    "dimavz/whisper-large",
+];
+
+/// Returns the name of an installed Whisper model, or None if none found.
+pub async fn find_installed_whisper_model() -> Option<String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .ok()?;
+
+    let resp = client
+        .get("http://localhost:11434/api/tags")
+        .send()
+        .await
+        .ok()?;
+
+    let json: serde_json::Value = resp.json().await.ok()?;
+    let models = json["models"].as_array()?;
+
+    // Check exact matches first (from our known candidate list)
+    for candidate in WHISPER_CANDIDATES {
+        for m in models {
+            let name = m["name"].as_str().unwrap_or("");
+            // Match "dimavz/whisper-tiny" or "dimavz/whisper-tiny:latest"
+            if name == *candidate || name.starts_with(&format!("{}:", candidate)) {
+                return Some(name.to_string());
+            }
+        }
+    }
+
+    // Fall back: any installed model whose name contains "whisper"
+    for m in models {
+        let name = m["name"].as_str().unwrap_or("");
+        if name.to_lowercase().contains("whisper") {
+            return Some(name.to_string());
+        }
+    }
+
+    None
+}
+
 /// Transcribes raw audio bytes (WebM/Opus or WAV) using Ollama's OpenAI-compatible
-/// /v1/audio/transcriptions endpoint, which wraps a local Whisper model.
+/// /v1/audio/transcriptions endpoint backed by a local Whisper model.
 pub async fn transcribe_audio_bytes(audio_bytes: Vec<u8>, mime_type: &str) -> Result<String, String> {
     use reqwest::multipart;
 
+    let model_name = find_installed_whisper_model()
+        .await
+        .ok_or_else(|| format!(
+            "No Whisper model installed. Go to Settings → Voice Capture and click Install Whisper."
+        ))?;
+
     let ext = if mime_type.contains("wav") { "wav" } else { "webm" };
     let filename = format!("recording.{}", ext);
-    let content_type = mime_type.to_string();
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    // Try whisper models in preference order
-    let models = ["whisper", "whisper:latest", "openai/whisper", "ollama/whisper"];
-
-    // First check which models are actually installed
-    let tags_resp = client
-        .get("http://localhost:11434/api/tags")
-        .send()
-        .await
-        .map_err(|_| "Ollama is not running. Please start Ollama and install a Whisper model.".to_string())?;
-
-    let tags_body = tags_resp.text().await.unwrap_or_default();
-
-    // Find the first available whisper model from installed list
-    let available_model = models.iter().find(|&&m| {
-        tags_body.to_lowercase().contains(&m.to_lowercase().replace("/", "").replace(":", "").replace("whisper", "whisper"))
-            || tags_body.contains(m)
-    }).copied();
-
-    // If none found by exact match, check if anything with "whisper" is installed
-    let model_name = if let Some(m) = available_model {
-        m.to_string()
-    } else if tags_body.to_lowercase().contains("whisper") {
-        // Extract the exact model name from tags response
-        tags_body
-            .split('"')
-            .find(|s| s.to_lowercase().contains("whisper"))
-            .unwrap_or("whisper")
-            .to_string()
-    } else {
-        return Err("No Whisper model found. Run: ollama pull whisper".to_string());
-    };
-
     let file_part = multipart::Part::bytes(audio_bytes)
         .file_name(filename)
-        .mime_str(&content_type)
+        .mime_str(mime_type)
         .map_err(|e| format!("MIME error: {}", e))?;
 
     let form = multipart::Form::new()
@@ -79,7 +101,7 @@ pub async fn transcribe_audio_bytes(audio_bytes: Vec<u8>, mime_type: &str) -> Re
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Whisper transcription error {}: {}", status, body));
+        return Err(format!("Whisper error {}: {}", status, body));
     }
 
     let result: TranscriptionResponse = resp

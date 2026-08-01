@@ -417,7 +417,6 @@ async fn check_whisper_status_command() -> Result<WhisperStatus, String> {
             None
         }
     });
-
     Ok(WhisperStatus {
         installed: whisper_model.is_some(),
         model_name: whisper_model,

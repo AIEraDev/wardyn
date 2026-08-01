@@ -166,10 +166,12 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
+  const WHISPER_MODEL_ID = 'dimavz/whisper-tiny';
+
   const handleInstallWhisper = async () => {
     setInstallingWhisper(true);
-    await sendDesktopNotification('📥 Installing Whisper', 'Downloading whisper model for voice capture...');
-    await installOllamaModel('whisper');
+    await sendDesktopNotification('📥 Installing Whisper', 'Downloading dimavz/whisper-tiny for voice capture...');
+    await installOllamaModel(WHISPER_MODEL_ID);
     // Re-check after a short delay to pick up the new model
     setTimeout(async () => {
       await checkWhisper();
@@ -559,11 +561,11 @@ export const SettingsTab: React.FC = () => {
                 {whisperStatus.ollamaRunning && (
                   <button
                     type="button"
-                    disabled={installingWhisper || !!pullProgress['whisper']}
+                    disabled={installingWhisper || !!pullProgress[WHISPER_MODEL_ID]}
                     onClick={handleInstallWhisper}
                     className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#4A8FC2] text-black font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                   >
-                    {(installingWhisper || pullProgress['whisper']) ? (
+                    {(installingWhisper || pullProgress[WHISPER_MODEL_ID]) ? (
                       <><IconLoader2 size={13} className="animate-spin" /> Installing...</>
                     ) : (
                       <><IconDownload size={13} /> Install Whisper</>
@@ -576,33 +578,33 @@ export const SettingsTab: React.FC = () => {
         </div>
 
         {/* Whisper install progress */}
-        {pullProgress['whisper'] && !pullProgress['whisper'].done && (
+        {pullProgress[WHISPER_MODEL_ID] && !pullProgress[WHISPER_MODEL_ID].done && (
           <div className="space-y-1.5 pt-3 border-t border-[#242B35]">
             <div className="flex items-center justify-between text-[11px] font-mono">
               <span className="text-[#9AA4B2] flex items-center gap-1.5">
                 <IconLoader2 size={11} className="animate-spin" />
-                {pullProgress['whisper'].status || 'Downloading Whisper...'}
+                {pullProgress[WHISPER_MODEL_ID].status || 'Downloading Whisper...'}
               </span>
-              {pullProgress['whisper'].percent > 0 && (
+              {pullProgress[WHISPER_MODEL_ID].percent > 0 && (
                 <span className="text-[#4A8FC2] font-semibold">
-                  {pullProgress['whisper'].percent.toFixed(1)}%
+                  {pullProgress[WHISPER_MODEL_ID].percent.toFixed(1)}%
                 </span>
               )}
             </div>
             <div className="w-full h-1.5 bg-[#0E1318] rounded-full overflow-hidden border border-[#242B35]">
               <div
                 className="h-full bg-gradient-to-r from-[#4A8FC2] to-[#34D399] transition-all duration-300 rounded-full"
-                style={{ width: `${Math.max(pullProgress['whisper'].percent, 5)}%` }}
+                style={{ width: `${Math.max(pullProgress[WHISPER_MODEL_ID].percent, 5)}%` }}
               />
             </div>
           </div>
         )}
 
         {/* Error */}
-        {pullProgress['whisper']?.done && pullProgress['whisper']?.error && (
+        {pullProgress[WHISPER_MODEL_ID]?.done && pullProgress[WHISPER_MODEL_ID]?.error && (
           <div className="flex items-start gap-2 pt-2 border-t border-[rgba(239,68,68,0.2)]">
             <span className="text-[#EF4444] text-[10px] mt-0.5 shrink-0">⚠</span>
-            <p className="text-[11px] text-[#EF4444] m-0 leading-snug">{pullProgress['whisper'].error}</p>
+            <p className="text-[11px] text-[#EF4444] m-0 leading-snug">{pullProgress[WHISPER_MODEL_ID].error}</p>
           </div>
         )}
 

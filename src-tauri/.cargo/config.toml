@@ -1,0 +1,7 @@
+[target.aarch64-apple-darwin]
+# Sign the binary with mic entitlements before Tauri runs it in dev mode.
+# This is needed because macOS TCC blocks getUserMedia in unsigned binaries.
+runner = "../scripts/sign-and-run.sh"
+
+[target.x86_64-apple-darwin]
+runner = "../scripts/sign-and-run.sh"

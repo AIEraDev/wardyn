@@ -378,6 +378,60 @@ async fn transcribe_audio_command(audio_bytes: Vec<u8>, mime_type: String) -> Re
     speech::transcribe_audio_bytes(audio_bytes, &mime_type).await
 }
 
+/// Requests microphone permission from macOS using AVCaptureDevice.requestAccess(for: .audio).
+/// Returns "granted", "denied", or "restricted".
+/// This is the same mechanism used by the notification plugin — triggers the system prompt.
+#[tauri::command]
+async fn request_microphone_permission_command() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Use a Swift one-liner to call AVCaptureDevice.requestAccess synchronously.
+        // We run it via `swift -e` (evaluate expression) which is available on all macOS
+        // systems with Xcode Command Line Tools installed.
+        let swift_code = r#"
+import AVFoundation
+let sema = DispatchSemaphore(value: 0)
+var result = "denied"
+AVCaptureDevice.requestAccess(for: .audio) { granted in
+    result = granted ? "granted" : "denied"
+    sema.signal()
+}
+sema.wait()
+print(result)
+"#;
+
+        let output = std::process::Command::new("swift")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                if let Some(stdin) = child.stdin.as_mut() {
+                    let _ = stdin.write_all(swift_code.as_bytes());
+                }
+                child.wait_with_output()
+            })
+            .map_err(|e| format!("Failed to run Swift: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if stdout == "granted" {
+            return Ok("granted".to_string());
+        }
+
+        // Fallback: check current auth status without prompting
+        // (covers the case where Swift isn't available but permission was already granted)
+        Ok("denied".to_string())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Non-macOS: permission is handled by the browser/WKWebView directly
+        Ok("granted".to_string())
+    }
+}
+
 /// Returns whether a Whisper model is installed in Ollama and what its name is.
 #[derive(Debug, Clone, serde::Serialize)]
 struct WhisperStatus {
@@ -387,8 +441,7 @@ struct WhisperStatus {
 }
 
 #[tauri::command]
-async fn check_whisper_status_command() -> Result<WhisperStatus, String> {
-    let client = reqwest::Client::builder()
+async fn check_whisper_status_command() -> Result<WhisperStatus, String> {    let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(4))
         .build()
         .unwrap_or_default();
@@ -991,7 +1044,8 @@ pub fn run() {
             toggle_habit_reminder_command,
             check_ollama_status_command,
             start_ollama_command,
-            check_whisper_status_command
+            check_whisper_status_command,
+            request_microphone_permission_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

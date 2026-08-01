@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   IconShieldCheck, IconLayoutDashboard, IconMail, IconPencil,
   IconCalendar, IconGridDots, IconSettings, IconChartBar,
@@ -12,6 +12,22 @@ export const Sidebar: React.FC = () => {
   const activeTab = useQueueStore((state) => state.activeTab);
   const setActiveTab = useQueueStore((state) => state.setActiveTab);
   const t = useQueueStore((state) => state.t);
+  const [appVersion, setAppVersion] = useState<string>("");
+
+  useEffect(() => {
+    const loadVersion = async () => {
+      try {
+        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+          const { getVersion } = await import("@tauri-apps/api/app");
+          const v = await getVersion();
+          setAppVersion(v);
+        }
+      } catch {
+        // non-Tauri env, leave version empty
+      }
+    };
+    loadVersion();
+  }, []);
 
   const tabs: Array<{ id: TabType; labelKey: keyof TranslationDictionary; icon: React.ElementType }> = [
     { id: "today",        labelKey: "today",       icon: IconLayoutDashboard },
@@ -70,9 +86,11 @@ export const Sidebar: React.FC = () => {
           <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)", letterSpacing: "-0.2px", lineHeight: 1.1 }}>
             Wardyn
           </div>
-          <div style={{ fontSize: 9, color: "var(--text-3)", fontFamily: "JetBrains Mono, monospace", marginTop: 1 }}>
-            v0.1.1
-          </div>
+          {appVersion && (
+            <div style={{ fontSize: 9, color: "var(--text-3)", fontFamily: "JetBrains Mono, monospace", marginTop: 1 }}>
+              v{appVersion}
+            </div>
+          )}
         </div>
       </div>
 

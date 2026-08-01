@@ -118,26 +118,57 @@ function useSpeechRecognition(onResult: (t: string) => void) {
       // Non-Tauri env or Swift unavailable — proceed and let getUserMedia handle it
     }
 
-    // 2. Request mic stream from WebKit — permission should now be granted above
+    // 2. Request mic stream from WebKit.
+    // Use minimal constraints — WKWebView ignores sampleRate/echoCancellation
+    // and may reject the stream if constraints can't be satisfied.
+    // Get the real hardware mic label from macOS to avoid virtual devices (QuickTime etc.)
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 16000, // Whisper works best at 16kHz
+      let deviceId: string | undefined;
+      try {
+        // Get the native default mic label from AVFoundation
+        let nativeLabel = "";
+        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          nativeLabel = await invoke<string>("get_default_microphone_label_command");
         }
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const mics = devices.filter(d => d.kind === "audioinput");
+
+        // Match by native label first, then fall back to built-in/macbook heuristic
+        const preferred = (nativeLabel
+          ? mics.find(d => d.label.toLowerCase().includes(nativeLabel.toLowerCase().split(" ")[0]))
+          : undefined)
+          ?? mics.find(d =>
+              d.label.toLowerCase().includes("built-in") ||
+              d.label.toLowerCase().includes("macbook") ||
+              d.label.toLowerCase().includes("microphone")
+            )
+          ?? mics[0];
+
+        if (preferred?.deviceId) deviceId = preferred.deviceId;
+      } catch { /* enumeration optional */ }
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true
       });
       mediaStreamRef.current = stream;
     } catch (err: any) {
-      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        setError("Microphone permission denied. Go to System Settings → Privacy → Microphone and enable Wardyn.");
-      } else if (err.name === "NotFoundError") {
-        setError("No microphone found. Connect a microphone and try again.");
-      } else {
-        setError(`Microphone unavailable: ${err.message}`);
+      // Retry with bare true if deviceId exact constraint failed
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+      } catch (err2: any) {
+        if (err2.name === "NotAllowedError" || err2.name === "PermissionDeniedError") {
+          setError("Microphone access denied. Go to System Settings → Privacy & Security → Microphone and enable Wardyn.");
+        } else if (err2.name === "NotFoundError") {
+          setError("No microphone found. Connect a microphone and try again.");
+        } else {
+          setError(`Microphone unavailable: ${err2.message}`);
+        }
+        return;
       }
-      return;
     }
 
     // 2. Watch for track ending unexpectedly (macOS permission revoked mid-session)

@@ -385,9 +385,6 @@ async fn transcribe_audio_command(audio_bytes: Vec<u8>, mime_type: String) -> Re
 async fn request_microphone_permission_command() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        // Use a Swift one-liner to call AVCaptureDevice.requestAccess synchronously.
-        // We run it via `swift -e` (evaluate expression) which is available on all macOS
-        // systems with Xcode Command Line Tools installed.
         let swift_code = r#"
 import AVFoundation
 let sema = DispatchSemaphore(value: 0)
@@ -419,16 +416,57 @@ print(result)
         if stdout == "granted" {
             return Ok("granted".to_string());
         }
-
-        // Fallback: check current auth status without prompting
-        // (covers the case where Swift isn't available but permission was already granted)
         Ok("denied".to_string())
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        // Non-macOS: permission is handled by the browser/WKWebView directly
         Ok("granted".to_string())
+    }
+}
+
+/// Returns the label of the default hardware microphone so the frontend can
+/// select it by label in enumerateDevices(), avoiding virtual devices like QuickTime.
+#[tauri::command]
+async fn get_default_microphone_label_command() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let swift_code = r#"
+import AVFoundation
+let session = AVCaptureDeviceDiscoverySession(
+    deviceTypes: [.microphone, .builtInMicrophone],
+    mediaType: .audio,
+    position: .unspecified
+)
+if let dev = session?.devices.first(where: { $0.isConnected && !$0.isSuspended }) {
+    print(dev.localizedName)
+} else if let dev = AVCaptureDevice.default(for: .audio) {
+    print(dev.localizedName)
+} else {
+    print("")
+}
+"#;
+        let output = std::process::Command::new("swift")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                if let Some(stdin) = child.stdin.as_mut() {
+                    let _ = stdin.write_all(swift_code.as_bytes());
+                }
+                child.wait_with_output()
+            })
+            .map_err(|e| format!("Swift error: {}", e))?;
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(String::new())
     }
 }
 
@@ -1045,7 +1083,8 @@ pub fn run() {
             check_ollama_status_command,
             start_ollama_command,
             check_whisper_status_command,
-            request_microphone_permission_command
+            request_microphone_permission_command,
+            get_default_microphone_label_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -126,8 +126,14 @@ function useSpeechRecognition(onResult: (t: string) => void) {
     }
 
     // 2. Watch for track ending unexpectedly (macOS permission revoked mid-session)
+    //    Use a grace period so the handler doesn't fire during initial track setup.
+    const trackStartTime = Date.now();
     stream.getAudioTracks().forEach(track => {
       track.onended = () => {
+        // Ignore if track ended within 2s of starting — that's a setup/permission
+        // race in dev mode, not a real mid-session interruption
+        const age = Date.now() - trackStartTime;
+        if (age < 2000) return;
         if (shouldListenRef.current) {
           setError("Microphone access was interrupted. Check System Settings → Privacy → Microphone.");
           stop();

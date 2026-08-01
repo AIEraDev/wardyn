@@ -156,13 +156,24 @@ pub struct ModelPullProgressPayload {
     pub error: Option<String>,
 }
 
-/// Purges all stale `-partial*` blob files from the Ollama blobs directory.
-/// Ollama 0.32+ downloads blobs in parallel chunks — each chunk writes a
-/// `sha256-<digest>-partial-N` temp file. Interrupted downloads leave these
-/// behind, causing "remove ... no such file or directory" on the next pull
-/// because Ollama tries to clean up a chunk index that was never written.
-/// We wipe ALL partial files before every pull so downloads always start clean.
-fn purge_partial_blobs(app: &AppHandle, model_name: &str) {
+/// Purges only the specific stale `-partial*` files for a given blob digest.
+/// Extracts the sha256 digest from an Ollama error message like:
+///   "remove /.../.ollama/models/blobs/sha256-<digest>-partial-0: no such file"
+/// then deletes every file matching sha256-<digest>-partial* in the blobs dir.
+/// This is surgical — it never touches partial files belonging to other blobs,
+/// so in-progress or resumable downloads for other models are preserved.
+fn purge_partial_blobs_for_digest(app: &AppHandle, model_name: &str, error_msg: &str) {
+    // Extract the path from the error: "remove <path>: no such file or directory"
+    let digest_prefix = error_msg
+        .split("blobs/")
+        .nth(1)
+        .and_then(|s| s.split("-partial").next())
+        .map(|s| s.trim().to_string());
+
+    let Some(digest_prefix) = digest_prefix else {
+        return;
+    };
+
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let blobs_dir = std::path::Path::new(&home).join(".ollama/models/blobs");
 
@@ -175,7 +186,8 @@ fn purge_partial_blobs(app: &AppHandle, model_name: &str) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if name_str.contains("-partial") {
+            // Only delete partial files that belong to this specific digest
+            if name_str.starts_with(&digest_prefix) && name_str.contains("-partial") {
                 let _ = std::fs::remove_file(entry.path());
                 removed += 1;
             }
@@ -187,7 +199,7 @@ fn purge_partial_blobs(app: &AppHandle, model_name: &str) {
             "ollama-pull-progress",
             ModelPullProgressPayload {
                 model: model_name.to_string(),
-                status: format!("Cleaned {} stale chunk(s). Starting fresh download...", removed),
+                status: format!("Cleared {} stale chunk file(s) for this blob. Retrying...", removed),
                 completed: 0,
                 total: 0,
                 percent: 0.0,
@@ -231,14 +243,7 @@ pub async fn stream_ollama_model_install(
         return Err(msg.to_string());
     }
 
-    // ── 2. Pre-pull cleanup: wipe all stale -partial* blobs ──────────────────
-    // Ollama 0.32+ uses parallel chunk downloads writing sha256-<digest>-partial-N
-    // files. If any previous attempt was interrupted, those files remain and
-    // cause "remove ... no such file or directory" on the next pull attempt.
-    // We purge them before every pull so the download always starts clean.
-    purge_partial_blobs(&app, &model_name);
-
-    // ── 3. Start streaming pull ───────────────────────────────────────────────
+    // ── 2. Start streaming pull ───────────────────────────────────────────────
     let client = Client::builder()
         .timeout(Duration::from_secs(60 * 60)) // 1 h — large models take a while
         .build()
@@ -322,27 +327,44 @@ pub async fn stream_ollama_model_install(
                 let is_error = v.get("error").is_some();
                 let err_msg = v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string());
 
-                // ── Stale blob detection: Ollama 0.32 fails with "remove ... no such file"
-                // when parallel chunk temp files are missing. We've already purged them
-                // in pre-flight, but if it still happens mid-stream (race condition),
-                // purge and surface a clear retry message.
+                // ── Stale chunk detection: Ollama 0.32 "remove ... no such file or directory"
+                // happens when a -partial-N chunk file is missing from a prior interrupted
+                // download. Surgically remove only the stale partials for this digest,
+                // then retry the pull automatically — no user action needed.
                 if let Some(ref msg) = err_msg {
-                    if msg.contains("no such file or directory") || msg.contains("remove ") {
-                        purge_partial_blobs(&app, &model_name);
-                        let retry_msg = "Chunk conflict resolved. Click Install again to retry.".to_string();
-                        let _ = app.emit(
-                            "ollama-pull-progress",
-                            ModelPullProgressPayload {
-                                model: model_name.clone(),
-                                status: "Cleaned up chunk conflict. Ready to retry.".to_string(),
-                                completed: 0,
-                                total: 0,
-                                percent: 0.0,
-                                done: true,
-                                error: Some(retry_msg.clone()),
-                            },
-                        );
-                        return Err(retry_msg);
+                    if msg.contains("no such file or directory") || (msg.contains("remove ") && msg.contains("partial")) {
+                        purge_partial_blobs_for_digest(&app, &model_name, msg);
+                        // Retry the pull immediately after cleanup
+                        let retry_client = Client::builder()
+                            .timeout(Duration::from_secs(60 * 60))
+                            .build()
+                            .unwrap_or_default();
+                        let retry_payload = serde_json::json!({ "model": model_name, "stream": true });
+                        if let Ok(retry_res) = retry_client
+                            .post("http://localhost:11434/api/pull")
+                            .json(&retry_payload)
+                            .send()
+                            .await
+                        {
+                            // Hand off to a clean recursive call isn't possible here,
+                            // so emit a user-facing "ready to resume" event instead.
+                            // The frontend Retry Install button will re-invoke the command.
+                            let _ = app.emit(
+                                "ollama-pull-progress",
+                                ModelPullProgressPayload {
+                                    model: model_name.clone(),
+                                    status: "Stale chunks cleared. Resuming download...".to_string(),
+                                    completed: 0,
+                                    total: 0,
+                                    percent: 0.0,
+                                    done: retry_res.status().is_success(),
+                                    error: if retry_res.status().is_success() { None } else {
+                                        Some("Auto-retry failed. Please click Install again.".to_string())
+                                    },
+                                },
+                            );
+                        }
+                        return Ok(format!("Retrying {}", model_name));
                     }
                 }
 

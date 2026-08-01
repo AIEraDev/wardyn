@@ -213,7 +213,10 @@ export const SettingsTab: React.FC = () => {
     }
   }, [pullProgress]);
 
+  const [refreshingModels, setRefreshingModels] = useState(false);
+
   const fetchModels = async () => {
+    setRefreshingModels(true);
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
@@ -224,8 +227,8 @@ export const SettingsTab: React.FC = () => {
         console.warn('Failed to fetch installed Ollama models:', err);
       }
     }
+    setRefreshingModels(false);
   };
-
   const handleCheckUpdate = async () => {
     setCheckingUpdate(true);
     setUpdateStatus("Checking GitHub Releases...");
@@ -382,15 +385,21 @@ export const SettingsTab: React.FC = () => {
 
           <button
             onClick={fetchModels}
-            className="font-mono text-xs bg-[#181E27] text-[#4A8FC2] px-2.5 py-1 rounded-md border border-[#242B35] hover:text-[#F0F4F8] flex items-center gap-1 cursor-pointer"
+            disabled={refreshingModels}
+            className="font-mono text-xs bg-[#181E27] text-[#4A8FC2] px-2.5 py-1 rounded-md border border-[#242B35] hover:text-[#F0F4F8] flex items-center gap-1 cursor-pointer disabled:opacity-50"
           >
-            <IconRefresh size={13} /> Refresh List
+            <IconRefresh size={13} className={refreshingModels ? 'animate-spin' : ''} /> {refreshingModels ? 'Refreshing...' : 'Refresh List'}
           </button>
         </div>
 
         <div className="space-y-3">
           {FREE_MODEL_CATALOG.map((model) => {
-            const isInstalled = installedModels.some((m) => m === model.id || m.startsWith(`${model.id}:`));
+            // Normalise: strip :latest tag and any registry prefix for comparison
+            const normalise = (n: string) => n.replace(/:latest$/, '').split('/').pop() ?? n;
+            const isInstalled = installedModels.some((m) => {
+              const norm = normalise(m);
+              return norm === model.id || norm.startsWith(`${model.id}:`) || m === model.id || m.startsWith(`${model.id}:`);
+            });
             const progress = pullProgress[model.id];
             // Derive download state entirely from the global store — NOT local component state
             // so it survives tab switches without resetting.

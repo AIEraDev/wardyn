@@ -159,14 +159,46 @@ fn record_voice_edit_command(item_id: String, original: String, edited: String, 
     db::record_voice_edit(&conn, &item_id, &original, &edited).map_err(|e| e.to_string())
 }
 
+pub struct CancelRegistry(pub Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>>);
+
 #[tauri::command]
 async fn get_installed_ollama_models_command() -> Result<Vec<InstalledModelInfo>, String> {
     Ok(ollama::client::fetch_installed_ollama_models().await)
 }
 
 #[tauri::command]
-async fn install_ollama_model_command(model_name: String) -> Result<String, String> {
-    ollama::client::trigger_ollama_model_install(model_name).await
+async fn install_ollama_model_command(
+    app: tauri::AppHandle,
+    model_name: String,
+    state: State<'_, CancelRegistry>,
+) -> Result<String, String> {
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let mut map = state.0.lock().map_err(|e| e.to_string())?;
+        map.insert(model_name.clone(), cancel_flag.clone());
+    }
+
+    let app_handle = app.clone();
+    let name = model_name.clone();
+    tokio::spawn(async move {
+        let _ = ollama::client::stream_ollama_model_install(app_handle, name, cancel_flag).await;
+    });
+
+    Ok(format!("Started download for {}", model_name))
+}
+
+#[tauri::command]
+async fn cancel_model_install_command(
+    model_name: String,
+    state: State<'_, CancelRegistry>,
+) -> Result<String, String> {
+    let mut map = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(flag) = map.remove(&model_name) {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        Ok(format!("Cancelled download for {}", model_name))
+    } else {
+        Err(format!("No active download found for {}", model_name))
+    }
 }
 
 #[tauri::command]
@@ -749,6 +781,7 @@ pub fn run() {
                 }));
 
             app.manage(DbState(inner_conn));
+            app.manage(CancelRegistry(Mutex::new(std::collections::HashMap::new())));
 
             // ── Setup tray icon ──────────────────────────────────────────────
             tray::setup_tray(app)?;
@@ -782,6 +815,7 @@ pub fn run() {
             record_voice_edit_command,
             get_installed_ollama_models_command,
             install_ollama_model_command,
+            cancel_model_install_command,
             delete_ollama_model_command,
             sync_calendar_deadlines_command,
             open_external_url,

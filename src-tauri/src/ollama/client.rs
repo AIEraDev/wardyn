@@ -140,6 +140,136 @@ pub async fn fetch_installed_ollama_models() -> Vec<InstalledModelInfo> {
     installed
 }
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use futures_util::StreamExt;
+use tauri::{AppHandle, Emitter};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelPullProgressPayload {
+    pub model: String,
+    pub status: String,
+    pub completed: u64,
+    pub total: u64,
+    pub percent: f64,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+pub async fn stream_ollama_model_install(
+    app: AppHandle,
+    model_name: String,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<String, String> {
+    let client = Client::new();
+    let payload = serde_json::json!({
+        "name": model_name,
+        "stream": true
+    });
+
+    let res = client
+        .post("http://localhost:11434/api/pull")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to Ollama: {}", e))?;
+
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        let _ = app.emit(
+            "ollama-pull-progress",
+            ModelPullProgressPayload {
+                model: model_name.clone(),
+                status: format!("Error: {}", err_text),
+                completed: 0,
+                total: 0,
+                percent: 0.0,
+                done: true,
+                error: Some(err_text.clone()),
+            },
+        );
+        return Err(format!("Ollama model install failed: {}", err_text));
+    }
+
+    let mut stream = res.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = app.emit(
+                "ollama-pull-progress",
+                ModelPullProgressPayload {
+                    model: model_name.clone(),
+                    status: "Cancelled".to_string(),
+                    completed: 0,
+                    total: 0,
+                    percent: 0.0,
+                    done: true,
+                    error: Some("Download cancelled by user".to_string()),
+                },
+            );
+            return Err("Cancelled by user".to_string());
+        }
+
+        let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(line_end) = buffer.find('\n') {
+            let line = buffer[..line_end].trim().to_string();
+            buffer = buffer[line_end + 1..].to_string();
+
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                let status = v.get("status").and_then(|s| s.as_str()).unwrap_or("Downloading...").to_string();
+                let completed = v.get("completed").and_then(|c| c.as_u64()).unwrap_or(0);
+                let total = v.get("total").and_then(|t| t.as_u64()).unwrap_or(0);
+                let percent = if total > 0 {
+                    ((completed as f64) / (total as f64) * 100.0).min(100.0)
+                } else {
+                    0.0
+                };
+                let is_error = v.get("error").is_some();
+                let err_msg = v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string());
+
+                let _ = app.emit(
+                    "ollama-pull-progress",
+                    ModelPullProgressPayload {
+                        model: model_name.clone(),
+                        status: status.clone(),
+                        completed,
+                        total,
+                        percent,
+                        done: is_error,
+                        error: err_msg.clone(),
+                    },
+                );
+
+                if is_error {
+                    return Err(err_msg.unwrap_or_else(|| "Download failed".to_string()));
+                }
+            }
+        }
+    }
+
+    let _ = app.emit(
+        "ollama-pull-progress",
+        ModelPullProgressPayload {
+            model: model_name.clone(),
+            status: "Successfully installed!".to_string(),
+            completed: 100,
+            total: 100,
+            percent: 100.0,
+            done: true,
+            error: None,
+        },
+    );
+
+    Ok(format!("Successfully pulled local model {}", model_name))
+}
+
 pub async fn trigger_ollama_model_install(model_name: String) -> Result<String, String> {
     let client = Client::new();
     let payload = serde_json::json!({

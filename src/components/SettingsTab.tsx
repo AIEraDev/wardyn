@@ -128,13 +128,25 @@ export const SettingsTab: React.FC = () => {
     if (vaultPath !== null) setVaultInput(vaultPath);
   }, [vaultPath]);
 
-
-
   const [installedModels, setInstalledModels] = useState<string[]>([]);
   const [installingModelId, setInstallingModelId] = useState<string | null>(null);
   const [uninstallingModelId, setUninstallingModelId] = useState<string | null>(null);
+  const [pullProgress, setPullProgress] = useState<Record<string, { status: string; completed: number; total: number; percent: number; done: boolean; error?: string }>>({});
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+
+  const fetchModels = async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const models = await invoke<Array<{ name: string; size_gb: string }>>('get_installed_ollama_models_command');
+        const names = models.map((m) => m.name.toLowerCase());
+        setInstalledModels(names);
+      } catch (err) {
+        console.warn('Failed to fetch installed Ollama models:', err);
+      }
+    }
+  };
 
   const handleCheckUpdate = async () => {
     setCheckingUpdate(true);
@@ -157,26 +169,59 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
-  const fetchModels = async () => {
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const models = await invoke<Array<{ name: string; size_gb: string }>>('get_installed_ollama_models_command');
-        const names = models.map((m) => m.name);
-        setInstalledModels(names);
-      } catch (err) {
-        console.warn('Failed to fetch installed Ollama models:', err);
-      }
-    }
-  };
-
   useEffect(() => {
     checkAutoStartStatus();
     fetchModels();
   }, [checkAutoStartStatus]);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const setupPullListener = async () => {
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+        try {
+          const { listen } = await import('@tauri-apps/api/event');
+          unlisten = await listen<any>('ollama-pull-progress', (event) => {
+            const data = event.payload;
+            if (data && data.model) {
+              setPullProgress((prev) => ({
+                ...prev,
+                [data.model]: {
+                  status: data.status,
+                  completed: data.completed,
+                  total: data.total,
+                  percent: data.percent,
+                  done: data.done,
+                  error: data.error,
+                },
+              }));
+              if (data.done) {
+                fetchModels();
+                if (!data.error) {
+                  sendDesktopNotification(
+                    '✅ High-Performance Model Ready',
+                    `Successfully installed ${data.model}!`
+                  );
+                }
+              }
+            }
+          });
+        } catch (e) {
+          console.warn('Could not listen to pull progress:', e);
+        }
+      }
+    };
+    setupPullListener();
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   const handleInstallModel = async (modelId: string, modelName: string) => {
     setInstallingModelId(modelId);
+    setPullProgress((prev) => ({
+      ...prev,
+      [modelId]: { status: 'Starting download...', completed: 0, total: 0, percent: 0, done: false },
+    }));
     await sendDesktopNotification(
       '📥 Downloading High-Performance Local Model',
       `Pulling ${modelName} (${modelId}) to local Ollama runtime...`
@@ -186,17 +231,28 @@ export const SettingsTab: React.FC = () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('install_ollama_model_command', { modelName: modelId });
-        await fetchModels();
-        await sendDesktopNotification(
-          '✅ High-Performance Model Ready',
-          `Successfully installed ${modelName}! Wardyn is now powered by ${modelName}.`
-        );
       } catch (err: any) {
         console.error('Model pull error:', err);
+        setPullProgress((prev) => ({
+          ...prev,
+          [modelId]: { status: 'Failed to start download', completed: 0, total: 0, percent: 0, done: true, error: String(err) },
+        }));
         await sendDesktopNotification(
           '❌ Model Download Error',
           `Could not pull ${modelName}. Ensure Ollama is running.`
         );
+      }
+    }
+  };
+
+  const handleCancelInstall = async (modelId: string, modelName: string) => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('cancel_model_install_command', { modelName: modelId });
+        await sendDesktopNotification('⏹️ Download Cancelled', `Cancelled download for ${modelName}.`);
+      } catch (err) {
+        console.error('Cancel error:', err);
       }
     }
     setInstallingModelId(null);
@@ -288,63 +344,100 @@ export const SettingsTab: React.FC = () => {
         <div className="space-y-3">
           {FREE_MODEL_CATALOG.map((model) => {
             const isInstalled = installedModels.some((m) => m === model.id || m.startsWith(`${model.id}:`));
-            const isDownloading = installingModelId === model.id;
+            const progress = pullProgress[model.id];
+            const isDownloading = (installingModelId === model.id || (progress && !progress.done));
             const isDeleting = uninstallingModelId === model.id;
             const isPowerTier = model.tier === 'power';
+
+            const formatBytes = (bytes: number) => {
+              if (!bytes) return '0 B';
+              const gb = bytes / (1024 * 1024 * 1024);
+              if (gb >= 0.1) return `${gb.toFixed(2)} GB`;
+              const mb = bytes / (1024 * 1024);
+              return `${mb.toFixed(1)} MB`;
+            };
 
             return (
               <div
                 key={model.id}
-                className={`p-3.5 rounded-lg border flex items-center justify-between gap-4 transition-all ${
+                className={`p-3.5 rounded-lg border flex flex-col gap-2 transition-all ${
                   isPowerTier
                     ? 'bg-[#181E27] border-[rgba(232,162,61,0.3)] shadow-[0_0_10px_rgba(232,162,61,0.04)]'
                     : 'bg-[#181E27] border-[#242B35]'
                 }`}
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-semibold text-[#F0F4F8]">{model.name}</span>
-                    {isPowerTier && (
-                      <span className="font-mono text-[10px] text-[#E8A23D] bg-[rgba(232,162,61,0.15)] px-2 py-0.5 rounded border border-[rgba(232,162,61,0.3)] flex items-center gap-1">
-                        <IconFlame size={11} /> High-Power
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-semibold text-[#F0F4F8]">{model.name}</span>
+                      {isPowerTier && (
+                        <span className="font-mono text-[10px] text-[#E8A23D] bg-[rgba(232,162,61,0.15)] px-2 py-0.5 rounded border border-[rgba(232,162,61,0.3)] flex items-center gap-1">
+                          <IconFlame size={11} /> High-Power
+                        </span>
+                      )}
+                      <span className="font-mono text-[10px] text-[#7A8492] px-2 py-0.5 rounded bg-[#151A21] border border-[#242B35]">
+                        {model.provider}
                       </span>
-                    )}
-                    <span className="font-mono text-[10px] text-[#7A8492] px-2 py-0.5 rounded bg-[#151A21] border border-[#242B35]">
-                      {model.provider}
-                    </span>
-                    <span className="font-mono text-[10px] text-[#4A8FC2]">{model.size}</span>
+                      <span className="font-mono text-[10px] text-[#4A8FC2]">{model.size}</span>
+                    </div>
+                    <p className="text-xs text-[#9AA4B2] m-0">{model.description}</p>
                   </div>
-                  <p className="text-xs text-[#9AA4B2] m-0">{model.description}</p>
-                </div>
 
-                <div className="shrink-0 flex items-center gap-2">
-                  {isInstalled ? (
-                    <>
-                      <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-3 py-1 rounded-md border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
-                        <IconCheck size={14} /> Installed
-                      </span>
+                  <div className="shrink-0 flex items-center gap-2">
+                    {isInstalled ? (
+                      <>
+                        <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-3 py-1 rounded-md border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
+                          <IconCheck size={14} /> Installed
+                        </span>
+                        <button
+                          type="button"
+                          disabled={isDeleting}
+                          onClick={() => handleUninstallModel(model.id, model.name)}
+                          title={`Uninstall ${model.name}`}
+                          className="p-1.5 font-mono text-xs bg-[#151A21] text-[#E8A23D] hover:bg-[rgba(232,162,61,0.15)] border border-[#242B35] rounded-md transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <IconTrash size={14} />
+                        </button>
+                      </>
+                    ) : isDownloading ? (
                       <button
                         type="button"
-                        disabled={isDeleting}
-                        onClick={() => handleUninstallModel(model.id, model.name)}
-                        title={`Uninstall ${model.name}`}
-                        className="p-1.5 font-mono text-xs bg-[#151A21] text-[#E8A23D] hover:bg-[rgba(232,162,61,0.15)] border border-[#242B35] rounded-md transition-colors cursor-pointer disabled:opacity-50"
+                        onClick={() => handleCancelInstall(model.id, model.name)}
+                        className="font-mono text-xs bg-[rgba(239,68,68,0.15)] text-[#EF4444] border border-[rgba(239,68,68,0.3)] px-3 py-1 rounded-md font-medium hover:bg-[rgba(239,68,68,0.25)] transition-colors cursor-pointer"
                       >
-                        <IconTrash size={14} />
+                        ⏹ Cancel
                       </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={isDownloading}
-                      onClick={() => handleInstallModel(model.id, model.name)}
-                      className="font-mono text-xs bg-[#4A8FC2] text-black px-3 py-1 rounded-md font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <IconDownload size={14} className={isDownloading ? 'animate-bounce' : ''} />
-                      {isDownloading ? 'Downloading...' : 'Install Model'}
-                    </button>
-                  )}
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleInstallModel(model.id, model.name)}
+                        className="font-mono text-xs bg-[#4A8FC2] text-black px-3 py-1 rounded-md font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <IconDownload size={14} />
+                        Install Model
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Download Progress Bar */}
+                {isDownloading && progress && !progress.done && (
+                  <div className="mt-2 space-y-1.5 pt-2 border-t border-[#242B35]">
+                    <div className="flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-[#9AA4B2] truncate max-w-[60%]">{progress.status || 'Downloading...'}</span>
+                      <span className="text-[#4A8FC2] font-semibold">
+                        {progress.percent > 0 ? `${progress.percent.toFixed(1)}%` : ''}{' '}
+                        {progress.total > 0 ? `(${formatBytes(progress.completed)} / ${formatBytes(progress.total)})` : ''}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-[#151A21] rounded-full overflow-hidden border border-[#242B35]">
+                      <div
+                        className="h-full bg-gradient-to-r from-[#4A8FC2] to-[#34D399] transition-all duration-300 rounded-full"
+                        style={{ width: `${Math.max(progress.percent, 5)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

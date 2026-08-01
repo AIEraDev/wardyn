@@ -24,17 +24,31 @@ prompt=consent",
         REDIRECT_URI_ENCODED
     );
 
-    // 2. Start local TCP listener on 127.0.0.1:14220
+    // 2. Start local TCP listener on 127.0.0.1:14220 with non-blocking mode
     let listener = TcpListener::bind("127.0.0.1:14220").map_err(|e| format!("Failed to bind local OAuth port 14220: {}", e))?;
-    listener.set_nonblocking(false).ok();
+    listener.set_nonblocking(true).ok();
 
     // 3. Open system browser
     if let Err(_) = open::that(&auth_url) {
         println!("Could not automatically open browser, URL: {}", auth_url);
     }
 
-    // 4. Wait for redirect callback connection
-    let (mut stream, _) = listener.accept().map_err(|e| format!("OAuth listener accept error: {}", e))?;
+    // 4. Wait for redirect callback connection (non-blocking with 2-minute timeout)
+    let start_time = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(120);
+
+    let mut stream = loop {
+        match listener.accept() {
+            Ok((s, _)) => break s,
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if start_time.elapsed() >= timeout {
+                    return Err("OAuth login timed out after 2 minutes. Please try connecting again.".into());
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+            Err(e) => return Err(format!("OAuth listener accept error: {}", e)),
+        }
+    };
     let mut reader = BufReader::new(&stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).map_err(|e| e.to_string())?;

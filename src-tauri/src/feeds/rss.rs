@@ -54,21 +54,39 @@ pub async fn fetch_custom_rss(client: &Client, feed_title: &str, feed_url: &str)
 }
 
 fn extract_tag(text: &str, tag: &str) -> Option<String> {
-    let open = format!("<{}>", tag);
-    let close = format!("</{}>", tag);
-    if let Some(start_idx) = text.find(&open) {
-        let content_start = start_idx + open.len();
-        if let Some(end_idx) = text[content_start..].find(&close) {
-            return Some(text[content_start..content_start + end_idx].trim().to_string());
+    let pattern = format!("<{}", tag);
+    let mut search_from = 0;
+
+    while let Some(start_idx) = text[search_from..].find(&pattern) {
+        let abs_start = search_from + start_idx;
+        let rest = &text[abs_start..];
+
+        // Ensure next char is space or '>' to avoid matching partial tag names (e.g. <title vs <title_ext)
+        let next_char = rest.chars().nth(pattern.len());
+        if next_char == Some(' ') || next_char == Some('>') || next_char == Some('\t') || next_char == Some('\n') {
+            if let Some(tag_close_rel) = rest.find('>') {
+                let content_start = abs_start + tag_close_rel + 1;
+                let close_tag = format!("</{}>", tag);
+
+                if let Some(end_rel) = text[content_start..].find(&close_tag) {
+                    let raw_content = text[content_start..content_start + end_rel].trim();
+
+                    // Unwrap CDATA if present
+                    let clean = if raw_content.starts_with("<![CDATA[") {
+                        if let Some(cdata_end) = raw_content.find("]]>") {
+                            &raw_content[9..cdata_end]
+                        } else {
+                            raw_content
+                        }
+                    } else {
+                        raw_content
+                    };
+
+                    return Some(clean.trim().to_string());
+                }
+            }
         }
-    }
-    // Also try CDATA wrapper
-    let cdata_open = format!("<{}><![CDATA[", tag);
-    if let Some(start_idx) = text.find(&cdata_open) {
-        let content_start = start_idx + cdata_open.len();
-        if let Some(end_idx) = text[content_start..].find("]]>") {
-            return Some(text[content_start..content_start + end_idx].trim().to_string());
-        }
+        search_from = abs_start + pattern.len();
     }
     None
 }

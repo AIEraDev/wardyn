@@ -285,6 +285,7 @@ interface QueueStore {
   ollamaModels: Array<{ name: string; size_gb: string }>;
   ollamaChecked: boolean;
   pullProgress: Record<string, { status: string; completed: number; total: number; percent: number; done: boolean; error?: string }>;
+  pendingDownloads: Set<string>;  // models invoked but no progress event yet
   _ollamaListenerInitialized: boolean;
   checkOllamaModels: () => Promise<void>;
   initOllamaProgressListener: () => Promise<void>;
@@ -365,6 +366,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   ollamaModels: [],
   ollamaChecked: false,
   pullProgress: {},
+  pendingDownloads: new Set<string>(),
   _ollamaListenerInitialized: false,
 
   setLanguage: (lang: SupportedLanguage) => {
@@ -1446,7 +1448,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         await listen<any>("ollama-pull-progress", (event) => {
           const data = event.payload;
           if (data && data.model) {
+            // Move from pending to active progress tracking
+            const pending = new Set(get().pendingDownloads);
+            pending.delete(data.model);
             set((state) => ({
+              pendingDownloads: pending,
               pullProgress: {
                 ...state.pullProgress,
                 [data.model]: {
@@ -1461,7 +1467,23 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             }));
             if (data.done) {
               get().checkOllamaModels();
-              if (!data.error) {
+              if (data.error) {
+                // Show error banner to user
+                get().showStatusMessage(
+                  "error",
+                  `Model ${data.model} download failed: ${data.error}`
+                );
+                // Clean up the error entry after 5 s so the card resets to "Install Model"
+                setTimeout(() => {
+                  set((state) => {
+                    const updated = { ...state.pullProgress };
+                    if (updated[data.model]?.done && updated[data.model]?.error) {
+                      delete updated[data.model];
+                    }
+                    return { pullProgress: updated };
+                  });
+                }, 5_000);
+              } else {
                 get().sendDesktopNotification(
                   "🎉 AI Model Installed",
                   `Model ${data.model} has been downloaded and is ready for local AI synthesis.`
@@ -1479,15 +1501,45 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   installOllamaModel: async (modelName: string) => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
+        // 1. Ensure listener is registered BEFORE invoking, so we never miss the first event
+        await get().initOllamaProgressListener();
+
+        // 2. Immediately mark as pending so UI shows downloading state
+        const pending = new Set(get().pendingDownloads);
+        pending.add(modelName);
+        set({ pendingDownloads: pending });
+
+        // 3. Safety net: if no progress event arrives within 30 s, auto-clear pending
+        //    and show an error. This catches cases where Rust emits no event at all.
+        const timeoutId = setTimeout(() => {
+          const state = get();
+          if (state.pendingDownloads.has(modelName) && !state.pullProgress[modelName]) {
+            const pending2 = new Set(get().pendingDownloads);
+            pending2.delete(modelName);
+            set({ pendingDownloads: pending2 });
+            get().showStatusMessage(
+              "error",
+              `Download of ${modelName} timed out — Ollama may not be running. Start Ollama and try again.`
+            );
+          }
+        }, 30_000);
+
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("install_ollama_model_command", { modelName });
-        // Auto-initialize listener if not done yet
-        get().initOllamaProgressListener();
+
+        // If invoke itself returns without error, clear the safety timeout
+        // (the background thread will drive progress via events from here)
+        clearTimeout(timeoutId);
       } catch (err: any) {
+        // invoke() threw — remove from pending immediately
+        const pending = new Set(get().pendingDownloads);
+        pending.delete(modelName);
+        set({ pendingDownloads: pending });
         get().showStatusMessage("error", `Failed to start model download: ${err?.message || err}`);
       }
     }
   },
+
 
   cancelOllamaModelInstall: async (modelName: string) => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
@@ -1497,7 +1549,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         set((state) => {
           const updated = { ...state.pullProgress };
           delete updated[modelName];
-          return { pullProgress: updated };
+          const pending = new Set(state.pendingDownloads);
+          pending.delete(modelName);
+          return { pullProgress: updated, pendingDownloads: pending };
         });
       } catch (err: any) {
         get().showStatusMessage("error", `Failed to cancel download: ${err?.message || err}`);

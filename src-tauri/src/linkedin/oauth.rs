@@ -35,9 +35,9 @@ scope={}",
     let listener = TcpListener::bind("0.0.0.0:14220")
         .or_else(|_| TcpListener::bind("127.0.0.1:14220"))
         .map_err(|e| format!("Failed to bind local OAuth port 14220: {}", e))?;
-    listener.set_nonblocking(false).ok();
+    listener.set_nonblocking(true).ok();
 
-    // 3. Open system default browser directly via macOS native launcher
+    // 3. Open system default browser
     let launch_res = std::process::Command::new("open")
         .arg(&auth_url)
         .spawn();
@@ -46,9 +46,24 @@ scope={}",
         open::that(&auth_url).ok();
     }
 
-    // 4. Spawn blocking task to wait for redirect callback without blocking tokio runtime
+    // 4. Wait for redirect callback connection without hanging tokio runtime
     let (code, is_error) = tokio::task::spawn_blocking(move || -> Result<(String, bool), String> {
-        let (mut stream, _) = listener.accept().map_err(|e| format!("OAuth listener accept error: {}", e))?;
+        let start_time = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(120);
+
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((s, _)) => break s,
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if start_time.elapsed() >= timeout {
+                        return Err("LinkedIn OAuth login timed out after 2 minutes. Please try connecting again.".into());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                Err(e) => return Err(format!("OAuth listener accept error: {}", e)),
+            }
+        };
+
         let mut reader = BufReader::new(&stream);
         let mut request_line = String::new();
         reader.read_line(&mut request_line).map_err(|e| e.to_string())?;
@@ -74,7 +89,7 @@ scope={}",
         let response_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
             <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;'>\
             <h2 style='color:#4A8FC2;margin-top:0;'>LinkedIn Connected!</h2>\
-            <p style='color:#9AA4B2;'>Wardyn is now authenticated with your personal LinkedIn account (abdulkabirmusa). You can close this window.</p>\
+            <p style='color:#9AA4B2;'>Wardyn is now authenticated with your LinkedIn account. You can close this window.</p>\
             </div></body></html>";
         let http_response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

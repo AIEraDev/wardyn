@@ -206,6 +206,63 @@ async fn delete_ollama_model_command(model_name: String) -> Result<String, Strin
     ollama::client::delete_ollama_model(model_name).await
 }
 
+/// Full status of the local Ollama installation.
+#[derive(Debug, Clone, serde::Serialize)]
+struct OllamaStatus {
+    installed: bool,
+    running: bool,
+    version: Option<String>,
+}
+
+#[tauri::command]
+async fn check_ollama_status_command() -> Result<OllamaStatus, String> {
+    // 1. Check if the `ollama` binary exists on PATH
+    let version_output = std::process::Command::new("ollama")
+        .arg("--version")
+        .output();
+
+    let (installed, version) = match version_output {
+        Ok(out) if out.status.success() => {
+            let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            (true, Some(v))
+        }
+        _ => (false, None),
+    };
+
+    // 2. Check if the Ollama daemon is accepting connections
+    let running = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .unwrap_or_default()
+        .get("http://localhost:11434")
+        .send()
+        .await
+        .is_ok();
+
+    Ok(OllamaStatus { installed, running, version })
+}
+
+#[tauri::command]
+async fn start_ollama_command() -> Result<String, String> {
+    // Spawn `ollama serve` detached so it keeps running after this process
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("ollama")
+            .arg("serve")
+            .spawn()
+            .map(|_| "Ollama started".to_string())
+            .map_err(|e| format!("Could not start Ollama: {}", e))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::process::Command::new("ollama")
+            .arg("serve")
+            .spawn()
+            .map(|_| "Ollama started".to_string())
+            .map_err(|e| format!("Could not start Ollama: {}", e))
+    }
+}
+
 #[tauri::command]
 async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Vec<SyncedCalendarEvent>, String> {
     calendar::sync::sync_calendar_deadlines(&state.0).await
@@ -879,7 +936,9 @@ pub fn run() {
             get_habit_reminders_command,
             create_habit_reminder_command,
             delete_habit_reminder_command,
-            toggle_habit_reminder_command
+            toggle_habit_reminder_command,
+            check_ollama_status_command,
+            start_ollama_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

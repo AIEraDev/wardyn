@@ -235,43 +235,77 @@ function LifePlansSection({ lifeEvents, onStatusChange, onTaskComplete }: LifePl
           const pct = total ? Math.round((done / total) * 100) : 0;
           const isOpen = expanded[evt.id] ?? true;
           return (
-            <div key={evt.id} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 14, border: `1px solid ${pct === 100 ? "rgba(52,211,153,0.2)" : "rgba(255,255,255,0.08)"}`, overflow: "hidden" }}>
+            <div
+              key={evt.id}
+              className={`rounded-2xl overflow-hidden border ${
+                pct === 100 ? "bg-[rgba(52,211,153,0.03)] border-[rgba(52,211,153,0.2)]" : "bg-white/[0.03] border-white/[0.08]"
+              }`}
+            >
               {/* Event Header */}
-              <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => toggle(evt.id)}>
-                <span style={{ background: `${meta.color}20`, color: meta.color, border: `1px solid ${meta.color}40`, borderRadius: 6, padding: "2px 7px", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+              <div
+                className="px-3.5 py-3 flex items-center gap-2.5 cursor-pointer"
+                onClick={() => toggle(evt.id)}
+              >
+                <span
+                  className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold border shrink-0"
+                  style={{ background: `${meta.color}20`, color: meta.color, borderColor: `${meta.color}40` }}
+                >
                   {meta.icon}{meta.label}
                 </span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: pct === 100 ? "#34D399" : "#E2E8F0", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{evt.title}</span>
-                {evt.event_date && <span style={{ fontSize: 10, color: "#64748B", flexShrink: 0 }}>{fmtDate(evt.event_date)}</span>}
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                  <span style={{ fontSize: 10, color: pct === 100 ? "#34D399" : "#94A3B8" }}>{done}/{total}</span>
-                  <div style={{ width: 48, background: "rgba(255,255,255,0.08)", borderRadius: 99, height: 3 }}>
-                    <div style={{ width: `${pct}%`, background: pct === 100 ? "#34D399" : meta.color, height: "100%", borderRadius: 99, transition: "width 0.4s" }} />
+                <span className={`text-[13px] font-semibold flex-1 min-w-0 truncate ${
+                  pct === 100 ? "text-[#34D399]" : "text-[#E2E8F0]"
+                }`}>{evt.title}</span>
+                {evt.event_date && <span className="text-[10px] text-[#64748B] shrink-0">{fmtDate(evt.event_date)}</span>}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className={`text-[10px] ${pct === 100 ? "text-[#34D399]" : "text-[#94A3B8]"}`}>{done}/{total}</span>
+                  <div className="w-12 bg-white/[0.08] rounded-full h-[3px]">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-400"
+                      style={{ width: `${pct}%`, background: pct === 100 ? "#34D399" : meta.color }}
+                    />
                   </div>
-                  {isOpen ? <IconChevronUp size={13} color="#475569" /> : <IconChevronDown size={13} color="#475569" />}
+                  {isOpen ? <IconChevronUp size={13} className="text-[#475569]" /> : <IconChevronDown size={13} className="text-[#475569]" />}
                 </div>
               </div>
-              {/* Task List */}
               {isOpen && (
-                <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "8px 14px 12px" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div className="border-t border-white/[0.05] px-3.5 pt-2 pb-3">
+                  <div className="flex flex-col gap-1.5">
                     {evt.tasks.map(task => (
-                      <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", borderRadius: 8, background: task.status === "completed" ? "rgba(52,211,153,0.05)" : "rgba(255,255,255,0.02)" }}>
-                        <button onClick={() => task.status !== "completed" && onTaskComplete(task.id)} style={{
-                          width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${task.status === "completed" ? "#34D399" : "rgba(255,255,255,0.2)"}`,
-                          background: task.status === "completed" ? "rgba(52,211,153,0.2)" : "transparent", cursor: task.status === "completed" ? "default" : "pointer",
-                          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                        }}>
+                      <div
+                        key={task.id}
+                        className={`flex items-center gap-2 px-1.5 py-1 rounded-lg ${
+                          task.status === "completed" ? "bg-[rgba(52,211,153,0.05)]" : "bg-white/[0.02]"
+                        }`}
+                      >
+                        <button
+                          onClick={() => task.status !== "completed" && onTaskComplete(task.id)}
+                          className={`w-4 h-4 rounded shrink-0 flex items-center justify-center transition-colors ${
+                            task.status === "completed"
+                              ? "border-2 border-[#34D399] bg-[rgba(52,211,153,0.2)] cursor-default"
+                              : "border-2 border-white/20 bg-transparent cursor-pointer hover:border-[#34D399]"
+                          }`}
+                          style={{ minWidth: 16 }}
+                        >
                           {task.status === "completed" && <IconCheck size={10} color="#34D399" />}
                         </button>
-                        <span style={{ flex: 1, fontSize: 12, color: task.status === "completed" ? "#475569" : "#CBD5E1", textDecoration: task.status === "completed" ? "line-through" : "none" }}>{task.title}</span>
-                        {task.due_date && <span style={{ fontSize: 10, color: "#475569", flexShrink: 0 }}>{relDue2(task.due_date)}</span>}
-                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: task.priority === "high" ? "#E74C3C" : task.priority === "medium" ? "#F39C12" : "#27AE60", flexShrink: 0 }} />
+                        <span
+                          className={`flex-1 text-xs ${
+                            task.status === "completed" ? "text-[#475569] line-through" : "text-[#CBD5E1]"
+                          }`}
+                        >{task.title}</span>
+                        {task.due_date && <span className="text-[10px] text-[#475569] shrink-0">{relDue2(task.due_date)}</span>}
+                        <div
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ background: task.priority === "high" ? "#E74C3C" : task.priority === "medium" ? "#F39C12" : "#27AE60" }}
+                        />
                       </div>
                     ))}
                   </div>
                   {pct === 100 && (
-                    <button onClick={() => onStatusChange(evt.id, "completed")} style={{ marginTop: 10, width: "100%", padding: "6px", borderRadius: 8, border: "1px solid rgba(52,211,153,0.3)", background: "rgba(52,211,153,0.1)", color: "#34D399", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                    <button
+                      onClick={() => onStatusChange(evt.id, "completed")}
+                      className="mt-2.5 w-full py-1.5 rounded-lg border border-[rgba(52,211,153,0.3)] bg-[rgba(52,211,153,0.1)] text-[#34D399] cursor-pointer text-[11px] font-semibold hover:bg-[rgba(52,211,153,0.2)] transition-colors"
+                    >
                       ✅ Mark Event Complete
                     </button>
                   )}

@@ -14,32 +14,30 @@ export const StatusBanner: React.FC = () => {
 
   if (!statusMessage) return null;
 
-  const styles =
-    statusMessage.type === "error"
-      ? { bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.35)", color: "#FCA5A5", Icon: IconAlertTriangle }
-      : statusMessage.type === "success"
-        ? { bg: "rgba(52,211,153,0.12)", border: "rgba(52,211,153,0.35)", color: "#34D399", Icon: IconCheck }
-        : { bg: "rgba(74,143,194,0.12)", border: "rgba(74,143,194,0.35)", color: "#4A8FC2", Icon: IconCheck };
+  const typeClasses = {
+    error:   { wrapper: "bg-[rgba(239,68,68,0.12)] border-[rgba(239,68,68,0.35)]",   icon: "text-[#FCA5A5]", IconC: IconAlertTriangle },
+    success: { wrapper: "bg-[rgba(52,211,153,0.12)] border-[rgba(52,211,153,0.35)]", icon: "text-[#34D399]",  IconC: IconCheck },
+    info:    { wrapper: "bg-[rgba(74,143,194,0.12)] border-[rgba(74,143,194,0.35)]",  icon: "text-[#4A8FC2]",  IconC: IconCheck },
+  };
 
-  const { bg, border, color, Icon } = styles;
+  const { wrapper, icon: iconClass, IconC } = typeClasses[statusMessage.type] ?? typeClasses.info;
 
   return (
     <div
-      className="fixed top-7 left-1/2 -translate-x-1/2 z-[60] max-w-lg w-[calc(100%-2rem)] px-4 py-3 rounded-xl flex items-start gap-3 shadow-lg"
-      style={{ background: bg, border: `1px solid ${border}` }}
+      className={`fixed top-7 left-1/2 -translate-x-1/2 z-[60] max-w-lg w-[calc(100%-2rem)] px-4 py-3 rounded-xl flex items-start gap-3 shadow-lg border ${wrapper}`}
       role="alert"
     >
-      <Icon size={18} className="shrink-0 mt-0.5" style={{ color }} />
-      <p className="text-sm m-0 flex-1 leading-snug" style={{ color: "#F0F4F8" }}>
+      <IconC size={18} className={`shrink-0 mt-0.5 ${iconClass}`} />
+      <p className="text-sm m-0 flex-1 leading-snug text-[#F0F4F8]">
         {statusMessage.text}
       </p>
       <button
         type="button"
         onClick={clearStatusMessage}
-        className="p-1 rounded hover:bg-[rgba(255,255,255,0.08)] shrink-0 border-0 bg-transparent cursor-pointer"
+        className="p-1 rounded hover:bg-white/8 shrink-0 border-0 bg-transparent cursor-pointer text-[#9AA4B2]"
         aria-label="Dismiss"
       >
-        <IconX size={14} style={{ color: "#9AA4B2" }} />
+        <IconX size={14} />
       </button>
     </div>
   );

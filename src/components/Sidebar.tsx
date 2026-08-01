@@ -43,51 +43,18 @@ export const Sidebar: React.FC = () => {
   ];
 
   return (
-    <div
-      style={{
-        width: 152,
-        flexShrink: 0,
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border-em)",
-        borderRadius: "var(--radius-lg)",
-        padding: 10,
-        display: "flex",
-        flexDirection: "column",
-        gap: 0,
-        height: "fit-content",
-        position: "relative",
-        zIndex: 50,
-      }}
-    >
+    <div className="w-[152px] shrink-0 bg-[#151A21] border border-[rgba(255,255,255,0.12)] rounded-xl p-2.5 flex flex-col gap-0 h-fit relative z-50">
       {/* Brand */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "6px 6px 10px",
-          marginBottom: 6,
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        <div
-          style={{
-            width: 28, height: 28,
-            borderRadius: 8,
-            background: "linear-gradient(135deg, rgba(74,143,194,0.25), rgba(74,143,194,0.1))",
-            border: "1px solid rgba(74,143,194,0.3)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <IconShieldCheck size={16} style={{ color: "var(--accent)" }} />
+      <div className="flex items-center gap-2 px-1.5 pb-2.5 mb-1.5 border-b border-[rgba(255,255,255,0.07)]">
+        <div className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-[#4A8FC2] bg-gradient-to-br from-[rgba(74,143,194,0.25)] to-[rgba(74,143,194,0.1)] border border-[rgba(74,143,194,0.3)]">
+          <IconShieldCheck size={16} />
         </div>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)", letterSpacing: "-0.2px", lineHeight: 1.1 }}>
+          <div className="text-[13px] font-bold text-[#F0F4F8] tracking-tight leading-tight">
             Wardyn
           </div>
           {appVersion && (
-            <div style={{ fontSize: 9, color: "var(--text-3)", fontFamily: "JetBrains Mono, monospace", marginTop: 1 }}>
+            <div className="font-mono text-[9px] text-[#5D6A7A] mt-0.5">
               v{appVersion}
             </div>
           )}
@@ -95,7 +62,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Nav */}
-      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <nav className="flex flex-col gap-0.5">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -104,38 +71,17 @@ export const Sidebar: React.FC = () => {
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "7px 8px",
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: isActive ? 600 : 400,
-                width: "100%",
-                textAlign: "left",
-                cursor: "pointer",
-                border: "none",
-                outline: "none",
-                transition: "all 0.12s ease",
-                background: isActive ? "rgba(74,143,194,0.14)" : "transparent",
-                color: isActive ? "var(--accent)" : "var(--text-2)",
-                position: "relative",
-              }}
+              className={`relative flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs w-full text-left cursor-pointer border-none outline-none transition-all duration-100 ${
+                isActive
+                  ? 'bg-[rgba(74,143,194,0.14)] text-[#4A8FC2] font-semibold'
+                  : 'bg-transparent text-[#9AA4B2] font-normal hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F0F4F8]'
+              }`}
             >
               {isActive && (
-                <div
-                  style={{
-                    position: "absolute", left: 0, top: "20%", bottom: "20%",
-                    width: 2, borderRadius: 2,
-                    background: "var(--accent)",
-                  }}
-                />
+                <div className="absolute left-0 top-[20%] bottom-[20%] w-0.5 rounded-full bg-[#4A8FC2]" />
               )}
-              <Icon size={15} style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7 }} />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {t(tab.labelKey)}
-              </span>
+              <Icon size={15} className={`shrink-0 ${isActive ? 'opacity-100' : 'opacity-70'}`} />
+              <span className="truncate">{t(tab.labelKey)}</span>
             </button>
           );
         })}

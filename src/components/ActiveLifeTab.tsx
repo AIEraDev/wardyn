@@ -57,18 +57,15 @@ function HabitHeatmap({ habitId, completions }: { habitId: string; completions: 
   });
 
   return (
-    <div style={{ display: "flex", gap: 4 }}>
+    <div className="flex gap-1">
       {days.map((date) => {
         const done = completions.some((c) => c.habit_id === habitId && c.completed_date === date);
         return (
           <div
             key={date}
             title={date}
-            style={{
-              width: 12, height: 12, borderRadius: 3,
-              background: done ? "#34D399" : "rgba(255,255,255,0.07)",
-              transition: "background 0.2s",
-            }}
+            className="w-3 h-3 rounded-sm transition-colors duration-200"
+            style={{ background: done ? "#34D399" : "rgba(255,255,255,0.07)" }}
           />
         );
       })}
@@ -95,43 +92,50 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <form onSubmit={handleSubmit} style={{ background: "#151A21", border: "1px solid #242B35", borderRadius: 16, padding: 28, width: 380, display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0, color: "#F0F4F8", fontSize: 16, fontWeight: 700 }}>New Project</h3>
-          <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "#9AA4B2", cursor: "pointer", fontSize: 18 }}>×</button>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center">
+      <form onSubmit={handleSubmit} className="bg-[#151A21] border border-[#242B35] rounded-2xl p-7 w-[380px] flex flex-col gap-4">
+        <div className="flex justify-between items-center">
+          <h3 className="m-0 text-[#F0F4F8] text-base font-bold">New Project</h3>
+          <button type="button" onClick={onClose} className="bg-transparent border-none text-[#9AA4B2] cursor-pointer text-lg leading-none">×</button>
         </div>
 
         <input
           value={name} onChange={(e) => setName(e.target.value)}
           placeholder="Project name (e.g. Wardyn, Clypra)"
           required
-          style={{ background: "#0E1318", border: "1px solid #242B35", borderRadius: 8, color: "#F0F4F8", padding: "10px 12px", fontSize: 14, outline: "none" }}
+          className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2.5 text-sm outline-none w-full"
         />
         <input
           value={desc} onChange={(e) => setDesc(e.target.value)}
           placeholder="Short description (optional)"
-          style={{ background: "#0E1318", border: "1px solid #242B35", borderRadius: 8, color: "#F0F4F8", padding: "10px 12px", fontSize: 14, outline: "none" }}
+          className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2.5 text-sm outline-none w-full"
         />
 
         <div>
-          <label style={{ color: "#9AA4B2", fontSize: 11, fontWeight: 600, display: "block", marginBottom: 6 }}>DAILY TARGET (MINUTES)</label>
+          <label className="text-[#9AA4B2] text-[11px] font-semibold block mb-1.5">DAILY TARGET (MINUTES)</label>
           <input
             type="number" min={15} max={480} value={target} onChange={(e) => setTarget(Number(e.target.value))}
-            style={{ background: "#0E1318", border: "1px solid #242B35", borderRadius: 8, color: "#F0F4F8", padding: "10px 12px", fontSize: 14, outline: "none", width: "100%", boxSizing: "border-box" }}
+            className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2.5 text-sm outline-none w-full box-border"
           />
         </div>
 
         <div>
-          <label style={{ color: "#9AA4B2", fontSize: 11, fontWeight: 600, display: "block", marginBottom: 8 }}>COLOR</label>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label className="text-[#9AA4B2] text-[11px] font-semibold block mb-2">COLOR</label>
+          <div className="flex gap-2 flex-wrap">
             {PROJECT_COLORS.map((c) => (
-              <button key={c} type="button" onClick={() => setColor(c)} style={{ width: 24, height: 24, borderRadius: "50%", background: c, border: color === c ? "2px solid #fff" : "2px solid transparent", cursor: "pointer", padding: 0 }} />
+              <button
+                key={c} type="button" onClick={() => setColor(c)}
+                className="w-6 h-6 rounded-full cursor-pointer p-0"
+                style={{ background: c, border: color === c ? "2px solid #fff" : "2px solid transparent" }}
+              />
             ))}
           </div>
         </div>
 
-        <button type="submit" disabled={saving} style={{ background: "#4A8FC2", border: "none", borderRadius: 10, color: "#fff", padding: "12px", fontWeight: 700, fontSize: 14, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1 }}>
+        <button
+          type="submit" disabled={saving}
+          className="bg-[#4A8FC2] border-none rounded-xl text-white py-3 font-bold text-sm cursor-pointer hover:bg-[#5b9bd1] disabled:opacity-70 transition-colors"
+        >
           {saving ? "Creating..." : "Create Project"}
         </button>
       </form>
@@ -157,25 +161,32 @@ function AddHabitModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <form onSubmit={handleSubmit} style={{ background: "#151A21", border: "1px solid #242B35", borderRadius: 16, padding: 28, width: 380, display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0, color: "#F0F4F8", fontSize: 16, fontWeight: 700 }}>New Habit</h3>
-          <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "#9AA4B2", cursor: "pointer", fontSize: 18 }}>×</button>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center">
+      <form onSubmit={handleSubmit} className="bg-[#151A21] border border-[#242B35] rounded-2xl p-7 w-[380px] flex flex-col gap-4">
+        <div className="flex justify-between items-center">
+          <h3 className="m-0 text-[#F0F4F8] text-base font-bold">New Habit</h3>
+          <button type="button" onClick={onClose} className="bg-transparent border-none text-[#9AA4B2] cursor-pointer text-lg leading-none">×</button>
         </div>
 
         <input
           value={name} onChange={(e) => setName(e.target.value)}
           placeholder="Habit name (e.g. Pray Fajr, Read 30 mins)"
           required
-          style={{ background: "#0E1318", border: "1px solid #242B35", borderRadius: 8, color: "#F0F4F8", padding: "10px 12px", fontSize: 14, outline: "none" }}
+          className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2.5 text-sm outline-none w-full"
         />
 
         <div>
-          <label style={{ color: "#9AA4B2", fontSize: 11, fontWeight: 600, display: "block", marginBottom: 8 }}>ICON</label>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label className="text-[#9AA4B2] text-[11px] font-semibold block mb-2">ICON</label>
+          <div className="flex gap-2 flex-wrap">
             {HABIT_ICONS.map((ic) => (
-              <button key={ic} type="button" onClick={() => setIcon(ic)} style={{ width: 34, height: 34, borderRadius: 8, fontSize: 18, border: icon === ic ? "2px solid #4A8FC2" : "1px solid #242B35", background: icon === ic ? "rgba(74,143,194,0.15)" : "#0E1318", cursor: "pointer" }}>
+              <button
+                key={ic} type="button" onClick={() => setIcon(ic)}
+                className="w-[34px] h-[34px] rounded-lg text-lg cursor-pointer transition-colors"
+                style={{
+                  border: icon === ic ? "2px solid #4A8FC2" : "1px solid #242B35",
+                  background: icon === ic ? "rgba(74,143,194,0.15)" : "#0E1318",
+                }}
+              >
                 {ic}
               </button>
             ))}
@@ -183,18 +194,28 @@ function AddHabitModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div>
-          <label style={{ color: "#9AA4B2", fontSize: 11, fontWeight: 600, display: "block", marginBottom: 8 }}>CATEGORY</label>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <label className="text-[#9AA4B2] text-[11px] font-semibold block mb-2">CATEGORY</label>
+          <div className="flex gap-1.5 flex-wrap">
             {HABIT_CATEGORIES.map((cat) => (
-              <button key={cat.id} type="button" onClick={() => setCategory(cat.id)}
-                style={{ padding: "5px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600, border: category === cat.id ? `2px solid ${cat.color}` : "1px solid #242B35", background: category === cat.id ? `${cat.color}22` : "#0E1318", color: category === cat.id ? cat.color : "#9AA4B2", cursor: "pointer" }}>
+              <button
+                key={cat.id} type="button" onClick={() => setCategory(cat.id)}
+                className="px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer transition-colors"
+                style={{
+                  border: category === cat.id ? `2px solid ${cat.color}` : "1px solid #242B35",
+                  background: category === cat.id ? `${cat.color}22` : "#0E1318",
+                  color: category === cat.id ? cat.color : "#9AA4B2",
+                }}
+              >
                 {cat.label}
               </button>
             ))}
           </div>
         </div>
 
-        <button type="submit" disabled={saving} style={{ background: "#4A8FC2", border: "none", borderRadius: 10, color: "#fff", padding: "12px", fontWeight: 700, fontSize: 14, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1 }}>
+        <button
+          type="submit" disabled={saving}
+          className="bg-[#4A8FC2] border-none rounded-xl text-white py-3 font-bold text-sm cursor-pointer hover:bg-[#5b9bd1] disabled:opacity-70 transition-colors"
+        >
           {saving ? "Saving..." : "Add Habit"}
         </button>
       </form>
@@ -218,16 +239,24 @@ function LogSessionModal({ project, onClose }: { project: ActiveProject; onClose
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <form onSubmit={handleSubmit} style={{ background: "#151A21", border: "1px solid #242B35", borderRadius: 16, padding: 28, width: 340, display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0, color: "#F0F4F8", fontSize: 16, fontWeight: 700 }}>Log Session — {project.name}</h3>
-          <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "#9AA4B2", cursor: "pointer", fontSize: 18 }}>×</button>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center">
+      <form onSubmit={handleSubmit} className="bg-[#151A21] border border-[#242B35] rounded-2xl p-7 w-[340px] flex flex-col gap-4">
+        <div className="flex justify-between items-center">
+          <h3 className="m-0 text-[#F0F4F8] text-base font-bold">Log Session — {project.name}</h3>
+          <button type="button" onClick={onClose} className="bg-transparent border-none text-[#9AA4B2] cursor-pointer text-lg leading-none">×</button>
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="flex gap-2">
           {[15, 30, 45, 60, 90, 120].map((m) => (
-            <button key={m} type="button" onClick={() => setMinutes(m)} style={{ flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 600, border: minutes === m ? `2px solid ${project.color}` : "1px solid #242B35", background: minutes === m ? `${project.color}22` : "#0E1318", color: minutes === m ? project.color : "#9AA4B2", cursor: "pointer" }}>
+            <button
+              key={m} type="button" onClick={() => setMinutes(m)}
+              className="flex-1 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+              style={{
+                border: minutes === m ? `2px solid ${project.color}` : "1px solid #242B35",
+                background: minutes === m ? `${project.color}22` : "#0E1318",
+                color: minutes === m ? project.color : "#9AA4B2",
+              }}
+            >
               {m}m
             </button>
           ))}
@@ -236,10 +265,14 @@ function LogSessionModal({ project, onClose }: { project: ActiveProject; onClose
         <input
           value={notes} onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes (optional)"
-          style={{ background: "#0E1318", border: "1px solid #242B35", borderRadius: 8, color: "#F0F4F8", padding: "10px 12px", fontSize: 14, outline: "none" }}
+          className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2.5 text-sm outline-none w-full"
         />
 
-        <button type="submit" disabled={saving} style={{ background: project.color, border: "none", borderRadius: 10, color: "#fff", padding: "12px", fontWeight: 700, fontSize: 14, cursor: saving ? "not-allowed" : "pointer" }}>
+        <button
+          type="submit" disabled={saving}
+          className="border-none rounded-xl text-white py-3 font-bold text-sm cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-70"
+          style={{ background: project.color }}
+        >
           {saving ? "Logging..." : `Log ${minutes}m`}
         </button>
       </form>
@@ -250,10 +283,10 @@ function LogSessionModal({ project, onClose }: { project: ActiveProject; onClose
 // ─── Section Header ───────────────────────────────────────────────────────────
 function SectionHeader({ icon, title, action }: { icon: React.ReactNode; title: string; action?: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ color: "#4A8FC2" }}>{icon}</span>
-        <h2 style={{ margin: 0, color: "#F0F4F8", fontSize: 14, fontWeight: 700, letterSpacing: "0.01em" }}>{title}</h2>
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[#4A8FC2]">{icon}</span>
+        <h2 className="m-0 text-[#F0F4F8] text-sm font-bold tracking-wide">{title}</h2>
       </div>
       {action}
     </div>
@@ -280,7 +313,6 @@ export const ActiveLifeTab: React.FC = () => {
   const [reminderPickerHabitId, setReminderPickerHabitId] = useState<string | null>(null);
   const [reminderTime, setReminderTime] = useState("08:00");
 
-  // Fetch habit completions for heatmap (last 7 days via store)
   const [completions, setCompletions] = useState<Array<{ habit_id: string; completed_date: string }>>([]);
   useEffect(() => {
     const load = async () => {
@@ -294,14 +326,12 @@ export const ActiveLifeTab: React.FC = () => {
     fetchHabitReminders();
   }, [dailyHabits]);
 
-  // Listen for tray menu "switch-tab" events
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     const setup = async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
         unlisten = await listen("switch-tab", () => {
-          // Already on this tab, just scroll to habits
           document.getElementById("habits-section")?.scrollIntoView({ behavior: "smooth" });
         });
       } catch { /* non-Tauri env */ }
@@ -335,45 +365,49 @@ export const ActiveLifeTab: React.FC = () => {
     p === "twitter" ? <IconBrandX size={13} /> : <IconBrandLinkedin size={13} />;
 
   return (
-    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 20, paddingBottom: 40 }}>
+    <div className="flex-1 min-w-0 flex flex-col gap-5 pb-10">
       {/* Page Header */}
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+      <div className="flex items-baseline justify-between">
         <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#F0F4F8", display: "flex", alignItems: "center", gap: 8 }}>
-            <IconBolt size={20} style={{ color: "#4A8FC2" }} />
+          <h1 className="m-0 text-xl font-bold text-[#F0F4F8] flex items-center gap-2">
+            <IconBolt size={20} className="text-[#4A8FC2]" />
             Active Life
           </h1>
-          <p style={{ margin: "2px 0 0", fontSize: 11, fontFamily: "monospace", color: "#7A8492" }}>{today}</p>
+          <p className="m-0 mt-0.5 text-[11px] font-mono text-[#7A8492]">{today}</p>
         </div>
-        <button onClick={() => { fetchActiveProjects(); fetchDailyHabits(); fetchDailyIntel(true); }}
-          style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, background: "rgba(74,143,194,0.1)", border: "1px solid rgba(74,143,194,0.25)", color: "#4A8FC2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+        <button
+          onClick={() => { fetchActiveProjects(); fetchDailyHabits(); fetchDailyIntel(true); }}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[rgba(74,143,194,0.1)] border border-[rgba(74,143,194,0.25)] text-[#4A8FC2] text-[11px] font-semibold cursor-pointer hover:bg-[rgba(74,143,194,0.18)] transition-colors"
+        >
           <IconRefresh size={13} /> Refresh
         </button>
       </div>
 
       {/* ─── Daily Spark ─────────────────────────────────── */}
-      <div style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.12), rgba(74,143,194,0.08))", border: "1px solid rgba(124,58,237,0.25)", borderRadius: 14, padding: 18 }}>
+      <div className="bg-gradient-to-br from-[rgba(124,58,237,0.12)] to-[rgba(74,143,194,0.08)] border border-[rgba(124,58,237,0.25)] rounded-2xl p-[18px]">
         <SectionHeader icon={<IconSparkles size={15} />} title="Daily Spark" action={
-          <button onClick={() => fetchDailyIntel(true)} disabled={dailyIntelLoading}
-            style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+          <button
+            onClick={() => fetchDailyIntel(true)} disabled={dailyIntelLoading}
+            className="bg-transparent border-none text-[#7C3AED] cursor-pointer flex items-center gap-1 text-[11px] hover:opacity-80 transition-opacity"
+          >
             {dailyIntelLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconRefresh size={13} />}
             {dailyIntelLoading ? "Generating..." : "Refresh"}
           </button>
         } />
         {dailyIntelLoading && !dailyIntel ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#9AA4B2", fontSize: 13 }}>
+          <div className="flex items-center gap-2 text-[#9AA4B2] text-[13px]">
             <IconLoader2 size={16} /> Generating your daily spark with AI...
           </div>
         ) : dailyIntel ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="flex flex-col gap-3.5">
             {/* Quote */}
             {dailyIntel.motivation_quote && (
-              <div style={{ borderLeft: "3px solid #7C3AED", paddingLeft: 14 }}>
-                <p style={{ margin: 0, fontSize: 15, fontStyle: "italic", color: "#E2E8F0", lineHeight: 1.6 }}>
-                  "{dailyIntel.motivation_quote}"
+              <div className="border-l-[3px] border-[#7C3AED] pl-3.5">
+                <p className="m-0 text-[15px] italic text-[#E2E8F0] leading-relaxed">
+                  &ldquo;{dailyIntel.motivation_quote}&rdquo;
                 </p>
                 {dailyIntel.quote_author && (
-                  <p style={{ margin: "6px 0 0", fontSize: 11, fontWeight: 700, color: "#7C3AED", fontFamily: "monospace" }}>
+                  <p className="m-0 mt-1.5 text-[11px] font-bold text-[#7C3AED] font-mono">
                     — {dailyIntel.quote_author}
                   </p>
                 )}
@@ -381,76 +415,96 @@ export const ActiveLifeTab: React.FC = () => {
             )}
             {/* Learning topic */}
             {dailyIntel.learning_topic && (
-              <div style={{ background: "rgba(74,143,194,0.08)", borderRadius: 10, padding: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                  <IconBook size={13} style={{ color: "#4A8FC2" }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "#4A8FC2", fontFamily: "monospace" }}>TODAY'S LEARNING</span>
+              <div className="bg-[rgba(74,143,194,0.08)] rounded-xl p-3">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <IconBook size={13} className="text-[#4A8FC2]" />
+                  <span className="text-[11px] font-bold text-[#4A8FC2] font-mono">TODAY'S LEARNING</span>
                 </div>
-                <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 700, color: "#F0F4F8" }}>{dailyIntel.learning_topic}</p>
+                <p className="m-0 mb-1 text-[13px] font-bold text-[#F0F4F8]">{dailyIntel.learning_topic}</p>
                 {dailyIntel.learning_summary && (
-                  <p style={{ margin: 0, fontSize: 12, color: "#9AA4B2", lineHeight: 1.6 }}>{dailyIntel.learning_summary}</p>
+                  <p className="m-0 text-xs text-[#9AA4B2] leading-relaxed">{dailyIntel.learning_summary}</p>
                 )}
               </div>
             )}
           </div>
         ) : (
-          <p style={{ color: "#9AA4B2", fontSize: 13, margin: 0 }}>Install Ollama and click Refresh to generate your daily spark.</p>
+          <p className="text-[#9AA4B2] text-[13px] m-0">Install Ollama and click Refresh to generate your daily spark.</p>
         )}
       </div>
 
       {/* ─── What I'm Building ───────────────────────────── */}
       <div>
         <SectionHeader icon={<IconTarget size={15} />} title="What I'm Building" action={
-          <button onClick={() => setShowAddProject(true)}
-            style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 8, background: "rgba(74,143,194,0.1)", border: "1px solid rgba(74,143,194,0.25)", color: "#4A8FC2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+          <button
+            onClick={() => setShowAddProject(true)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[rgba(74,143,194,0.1)] border border-[rgba(74,143,194,0.25)] text-[#4A8FC2] text-[11px] font-semibold cursor-pointer hover:bg-[rgba(74,143,194,0.18)] transition-colors"
+          >
             <IconPlus size={12} /> Add Project
           </button>
         } />
         {activeProjects.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "24px 0", color: "#7A8492" }}>
-            <IconTarget size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
-            <p style={{ margin: 0, fontSize: 13 }}>No active projects yet. Add what you're building.</p>
+          <div className="text-center py-6 text-[#7A8492]">
+            <IconTarget size={28} className="opacity-40 mb-2 mx-auto" />
+            <p className="m-0 text-[13px]">No active projects yet. Add what you're building.</p>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="flex flex-col gap-2.5">
             {activeProjects.map((p) => {
               const pct = p.daily_target_minutes > 0 ? Math.round((p.today_minutes / p.daily_target_minutes) * 100) : 0;
               return (
-                <div key={p.id} style={{ background: "#0E1318", border: `1px solid ${p.today_minutes > 0 ? p.color + "44" : "#1D2535"}`, borderRadius: 12, padding: "14px 16px", transition: "border-color 0.2s" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  key={p.id}
+                  className="bg-[#0E1318] rounded-xl px-4 py-3.5 transition-[border-color] duration-200"
+                  style={{ border: `1px solid ${p.today_minutes > 0 ? p.color + "44" : "#1D2535"}` }}
+                >
+                  <div className="flex items-center gap-3">
                     <ProgressRing pct={pct} color={p.color} size={44} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: p.color }} />
-                        <span style={{ fontSize: 14, fontWeight: 700, color: "#F0F4F8" }}>{p.name}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ background: p.color }} />
+                        <span className="text-sm font-bold text-[#F0F4F8]">{p.name}</span>
                         {p.today_minutes > 0 && (
-                          <span style={{ fontSize: 10, fontWeight: 600, color: p.color, background: `${p.color}22`, padding: "2px 6px", borderRadius: 20, fontFamily: "monospace" }}>
+                          <span
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full font-mono"
+                            style={{ color: p.color, background: `${p.color}22` }}
+                          >
                             {p.status === "paused" ? "PAUSED" : "ACTIVE"}
                           </span>
                         )}
                       </div>
-                      {p.description && <p style={{ margin: "2px 0 0", fontSize: 11, color: "#7A8492" }}>{p.description}</p>}
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
-                        <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 999 }}>
-                          <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: p.color, borderRadius: 999, transition: "width 0.5s ease" }} />
+                      {p.description && <p className="m-0 mt-0.5 text-[11px] text-[#7A8492]">{p.description}</p>}
+                      <div className="flex items-center gap-3 mt-2">
+                        <div className="flex-1 h-1 bg-white/[0.06] rounded-full">
+                          <div
+                            className="h-full rounded-full transition-[width] duration-500 ease-in-out"
+                            style={{ width: `${Math.min(pct, 100)}%`, background: p.color }}
+                          />
                         </div>
-                        <span style={{ fontSize: 10, fontFamily: "monospace", color: "#9AA4B2", whiteSpace: "nowrap" }}>
+                        <span className="text-[10px] font-mono text-[#9AA4B2] whitespace-nowrap">
                           {p.today_minutes}m / {p.daily_target_minutes}m
                         </span>
                       </div>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <button onClick={() => setLogSession(p)}
-                        style={{ padding: "6px 10px", borderRadius: 8, background: `${p.color}22`, border: `1px solid ${p.color}44`, color: p.color, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    <div className="flex flex-col gap-1">
+                      <button
+                        onClick={() => setLogSession(p)}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors"
+                        style={{ background: `${p.color}22`, border: `1px solid ${p.color}44`, color: p.color }}
+                      >
                         + Log
                       </button>
-                      <button onClick={() => useQueueStore.getState().updateActiveProject(p.id, { status: p.status === "paused" ? "active" : "paused" })}
+                      <button
+                        onClick={() => useQueueStore.getState().updateActiveProject(p.id, { status: p.status === "paused" ? "active" : "paused" })}
                         title={p.status === "paused" ? "Resume Project" : "Pause Project"}
-                        style={{ padding: "4px 8px", borderRadius: 8, background: "none", border: "1px solid #242B35", color: p.status === "paused" ? "#F59E0B" : "#7A8492", fontSize: 10, cursor: "pointer" }}>
+                        className="px-2 py-1 rounded-lg bg-transparent border border-[#242B35] text-[10px] cursor-pointer hover:border-[#4A8FC2] transition-colors"
+                        style={{ color: p.status === "paused" ? "#F59E0B" : "#7A8492" }}
+                      >
                         {p.status === "paused" ? "▶ Resume" : "⏸ Pause"}
                       </button>
-                      <button onClick={() => deleteActiveProject(p.id)}
-                        style={{ padding: "4px 8px", borderRadius: 8, background: "none", border: "1px solid #242B35", color: "#7A8492", fontSize: 11, cursor: "pointer" }}>
+                      <button
+                        onClick={() => deleteActiveProject(p.id)}
+                        className="px-2 py-1 rounded-lg bg-transparent border border-[#242B35] text-[#7A8492] text-[11px] cursor-pointer hover:text-[#EF4444] hover:border-[rgba(239,68,68,0.4)] transition-colors"
+                      >
                         <IconTrash size={12} />
                       </button>
                     </div>
@@ -464,45 +518,48 @@ export const ActiveLifeTab: React.FC = () => {
 
       {/* ─── Social Content Brief ─────────────────────────── */}
       {dailyIntel?.social_post_idea && (
-        <div style={{ background: "#0E1318", border: "1px solid #1D2535", borderRadius: 12, padding: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <IconBrandLinkedin size={15} style={{ color: "#4A8FC2" }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#4A8FC2", fontFamily: "monospace" }}>DAILY SOCIAL ANGLE</span>
+        <div className="bg-[#0E1318] border border-[#1D2535] rounded-xl p-4">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-1.5">
+              <IconBrandLinkedin size={15} className="text-[#4A8FC2]" />
+              <span className="text-[11px] font-bold text-[#4A8FC2] font-mono">DAILY SOCIAL ANGLE</span>
             </div>
             {(() => { const fb = formatBadge(dailyIntel.social_format);
-              return <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, color: fb.color, background: `${fb.color}22`, padding: "3px 8px", borderRadius: 20, fontFamily: "monospace" }}>{fb.icon} {fb.label}</span>;
+              return <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono" style={{ color: fb.color, background: `${fb.color}22` }}>{fb.icon} {fb.label}</span>;
             })()}
-            <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, color: "#9AA4B2", background: "rgba(255,255,255,0.06)", padding: "3px 8px", borderRadius: 20 }}>
+            <span className="flex items-center gap-1 text-[10px] font-bold text-[#9AA4B2] bg-white/[0.06] px-2 py-0.5 rounded-full">
               {platformIcon(dailyIntel.social_platform)} {dailyIntel.social_platform?.toUpperCase()}
             </span>
           </div>
-          <p style={{ margin: "0 0 14px", fontSize: 13, color: "#E2E8F0", lineHeight: 1.6 }}>{dailyIntel.social_post_idea}</p>
+          <p className="m-0 mb-3.5 text-[13px] text-[#E2E8F0] leading-relaxed">{dailyIntel.social_post_idea}</p>
 
           {generatedPost ? (
-            <div style={{ background: "#141A22", border: "1px solid #242B35", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#4A8FC2" }}>{generatedPost.hook}</p>
-              <p style={{ margin: 0, fontSize: 12, color: "#9AA4B2", lineHeight: 1.7 }}>{generatedPost.body}</p>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <div className="bg-[#141A22] border border-[#242B35] rounded-xl p-3.5 flex flex-col gap-2.5">
+              <p className="m-0 text-[13px] font-bold text-[#4A8FC2]">{generatedPost.hook}</p>
+              <p className="m-0 text-xs text-[#9AA4B2] leading-[1.7]">{generatedPost.body}</p>
+              <div className="flex gap-1.5 flex-wrap">
                 {generatedPost.hashtags.map((h) => (
-                  <span key={h} style={{ fontSize: 10, color: "#4A8FC2", background: "rgba(74,143,194,0.12)", padding: "2px 8px", borderRadius: 20 }}>#{h}</span>
+                  <span key={h} className="text-[10px] text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] px-2 py-0.5 rounded-full">#{h}</span>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <div className="flex gap-2 mt-1">
                 <button
                   onClick={() => {
                     const platform = (dailyIntel.social_platform?.toLowerCase() === "x" ? "x" : "linkedin") as any;
                     useQueueStore.getState().createSocialPost(platform, generatedPost.hook);
                   }}
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 6, background: "rgba(74,143,194,0.15)", border: "1px solid rgba(74,143,194,0.3)", color: "#4A8FC2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[rgba(74,143,194,0.15)] border border-[rgba(74,143,194,0.3)] text-[#4A8FC2] text-[11px] font-semibold cursor-pointer hover:bg-[rgba(74,143,194,0.25)] transition-colors"
+                >
                   <IconBrandLinkedin size={13} /> Push to Content Hub Queue
                 </button>
               </div>
             </div>
           ) : (
-            <button onClick={handleGeneratePost} disabled={generatingPost || generatedPostLoading}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, background: "rgba(5,150,105,0.15)", border: "1px solid rgba(5,150,105,0.3)", color: "#34D399", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              {(generatingPost || generatedPostLoading) ? <IconLoader2 size={13} /> : <IconSparkles size={13} />}
+            <button
+              onClick={handleGeneratePost} disabled={generatingPost || generatedPostLoading}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[rgba(5,150,105,0.15)] border border-[rgba(5,150,105,0.3)] text-[#34D399] text-xs font-semibold cursor-pointer hover:bg-[rgba(5,150,105,0.25)] transition-colors disabled:opacity-50"
+            >
+              {(generatingPost || generatedPostLoading) ? <IconLoader2 size={13} className="animate-spin" /> : <IconSparkles size={13} />}
               {(generatingPost || generatedPostLoading) ? "Drafting..." : "Generate Full Post"}
             </button>
           )}
@@ -512,33 +569,37 @@ export const ActiveLifeTab: React.FC = () => {
       {/* ─── Today's Game Plan ───────────────────────────── */}
       <div>
         <SectionHeader icon={<IconCalendarEvent size={15} />} title="Today's Game Plan" action={
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={generateDayPlan} disabled={dayPlanLoading}
-              style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 8, background: "rgba(74,143,194,0.1)", border: "1px solid rgba(74,143,194,0.25)", color: "#4A8FC2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-              {dayPlanLoading ? <IconLoader2 size={12} /> : <IconSparkles size={12} />}
+          <div className="flex gap-1.5">
+            <button
+              onClick={generateDayPlan} disabled={dayPlanLoading}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[rgba(74,143,194,0.1)] border border-[rgba(74,143,194,0.25)] text-[#4A8FC2] text-[11px] font-semibold cursor-pointer hover:bg-[rgba(74,143,194,0.18)] transition-colors disabled:opacity-50"
+            >
+              {dayPlanLoading ? <IconLoader2 size={12} className="animate-spin" /> : <IconSparkles size={12} />}
               {dayPlanLoading ? "Planning..." : "Generate Plan"}
             </button>
             {(dayPlan || dailyIntel?.day_plan) && (
-              <button onClick={() => setShowDayPlan((v) => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 8, background: "#0E1318", border: "1px solid #242B35", color: "#9AA4B2", fontSize: 11, cursor: "pointer" }}>
+              <button
+                onClick={() => setShowDayPlan((v) => !v)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0E1318] border border-[#242B35] text-[#9AA4B2] text-[11px] cursor-pointer hover:text-[#F0F4F8] transition-colors"
+              >
                 {showDayPlan ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />}
               </button>
             )}
           </div>
         } />
         {showDayPlan && (dayPlan || dailyIntel?.day_plan) && (
-          <div style={{ background: "#0E1318", border: "1px solid #242B35", borderRadius: 12, padding: 16 }}>
-            <pre style={{ margin: 0, fontSize: 12, color: "#C0CAD4", lineHeight: 1.8, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
+          <div className="bg-[#0E1318] border border-[#242B35] rounded-xl p-4">
+            <pre className="m-0 text-xs text-[#C0CAD4] leading-[1.8] whitespace-pre-wrap font-[inherit]">
               {dayPlan || dailyIntel?.day_plan}
             </pre>
           </div>
         )}
         {!showDayPlan && !dayPlan && !dailyIntel?.day_plan && !dayPlanLoading && (
-          <p style={{ fontSize: 12, color: "#7A8492", margin: 0 }}>Click "Generate Plan" to get an AI-crafted time-blocked schedule for today.</p>
+          <p className="text-xs text-[#7A8492] m-0">Click "Generate Plan" to get an AI-crafted time-blocked schedule for today.</p>
         )}
         {dayPlanLoading && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#9AA4B2", fontSize: 13, padding: "12px 0" }}>
-            <IconLoader2 size={16} /> AI is crafting your day plan...
+          <div className="flex items-center gap-2 text-[#9AA4B2] text-[13px] py-3">
+            <IconLoader2 size={16} className="animate-spin" /> AI is crafting your day plan...
           </div>
         )}
       </div>
@@ -546,46 +607,63 @@ export const ActiveLifeTab: React.FC = () => {
       {/* ─── Daily Habits ────────────────────────────────── */}
       <div id="habits-section">
         <SectionHeader icon={<IconCircleCheck size={15} />} title="Daily Habits" action={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="flex items-center gap-2">
             {dailyHabits.length > 0 && (
-              <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "monospace", color: habitsPct === 100 ? "#34D399" : "#9AA4B2" }}>
+              <span className={`text-[11px] font-bold font-mono ${habitsPct === 100 ? "text-[#34D399]" : "text-[#9AA4B2]"}`}>
                 {habitsDoneCount}/{dailyHabits.length} done
               </span>
             )}
-            <button onClick={() => setShowAddHabit(true)}
-              style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 8, background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.25)", color: "#34D399", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            <button
+              onClick={() => setShowAddHabit(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[rgba(52,211,153,0.1)] border border-[rgba(52,211,153,0.25)] text-[#34D399] text-[11px] font-semibold cursor-pointer hover:bg-[rgba(52,211,153,0.18)] transition-colors"
+            >
               <IconPlus size={12} /> Add
             </button>
           </div>
         } />
 
         {dailyHabits.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "20px 0", color: "#7A8492" }}>
-            <IconCircleCheck size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
-            <p style={{ margin: 0, fontSize: 13 }}>Add your daily rituals — prayers, workouts, reading, anything.</p>
+          <div className="text-center py-5 text-[#7A8492]">
+            <IconCircleCheck size={28} className="opacity-40 mb-2 mx-auto" />
+            <p className="m-0 text-[13px]">Add your daily rituals — prayers, workouts, reading, anything.</p>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div className="grid grid-cols-2 gap-2">
             {dailyHabits.map((h) => {
               const catColor = getCategoryColor(h.category);
               return (
-                <div key={h.id}
-                  style={{ background: h.completed_today ? "rgba(52,211,153,0.08)" : "#0E1318", border: `1px solid ${h.completed_today ? "rgba(52,211,153,0.3)" : "#1D2535"}`, borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, transition: "all 0.2s", cursor: "pointer" }}
-                  onClick={() => toggleHabitComplete(h.id)}>
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: h.completed_today ? "#34D399" : "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0, transition: "background 0.2s" }}>
+                <div
+                  key={h.id}
+                  className="rounded-xl px-3.5 py-3 flex items-center gap-2.5 transition-all duration-200 cursor-pointer"
+                  style={{
+                    background: h.completed_today ? "rgba(52,211,153,0.08)" : "#0E1318",
+                    border: `1px solid ${h.completed_today ? "rgba(52,211,153,0.3)" : "#1D2535"}`,
+                  }}
+                  onClick={() => toggleHabitComplete(h.id)}
+                >
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-lg shrink-0 transition-colors duration-200"
+                    style={{ background: h.completed_today ? "#34D399" : "rgba(255,255,255,0.05)" }}
+                  >
                     {h.completed_today ? "✓" : h.icon}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: h.completed_today ? "#34D399" : "#F0F4F8", textDecoration: h.completed_today ? "line-through" : "none" }}>{h.name}</p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: catColor, background: `${catColor}22`, padding: "1px 6px", borderRadius: 10 }}>{h.category.toUpperCase()}</span>
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className="m-0 text-[13px] font-semibold"
+                      style={{ color: h.completed_today ? "#34D399" : "#F0F4F8", textDecoration: h.completed_today ? "line-through" : "none" }}
+                    >{h.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span
+                        className="text-[9px] font-bold px-1.5 py-0.5 rounded-[10px]"
+                        style={{ color: catColor, background: `${catColor}22` }}
+                      >{h.category.toUpperCase()}</span>
                       {h.current_streak > 0 && (
-                        <span style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 10, color: "#F59E0B" }}>
+                        <span className="flex items-center gap-0.5 text-[10px] text-[#F59E0B]">
                           <IconFlame size={11} /> {h.current_streak}d
                         </span>
                       )}
                     </div>
-                    <div style={{ marginTop: 5 }}>
+                    <div className="mt-1.5">
                       <HabitHeatmap habitId={h.id} completions={completions} />
                     </div>
                   </div>
@@ -593,37 +671,50 @@ export const ActiveLifeTab: React.FC = () => {
                   {(() => {
                     const existingReminder = habitReminders.find((r) => r.habit_id === h.id);
                     return (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                      <div className="flex flex-col items-end gap-1">
                         {existingReminder ? (
-                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                          <div className="flex flex-col items-end gap-1">
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); deleteHabitReminder(existingReminder.id); }}
                               title="Remove reminder"
-                              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, fontWeight: 700, color: existingReminder.enabled ? "#34D399" : "#7A8492", background: existingReminder.enabled ? "rgba(52,211,153,0.12)" : "rgba(255,255,255,0.05)", border: "1px solid " + (existingReminder.enabled ? "rgba(52,211,153,0.3)" : "#242B35"), borderRadius: 12, padding: "3px 7px", cursor: "pointer" }}>
+                              className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full cursor-pointer border transition-colors"
+                              style={{
+                                color: existingReminder.enabled ? "#34D399" : "#7A8492",
+                                background: existingReminder.enabled ? "rgba(52,211,153,0.12)" : "rgba(255,255,255,0.05)",
+                                borderColor: existingReminder.enabled ? "rgba(52,211,153,0.3)" : "#242B35",
+                              }}
+                            >
                               <IconBell size={10} />
                               {existingReminder.remind_time}
                             </button>
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); toggleHabitReminder(existingReminder.id, !existingReminder.enabled); }}
-                              style={{ fontSize: 9, color: "#7A8492", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                              className="text-[9px] text-[#7A8492] bg-transparent border-none cursor-pointer p-0 hover:text-[#F0F4F8] transition-colors"
+                            >
                               {existingReminder.enabled ? "disable" : "enable"}
                             </button>
                           </div>
                         ) : reminderPickerHabitId === h.id ? (
-                          <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+                          <div onClick={(e) => e.stopPropagation()} className="flex flex-col gap-1 items-end">
                             <input
                               type="time"
                               value={reminderTime}
                               onChange={(e) => setReminderTime(e.target.value)}
-                              style={{ background: "#0E1318", border: "1px solid #4A8FC2", borderRadius: 6, color: "#F0F4F8", fontSize: 11, padding: "3px 6px", width: 80 }}
+                              className="bg-[#0E1318] border border-[#4A8FC2] rounded-md text-[#F0F4F8] text-[11px] px-1.5 py-0.5 w-20 outline-none"
                             />
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <button type="button" onClick={() => { addHabitReminder(h.id, reminderTime); setReminderPickerHabitId(null); }}
-                                style={{ fontSize: 10, fontWeight: 700, color: "#34D399", background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>Save</button>
-                              <button type="button" onClick={() => setReminderPickerHabitId(null)}
-                                style={{ fontSize: 10, color: "#7A8492", background: "none", border: "1px solid #242B35", borderRadius: 6, padding: "3px 6px", cursor: "pointer" }}>✕</button>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => { addHabitReminder(h.id, reminderTime); setReminderPickerHabitId(null); }}
+                                className="text-[10px] font-bold text-[#34D399] bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.3)] rounded-md px-2 py-0.5 cursor-pointer"
+                              >Save</button>
+                              <button
+                                type="button"
+                                onClick={() => setReminderPickerHabitId(null)}
+                                className="text-[10px] text-[#7A8492] bg-transparent border border-[#242B35] rounded-md px-1.5 py-0.5 cursor-pointer"
+                              >✕</button>
                             </div>
                           </div>
                         ) : (
@@ -631,19 +722,19 @@ export const ActiveLifeTab: React.FC = () => {
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setReminderPickerHabitId(h.id); setReminderTime("08:00"); }}
                             title="Set reminder"
-                            style={{ background: "none", border: "1px solid #242B35", borderRadius: 12, color: "#7A8492", padding: "3px 6px", cursor: "pointer", opacity: 0, transition: "opacity 0.2s", fontSize: 10 }}
-                            onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                            onMouseLeave={(e) => (e.currentTarget.style.opacity = "0")}>
+                            className="bg-transparent border border-[#242B35] rounded-full text-[#7A8492] px-1.5 py-0.5 cursor-pointer opacity-0 hover:opacity-100 transition-opacity text-[10px] flex items-center"
+                          >
                             <IconBell size={11} />
                           </button>
                         )}
                       </div>
                     );
                   })()}
-                  <button type="button" onClick={(e) => { e.stopPropagation(); deleteDailyHabit(h.id); }}
-                    style={{ background: "none", border: "none", color: "#7A8492", cursor: "pointer", padding: 4, borderRadius: 6, opacity: 0, transition: "opacity 0.2s" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "0")}>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); deleteDailyHabit(h.id); }}
+                    className="bg-transparent border-none text-[#7A8492] cursor-pointer p-1 rounded-md opacity-0 hover:opacity-100 hover:text-[#EF4444] transition-all"
+                  >
                     <IconTrash size={12} />
                   </button>
                 </div>
@@ -657,11 +748,6 @@ export const ActiveLifeTab: React.FC = () => {
       {showAddProject && <AddProjectModal onClose={() => { setShowAddProject(false); fetchActiveProjects(); }} />}
       {showAddHabit && <AddHabitModal onClose={() => { setShowAddHabit(false); fetchDailyHabits(); }} />}
       {logSession && <LogSessionModal project={logSession} onClose={() => { setLogSession(null); fetchActiveProjects(); }} />}
-
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .animate-spin { animation: spin 1s linear infinite; }
-      `}</style>
     </div>
   );
 };

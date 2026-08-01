@@ -161,36 +161,67 @@ pub async fn stream_ollama_model_install(
     model_name: String,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<String, String> {
-    let client = Client::new();
+    // Helper: emit a terminal error event so the frontend always gets notified
+    let emit_error = |app: &AppHandle, model: &str, msg: &str| {
+        let _ = app.emit(
+            "ollama-pull-progress",
+            ModelPullProgressPayload {
+                model: model.to_string(),
+                status: format!("Error: {}", msg),
+                completed: 0,
+                total: 0,
+                percent: 0.0,
+                done: true,
+                error: Some(msg.to_string()),
+            },
+        );
+    };
+
+    // ── 1. Pre-flight: verify Ollama is reachable before attempting pull ──────
+    let probe = Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
+
+    if probe.get("http://localhost:11434").send().await.is_err() {
+        let msg = "Ollama is not running. Please start Ollama (run: ollama serve) and try again.";
+        emit_error(&app, &model_name, msg);
+        return Err(msg.to_string());
+    }
+
+    // ── 2. Start streaming pull ───────────────────────────────────────────────
+    let client = Client::builder()
+        .timeout(Duration::from_secs(60 * 60)) // 1 h — large models take a while
+        .build()
+        .unwrap_or_default();
+
     let payload = serde_json::json!({
         "name": model_name,
         "stream": true
     });
 
-    let res = client
+    let res = match client
         .post("http://localhost:11434/api/pull")
         .json(&payload)
         .send()
         .await
-        .map_err(|e| format!("Failed to connect to Ollama: {}", e))?;
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = format!("Failed to start download: {}", e);
+            emit_error(&app, &model_name, &msg);
+            return Err(msg);
+        }
+    };
 
     if !res.status().is_success() {
         let err_text = res.text().await.unwrap_or_default();
-        let _ = app.emit(
-            "ollama-pull-progress",
-            ModelPullProgressPayload {
-                model: model_name.clone(),
-                status: format!("Error: {}", err_text),
-                completed: 0,
-                total: 0,
-                percent: 0.0,
-                done: true,
-                error: Some(err_text.clone()),
-            },
-        );
-        return Err(format!("Ollama model install failed: {}", err_text));
+        let msg = format!("Ollama returned an error: {}", err_text);
+        emit_error(&app, &model_name, &msg);
+        return Err(msg);
     }
 
+    // ── 3. Stream response chunks ─────────────────────────────────────────────
     let mut stream = res.bytes_stream();
     let mut buffer = String::new();
 
@@ -211,7 +242,15 @@ pub async fn stream_ollama_model_install(
             return Err("Cancelled by user".to_string());
         }
 
-        let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
+        let chunk = match chunk_result {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = format!("Download stream interrupted: {}", e);
+                emit_error(&app, &model_name, &msg);
+                return Err(msg);
+            }
+        };
+
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         while let Some(line_end) = buffer.find('\n') {
@@ -254,6 +293,7 @@ pub async fn stream_ollama_model_install(
         }
     }
 
+    // ── 4. Success ────────────────────────────────────────────────────────────
     let _ = app.emit(
         "ollama-pull-progress",
         ModelPullProgressPayload {
@@ -269,6 +309,7 @@ pub async fn stream_ollama_model_install(
 
     Ok(format!("Successfully pulled local model {}", model_name))
 }
+
 
 pub async fn trigger_ollama_model_install(model_name: String) -> Result<String, String> {
     let client = Client::new();

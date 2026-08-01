@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh, IconTrash, IconFlame, IconFolder } from '@tabler/icons-react';
+import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh, IconTrash, IconFlame, IconFolder, IconLoader2 } from '@tabler/icons-react';
+import { OllamaSetupModal } from './OllamaSetupModal';
 
 
 import { useQueueStore } from '../store/useQueueStore';
@@ -114,6 +115,7 @@ export const SettingsTab: React.FC = () => {
     addCustomFeed,
     deleteCustomFeed,
     pullProgress,
+    pendingDownloads,
     installOllamaModel,
     cancelOllamaModelInstall,
   } = useQueueStore();
@@ -132,10 +134,16 @@ export const SettingsTab: React.FC = () => {
   }, [vaultPath]);
 
   const [installedModels, setInstalledModels] = useState<string[]>([]);
-  const [installingModelId, setInstallingModelId] = useState<string | null>(null);
   const [uninstallingModelId, setUninstallingModelId] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [setupTarget, setSetupTarget] = useState<{ id: string; name: string } | null>(null);
+
+  // Auto-refresh installed models list when any download finishes
+  useEffect(() => {
+    const anyJustFinished = Object.values(pullProgress).some((p) => p.done && !p.error);
+    if (anyJustFinished) fetchModels();
+  }, [pullProgress]);
 
   const fetchModels = async () => {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
@@ -177,7 +185,28 @@ export const SettingsTab: React.FC = () => {
   }, [checkAutoStartStatus]);
 
   const handleInstallModel = async (modelId: string, modelName: string) => {
-    setInstallingModelId(modelId);
+    // Check Ollama status before attempting pull
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const status = await invoke<{ installed: boolean; running: boolean }>('check_ollama_status_command');
+
+        if (!status || !status.installed || !status.running) {
+          // Open guided setup wizard
+          setSetupTarget({ id: modelId, name: modelName });
+          return;
+        }
+      } catch {
+        setSetupTarget({ id: modelId, name: modelName });
+        return;
+      }
+    }
+
+    // Direct install if Ollama is confirmed running
+    await startModelDownload(modelId, modelName);
+  };
+
+  const startModelDownload = async (modelId: string, modelName: string) => {
     await sendDesktopNotification(
       '📥 Downloading High-Performance Local Model',
       `Pulling ${modelName} (${modelId}) in background...`
@@ -188,7 +217,6 @@ export const SettingsTab: React.FC = () => {
   const handleCancelInstall = async (modelId: string, modelName: string) => {
     await cancelOllamaModelInstall(modelId);
     await sendDesktopNotification('⏹️ Download Cancelled', `Cancelled download for ${modelName}.`);
-    setInstallingModelId(null);
   };
 
   const handleUninstallModel = async (modelId: string, modelName: string) => {
@@ -278,7 +306,10 @@ export const SettingsTab: React.FC = () => {
           {FREE_MODEL_CATALOG.map((model) => {
             const isInstalled = installedModels.some((m) => m === model.id || m.startsWith(`${model.id}:`));
             const progress = pullProgress[model.id];
-            const isDownloading = (installingModelId === model.id || (progress && !progress.done));
+            // Derive download state entirely from the global store — NOT local component state
+            // so it survives tab switches without resetting.
+            const isErrored = Boolean(progress?.done && progress?.error);
+            const isDownloading = !isErrored && (pendingDownloads.has(model.id) || Boolean(progress && !progress.done));
             const isDeleting = uninstallingModelId === model.id;
             const isPowerTier = model.tier === 'power';
 
@@ -294,9 +325,11 @@ export const SettingsTab: React.FC = () => {
               <div
                 key={model.id}
                 className={`p-3.5 rounded-lg border flex flex-col gap-2 transition-all ${
-                  isPowerTier
-                    ? 'bg-[#181E27] border-[rgba(232,162,61,0.3)] shadow-[0_0_10px_rgba(232,162,61,0.04)]'
-                    : 'bg-[#181E27] border-[#242B35]'
+                  isErrored
+                    ? 'bg-[rgba(239,68,68,0.04)] border-[rgba(239,68,68,0.3)]'
+                    : isPowerTier
+                      ? 'bg-[#181E27] border-[rgba(232,162,61,0.3)] shadow-[0_0_10px_rgba(232,162,61,0.04)]'
+                      : 'bg-[#181E27] border-[#242B35]'
                 }`}
               >
                 <div className="flex items-center justify-between gap-4">
@@ -353,21 +386,39 @@ export const SettingsTab: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Download Progress Bar */}
-                {isDownloading && progress && !progress.done && (
+                {/* Error state */}
+                {isErrored && progress?.error && (
+                  <div className="mt-1 pt-2 border-t border-[rgba(239,68,68,0.2)] flex items-start gap-2">
+                    <span className="text-[#EF4444] text-[10px] shrink-0 mt-0.5">⚠</span>
+                    <p className="text-[11px] text-[#EF4444] m-0 leading-snug">{progress.error}</p>
+                  </div>
+                )}
+
+                {/* Download Progress Bar — shown for both pending (before first event) and active downloads */}
+                {isDownloading && (
                   <div className="mt-2 space-y-1.5 pt-2 border-t border-[#242B35]">
                     <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="text-[#9AA4B2] truncate max-w-[60%]">{progress.status || 'Downloading...'}</span>
-                      <span className="text-[#4A8FC2] font-semibold">
-                        {progress.percent > 0 ? `${progress.percent.toFixed(1)}%` : ''}{' '}
-                        {progress.total > 0 ? `(${formatBytes(progress.completed)} / ${formatBytes(progress.total)})` : ''}
+                      <span className="text-[#9AA4B2] truncate max-w-[60%] flex items-center gap-1.5">
+                        <IconLoader2 size={11} className="animate-spin shrink-0" />
+                        {progress ? (progress.status || 'Downloading...') : 'Connecting to Ollama…'}
                       </span>
+                      {progress && (
+                        <span className="text-[#4A8FC2] font-semibold">
+                          {progress.percent > 0 ? `${progress.percent.toFixed(1)}%` : ''}{' '}
+                          {progress.total > 0 ? `(${formatBytes(progress.completed)} / ${formatBytes(progress.total)})` : ''}
+                        </span>
+                      )}
                     </div>
                     <div className="w-full h-1.5 bg-[#151A21] rounded-full overflow-hidden border border-[#242B35]">
-                      <div
-                        className="h-full bg-gradient-to-r from-[#4A8FC2] to-[#34D399] transition-all duration-300 rounded-full"
-                        style={{ width: `${Math.max(progress.percent, 5)}%` }}
-                      />
+                      {progress ? (
+                        <div
+                          className="h-full bg-gradient-to-r from-[#4A8FC2] to-[#34D399] transition-all duration-300 rounded-full"
+                          style={{ width: `${Math.max(progress.percent, 5)}%` }}
+                        />
+                      ) : (
+                        /* Indeterminate animated bar while pending */
+                        <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-[#4A8FC2] to-transparent animate-[shimmer_1.5s_ease-in-out_infinite]" />
+                      )}
                     </div>
                   </div>
                 )}
@@ -680,6 +731,18 @@ export const SettingsTab: React.FC = () => {
           "Concise, professional, warm, direct, leaving space for updating later."
         </p>
       </div>
+      {/* Ollama Setup Modal */}
+      {setupTarget && (
+        <OllamaSetupModal
+          modelId={setupTarget.id}
+          modelName={setupTarget.name}
+          onProceed={(id) => {
+            const m = FREE_MODEL_CATALOG.find((x) => x.id === id);
+            startModelDownload(id, m?.name || id);
+          }}
+          onClose={() => setSetupTarget(null)}
+        />
+      )}
     </div>
   );
 };

@@ -7,8 +7,6 @@ import {
 import { useQueueStore } from '../store/useQueueStore';
 import { ReplyCard } from './ReplyCard';
 
-/* ─────────────────────────────────────────────────────────── */
-
 export const TodayBrief: React.FC = () => {
   const {
     items, calendarEvents, isLoading, gmailAccounts,
@@ -44,40 +42,27 @@ export const TodayBrief: React.FC = () => {
   };
 
   return (
-    <div style={{ flex: 1, minWidth: 0 }}>
+    <div className="flex-1 min-w-0 space-y-4">
 
       {/* ── Page Header ── */}
-      <div style={{ marginBottom: 18 }}>
-        {/* Title row */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+      <div className="space-y-2">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', margin: 0, letterSpacing: '-0.3px' }}>
-              Today
-            </h1>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'monospace', marginTop: 3 }}>
-              {todayLabel}
-            </p>
+            <h1 className="text-xl font-bold text-[#F0F4F8] m-0 tracking-tight">Today</h1>
+            <p className="font-mono text-xs text-[#7A8492] mt-0.5">{todayLabel}</p>
           </div>
 
-          {/* Right-side header actions — clean pill row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 2 }}>
-            {/* Gmail status */}
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
             {gmailAccounts.length > 0 ? (
               <>
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  fontSize: 11, fontWeight: 500, padding: '4px 10px',
-                  borderRadius: 6, background: 'rgba(74,143,194,0.12)',
-                  border: '1px solid rgba(74,143,194,0.25)', color: 'var(--accent)',
-                  maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  <IconPlugConnected size={12} />
+                <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] border border-[rgba(74,143,194,0.25)] flex items-center gap-1.5 whitespace-nowrap">
+                  <IconPlugConnected size={13} />
                   {gmailAccounts.length === 1 ? gmailAccounts[0] : `${gmailAccounts.length} Inboxes`}
                 </span>
                 <button
                   onClick={syncGmail}
                   title="Sync Gmail"
-                  style={{ padding: '5px 7px', borderRadius: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border-em)', color: 'var(--text-2)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+                  className="p-1.5 rounded-md bg-[#151A21] hover:bg-[#181E27] text-[#9AA4B2] border border-[#242B35] transition-colors cursor-pointer flex items-center"
                 >
                   <IconRefresh size={13} />
                 </button>
@@ -85,72 +70,51 @@ export const TodayBrief: React.FC = () => {
             ) : (
               <button
                 onClick={connectGmail}
-                style={{
-                  padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                  background: 'var(--accent)', border: 'none', color: '#000', cursor: 'pointer',
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                }}
+                className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#4A8FC2] text-black font-semibold hover:bg-[#5b9bd1] transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               >
-                <IconMail size={12} /> Connect Gmail
+                <IconMail size={13} /> Connect Gmail
               </button>
             )}
 
-            {/* Review count badge */}
-            <span style={{
-              fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6,
-              background: reviewCount > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${reviewCount > 0 ? 'rgba(245,158,11,0.28)' : 'var(--border-em)'}`,
-              color: reviewCount > 0 ? 'var(--warning)' : 'var(--text-3)',
-              whiteSpace: 'nowrap',
-            }}>
+            <span className={`font-mono text-xs px-2.5 py-1 rounded-md border whitespace-nowrap ${
+              reviewCount > 0
+                ? 'bg-[rgba(245,158,11,0.12)] text-[#F59E0B] border-[rgba(245,158,11,0.28)] font-semibold'
+                : 'bg-[#151A21] text-[#7A8492] border-[#242B35]'
+            }`}>
               {reviewCount} to review
             </span>
 
-            {/* Safety test toggle */}
             <button
               onClick={() => setShowSafetyInput(!showSafetyInput)}
               title="Safety Test Target"
-              style={{
-                padding: '5px 7px', borderRadius: 6, cursor: 'pointer',
-                background: testOverrideRecipient ? 'rgba(74,143,194,0.12)' : 'var(--bg-elevated)',
-                border: `1px solid ${testOverrideRecipient ? 'rgba(74,143,194,0.3)' : 'var(--border-em)'}`,
-                color: testOverrideRecipient ? 'var(--accent)' : 'var(--text-3)',
-                display: 'inline-flex', alignItems: 'center',
-              }}
+              className={`p-1.5 rounded-md border transition-colors cursor-pointer flex items-center ${
+                testOverrideRecipient
+                  ? 'bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] border-[rgba(74,143,194,0.3)]'
+                  : 'bg-[#151A21] text-[#7A8492] border-[#242B35]'
+              }`}
             >
-              <IconShieldCheck size={13} />
+              <IconShieldCheck size={14} />
             </button>
           </div>
         </div>
 
-        {/* Safety test form */}
         {showSafetyInput && (
-          <form
-            onSubmit={handleSetScratchEmail}
-            style={{
-              marginTop: 10, padding: '10px 12px',
-              background: 'var(--bg-elevated)', border: '1px solid var(--border-em)',
-              borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8,
-            }}
-          >
+          <form onSubmit={handleSetScratchEmail} className="p-3 rounded-lg bg-[#151A21] border border-[#242B35] flex items-center gap-2">
             <input
               type="email"
               value={scratchEmail}
               onChange={(e) => setScratchEmail(e.target.value)}
               placeholder="Test recipient email…"
-              style={{ flex: 1, fontSize: 12, padding: '5px 9px', borderRadius: 6, background: 'var(--bg-surface)', border: '1px solid var(--border-em)', color: 'var(--text-1)', outline: 'none' }}
+              className="flex-1 bg-[#181E27] text-xs text-[#F0F4F8] p-2 rounded border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
             />
-            <button
-              type="submit"
-              style={{ padding: '5px 12px', borderRadius: 6, background: 'var(--accent)', border: 'none', color: '#000', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
-            >
-              Set
+            <button type="submit" className="text-xs bg-[#4A8FC2] text-black px-3 py-1.5 rounded-md font-semibold cursor-pointer whitespace-nowrap">
+              Set Target
             </button>
             {testOverrideRecipient && (
               <button
                 type="button"
                 onClick={() => { setTestOverrideRecipient(null); setScratchEmail(''); }}
-                style={{ padding: '5px 9px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border-em)', color: 'var(--warning)', fontSize: 11, cursor: 'pointer' }}
+                className="text-xs text-[#F59E0B] hover:underline cursor-pointer bg-transparent border-0 px-1"
               >
                 Clear
               </button>
@@ -160,36 +124,27 @@ export const TodayBrief: React.FC = () => {
       </div>
 
       {/* ── Morning Intelligence Brief ── */}
-      <div style={{
-        borderRadius: 12, marginBottom: 12, overflow: 'hidden',
-        border: '1px solid rgba(74,143,194,0.2)',
-        background: 'linear-gradient(160deg, rgba(74,143,194,0.05) 0%, transparent 60%), var(--bg-surface)',
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 14px', borderBottom: '1px solid rgba(74,143,194,0.1)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(74,143,194,0.15)', border: '1px solid rgba(74,143,194,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', flexShrink: 0 }}>
+      <div className="rounded-xl border border-[rgba(74,143,194,0.25)] bg-gradient-to-br from-[#0E1420] to-[#141B24] overflow-hidden">
+        <div className="px-4 py-3 border-b border-[rgba(74,143,194,0.15)] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-[rgba(74,143,194,0.15)] border border-[rgba(74,143,194,0.25)] flex items-center justify-center text-[#4A8FC2]">
               <IconBrain size={14} />
             </div>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)' }}>Morning Intelligence Brief</span>
-            <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.25)', color: 'var(--success)', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span className="text-xs font-semibold text-[#F0F4F8]">Morning Intelligence Brief</span>
+            <span className="font-mono text-[9px] font-semibold px-2 py-0.5 rounded bg-[rgba(52,211,153,0.12)] text-[#34D399] border border-[rgba(52,211,153,0.25)] uppercase tracking-wider">
               AI · Local
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className="flex items-center gap-1.5">
             {morningBrief && (
               <button
                 onClick={() => isPlayingAudio ? stopSpeech() : speakText(morningBrief)}
                 title={isPlayingAudio ? 'Stop' : 'Listen'}
-                style={{
-                  padding: '4px 9px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
-                  background: isPlayingAudio ? 'rgba(239,68,68,0.12)' : 'var(--bg-elevated)',
-                  border: `1px solid ${isPlayingAudio ? 'rgba(239,68,68,0.3)' : 'var(--border-em)'}`,
-                  color: isPlayingAudio ? 'var(--danger)' : 'var(--text-2)',
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                }}
+                className={`font-mono text-xs px-2.5 py-1 rounded-md border flex items-center gap-1 transition-colors cursor-pointer ${
+                  isPlayingAudio
+                    ? 'bg-[rgba(239,68,68,0.15)] text-[#EF4444] border-[rgba(239,68,68,0.3)] animate-pulse'
+                    : 'bg-[#151A21] text-[#9AA4B2] border-[#242B35] hover:text-[#4A8FC2]'
+                }`}
               >
                 {isPlayingAudio ? <IconPlayerStop size={12} /> : <IconVolume size={12} />}
                 {isPlayingAudio ? 'Stop' : 'Listen'}
@@ -199,28 +154,27 @@ export const TodayBrief: React.FC = () => {
               onClick={refreshMorningBrief}
               disabled={morningBriefLoading}
               title="Refresh Brief"
-              style={{ padding: '5px 7px', borderRadius: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border-em)', color: 'var(--text-3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+              className="p-1.5 rounded-md bg-[#151A21] text-[#7A8492] hover:text-[#F0F4F8] border border-[#242B35] transition-colors cursor-pointer disabled:opacity-40"
             >
-              {morningBriefLoading ? <IconLoader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <IconRefresh size={13} />}
+              {morningBriefLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconRefresh size={13} />}
             </button>
           </div>
         </div>
-        <div style={{ padding: '12px 14px' }}>
+
+        <div className="p-4">
           {morningBriefLoading && !morningBrief ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div className="space-y-2">
               {[82, 64, 91, 72, 58].map((w, i) => (
-                <div key={i} style={{ height: 9, borderRadius: 4, background: 'var(--bg-elevated)', width: `${w}%`, animation: 'pulse 1.5s ease infinite', opacity: 0.6 }} />
+                <div key={i} className="h-2.5 bg-[#181E27] rounded animate-pulse" style={{ width: `${w}%` }} />
               ))}
-              <p style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'monospace', marginTop: 4 }}>
-                Ingesting feeds & synthesising brief…
-              </p>
+              <p className="font-mono text-[10px] text-[#7A8492] pt-1">Ingesting feeds & synthesising brief…</p>
             </div>
           ) : morningBrief ? (
-            <pre style={{ fontSize: 12, color: '#C8D6E5', lineHeight: 1.7, whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
+            <pre className="text-[12px] text-[#C8D6E5] leading-relaxed whitespace-pre-wrap font-sans m-0">
               {morningBrief}
             </pre>
           ) : (
-            <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+            <p className="text-xs text-[#7A8492]">
               Brief will auto-generate on next launch. Click refresh to generate now.
             </p>
           )}
@@ -228,21 +182,14 @@ export const TodayBrief: React.FC = () => {
       </div>
 
       {/* ── Weekly Executive Review ── */}
-      <div style={{
-        borderRadius: 12, marginBottom: 12, overflow: 'hidden',
-        border: '1px solid rgba(155,89,182,0.2)',
-        background: 'linear-gradient(160deg, rgba(155,89,182,0.05) 0%, transparent 60%), var(--bg-surface)',
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 14px', borderBottom: '1px solid rgba(155,89,182,0.1)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(155,89,182,0.15)', border: '1px solid rgba(155,89,182,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9B59B6', flexShrink: 0 }}>
+      <div className="rounded-xl border border-[rgba(155,89,182,0.25)] bg-gradient-to-br from-[#121019] to-[#1C1628] overflow-hidden">
+        <div className="px-4 py-3 border-b border-[rgba(155,89,182,0.15)] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-[rgba(155,89,182,0.15)] border border-[rgba(155,89,182,0.25)] flex items-center justify-center text-[#9B59B6]">
               <IconChartBar size={14} />
             </div>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)' }}>Weekly Executive Review</span>
-            <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(155,89,182,0.12)', border: '1px solid rgba(155,89,182,0.25)', color: '#9B59B6', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span className="text-xs font-semibold text-[#F0F4F8]">Weekly Executive Review</span>
+            <span className="font-mono text-[9px] font-semibold px-2 py-0.5 rounded bg-[rgba(155,89,182,0.12)] text-[#9B59B6] border border-[rgba(155,89,182,0.25)] uppercase tracking-wider">
               Sunday Synthesis
             </span>
           </div>
@@ -250,27 +197,26 @@ export const TodayBrief: React.FC = () => {
             onClick={refreshWeeklyReview}
             disabled={weeklyReviewLoading}
             title="Refresh Review"
-            style={{ padding: '5px 7px', borderRadius: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border-em)', color: 'var(--text-3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+            className="p-1.5 rounded-md bg-[#151A21] text-[#7A8492] hover:text-[#F0F4F8] border border-[#242B35] transition-colors cursor-pointer disabled:opacity-40"
           >
-            {weeklyReviewLoading ? <IconLoader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <IconRefresh size={13} />}
+            {weeklyReviewLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconRefresh size={13} />}
           </button>
         </div>
-        <div style={{ padding: '12px 14px' }}>
+
+        <div className="p-4">
           {weeklyReviewLoading && !weeklyReview ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div className="space-y-2">
               {[88, 66, 94, 77].map((w, i) => (
-                <div key={i} style={{ height: 9, borderRadius: 4, background: 'var(--bg-elevated)', width: `${w}%`, animation: 'pulse 1.5s ease infinite', opacity: 0.6 }} />
+                <div key={i} className="h-2.5 bg-[#181E27] rounded animate-pulse" style={{ width: `${w}%` }} />
               ))}
-              <p style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'monospace', marginTop: 4 }}>
-                Synthesising week's decisions & captures…
-              </p>
+              <p className="font-mono text-[10px] text-[#7A8492] pt-1">Synthesising week's decisions & captures…</p>
             </div>
           ) : weeklyReview ? (
-            <pre style={{ fontSize: 12, color: '#DCD6F7', lineHeight: 1.7, whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
+            <pre className="text-[12px] text-[#DCD6F7] leading-relaxed whitespace-pre-wrap font-sans m-0">
               {weeklyReview}
             </pre>
           ) : (
-            <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+            <p className="text-xs text-[#7A8492]">
               Weekly review generates automatically every Sunday, or click refresh to generate now.
             </p>
           )}
@@ -279,25 +225,17 @@ export const TodayBrief: React.FC = () => {
 
       {/* ── Onboarding (no Gmail) ── */}
       {gmailAccounts.length === 0 && (
-        <div style={{
-          borderRadius: 12, marginBottom: 12, padding: '14px 16px',
-          background: 'var(--bg-surface)', border: '1px solid var(--border-em)',
-          display: 'flex', flexDirection: 'column', gap: 10,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <IconSparkles size={16} style={{ color: 'var(--accent)' }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Welcome to Wardyn</span>
+        <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+          <div className="flex items-center gap-2 text-[#4A8FC2]">
+            <IconSparkles size={18} />
+            <h3 className="text-sm font-bold text-[#F0F4F8] m-0">Welcome to Wardyn</h3>
           </div>
-          <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
+          <p className="text-xs text-[#9AA4B2] leading-relaxed m-0">
             Wardyn is your local-first chief-of-staff. Connect Gmail to start triaging high-signal messages and drafting responses in your voice.
           </p>
           <button
             onClick={connectGmail}
-            style={{
-              alignSelf: 'flex-start', padding: '6px 14px', borderRadius: 7, fontSize: 12,
-              fontWeight: 600, background: 'var(--accent)', border: 'none', color: '#000',
-              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
-            }}
+            className="font-mono text-xs px-3.5 py-1.5 rounded-md bg-[#4A8FC2] text-black font-semibold hover:bg-[#5b9bd1] transition-colors inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
           >
             <IconMail size={13} /> Connect Gmail Account
           </button>
@@ -305,69 +243,57 @@ export const TodayBrief: React.FC = () => {
       )}
 
       {/* ── Reply Queue ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)' }}>
+      <div className="flex items-center gap-2 pt-2">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#7A8492]">
           Needs your reply
         </span>
-        <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        <div className="flex-1 h-px bg-[#242B35]" />
       </div>
 
       {isLoading ? (
-        <div style={{ padding: '32px 0', textAlign: 'center' }}>
-          <p style={{ fontSize: 12, color: 'var(--text-3)' }}>Loading triaged items…</p>
+        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl">
+          <p className="text-xs text-[#7A8492] m-0">Loading triaged items…</p>
         </div>
       ) : pendingItems.length === 0 ? (
-        <div style={{
-          padding: '32px 16px', textAlign: 'center',
-          background: 'var(--bg-surface)', border: '1px solid var(--border-em)',
-          borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-        }}>
-          <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)' }}>
+        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-2">
+          <div className="w-10 h-10 rounded-full bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.25)] flex items-center justify-center text-[#34D399]">
             <IconInbox size={20} />
           </div>
-          <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', margin: 0 }}>All caught up!</h4>
-          <p style={{ fontSize: 12, color: 'var(--text-3)', maxWidth: 280, lineHeight: 1.5, margin: 0 }}>
-            No pending items awaiting approval.
-          </p>
+          <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">All caught up!</h4>
+          <p className="text-xs text-[#7A8492] max-w-xs m-0">No pending items awaiting approval.</p>
           {gmailAccounts.length > 0 && (
             <button
               onClick={syncGmail}
-              style={{ padding: '6px 14px', borderRadius: 7, fontSize: 11, fontWeight: 600, background: 'var(--bg-elevated)', border: '1px solid var(--border-em)', color: 'var(--text-2)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+              className="mt-1 font-mono text-xs px-3 py-1.5 rounded-md bg-[#181E27] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] hover:bg-[rgba(74,143,194,0.16)] transition-colors inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
               <IconRefresh size={13} /> Check New Messages
             </button>
           )}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="space-y-3">
           {pendingItems.map((item) => <ReplyCard key={item.id} item={item} />)}
         </div>
       )}
 
       {/* ── Low-urgency digest ── */}
       {items.some((i) => i.urgency === 'low') && (
-        <div style={{
-          marginTop: 12, padding: '12px 14px', borderRadius: 12,
-          background: 'var(--bg-surface)', border: '1px solid var(--border-em)',
-          display: 'flex', flexDirection: 'column', gap: 8,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              📬 Daily Digest <span style={{ fontWeight: 400, color: 'var(--text-3)' }}>(5 PM Batch)</span>
+        <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#F0F4F8] flex items-center gap-1.5">
+              📬 Daily Digest <span className="font-normal text-[#7A8492]">(5 PM Batch)</span>
             </span>
-            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--warning)', fontFamily: 'monospace' }}>
+            <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)] text-[#F59E0B]">
               {items.filter((i) => i.urgency === 'low').length} Batched
             </span>
           </div>
-          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
-            Low-urgency items silenced to prevent executive interruption.
-          </p>
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <p className="text-xs text-[#7A8492] m-0">Low-urgency items silenced to prevent executive interruption.</p>
+          <div className="pt-2 border-t border-[#242B35] space-y-1.5">
             {items.filter((i) => i.urgency === 'low').slice(0, 3).map((item) => (
-              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6, background: 'var(--bg-elevated)', border: '1px solid var(--border)', fontSize: 11 }}>
-                <span style={{ fontWeight: 600, color: 'var(--text-1)', flexShrink: 0, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.sender}</span>
-                <span style={{ flex: 1, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.preview}</span>
-                <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: 'rgba(74,143,194,0.1)', border: '1px solid rgba(74,143,194,0.2)', color: 'var(--accent)', fontFamily: 'monospace', flexShrink: 0 }}>{item.status}</span>
+              <div key={item.id} className="flex items-center gap-2 p-2 rounded-md bg-[#181E27] border border-[#242B35] text-xs">
+                <span className="font-semibold text-[#F0F4F8] shrink-0 max-w-[120px] truncate">{item.sender}</span>
+                <span className="flex-1 text-[#7A8492] truncate">{item.preview}</span>
+                <span className="font-mono text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[rgba(74,143,194,0.1)] border border-[rgba(74,143,194,0.2)] text-[#4A8FC2] uppercase shrink-0">{item.status}</span>
               </div>
             ))}
           </div>
@@ -375,15 +301,10 @@ export const TodayBrief: React.FC = () => {
       )}
 
       {/* ── Footer ── */}
-      <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-3)', fontFamily: 'monospace' }}>
-        <IconCheck size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+      <div className="flex items-center gap-2 font-mono text-xs text-[#7A8492] pt-1">
+        <IconCheck size={14} className="text-[#34D399] shrink-0" />
         <span>{calendarEvents.length} visa deadlines synced to calendar</span>
       </div>
-
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 0.3; } }
-      `}</style>
     </div>
   );
 };

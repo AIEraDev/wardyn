@@ -76,32 +76,43 @@ function useSpeechRecognition(onResult: (t: string) => void) {
 function PlanPreview({ event }: { event: LifeEvent }) {
   const meta = INTENT_META[event.intent] || INTENT_META.event_prep;
   const done = event.tasks.filter(t => t.status === "completed").length;
+  const pct = event.tasks.length ? (done / event.tasks.length) * 100 : 0;
+
   return (
-    <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.1)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ background: `${meta.color}20`, color: meta.color, border: `1px solid ${meta.color}40`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+    <div className="bg-white/[0.04] rounded-2xl border border-white/10 px-[18px] py-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <span
+          className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border"
+          style={{ background: `${meta.color}20`, color: meta.color, borderColor: `${meta.color}40` }}
+        >
           {meta.icon}{meta.label}
         </span>
-        <span style={{ fontSize: 11, color: "#64748B" }}>{formatDate(event.event_date)}</span>
+        <span className="text-[11px] text-[#64748B]">{formatDate(event.event_date)}</span>
       </div>
-      <div style={{ fontSize: 15, fontWeight: 600, color: "#E2E8F0", lineHeight: 1.3 }}>{event.title}</div>
+      <div className="text-[15px] font-semibold text-[#E2E8F0] leading-snug">{event.title}</div>
 
       {/* Progress bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <div style={{ flex: 1, background: "rgba(255,255,255,0.08)", borderRadius: 99, height: 4, overflow: "hidden" }}>
-          <div style={{ width: `${event.tasks.length ? (done / event.tasks.length) * 100 : 0}%`, background: meta.color, height: "100%", borderRadius: 99, transition: "width 0.4s ease" }} />
+      <div className="flex items-center gap-2">
+        <div className="flex-1 bg-white/[0.08] rounded-full h-1 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-[width] duration-[400ms] ease-in-out"
+            style={{ width: `${pct}%`, background: meta.color }}
+          />
         </div>
-        <span style={{ fontSize: 10, color: "#64748B", whiteSpace: "nowrap" }}>{done}/{event.tasks.length} tasks</span>
+        <span className="text-[10px] text-[#64748B] whitespace-nowrap">{done}/{event.tasks.length} tasks</span>
       </div>
 
       {/* Task list */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="flex flex-col gap-1.5">
         {event.tasks.map(task => (
-          <div key={task.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: task.priority === "high" ? "#E74C3C" : task.priority === "medium" ? "#F39C12" : "#27AE60", marginTop: 4, flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, color: "#CBD5E1", lineHeight: 1.4 }}>{task.title}</div>
-              {task.due_date && <div style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>{relDue(task.due_date)}</div>}
+          <div key={task.id} className="flex items-start gap-2 px-2 py-1.5 bg-white/[0.03] rounded-lg">
+            <div
+              className="w-2 h-2 rounded-full mt-1 shrink-0"
+              style={{ background: task.priority === "high" ? "#E74C3C" : task.priority === "medium" ? "#F39C12" : "#27AE60" }}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-[#CBD5E1] leading-snug">{task.title}</div>
+              {task.due_date && <div className="text-[10px] text-[#64748B] mt-0.5">{relDue(task.due_date)}</div>}
             </div>
           </div>
         ))}
@@ -166,52 +177,39 @@ export function LifeCaptureModal() {
       {/* Floating Trigger Button */}
       <button
         onClick={() => setOpen(true)}
-        style={{
-          position: "fixed", bottom: 24, right: 24, zIndex: 200,
-          width: 52, height: 52, borderRadius: "50%",
-          background: "linear-gradient(135deg, #4A8FC2, #7C3AED)",
-          border: "none", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 4px 20px rgba(74,143,194,0.4), 0 0 0 0 rgba(74,143,194,0.3)",
-          animation: "pulse-ring 2.5s ease infinite",
-          transition: "transform 0.2s ease",
-        }}
+        className="fixed bottom-6 right-6 z-[200] w-[52px] h-[52px] rounded-full
+          bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED] border-none cursor-pointer
+          flex items-center justify-center
+          shadow-[0_4px_20px_rgba(74,143,194,0.4)] hover:scale-110
+          transition-transform duration-200 animate-[pulse-ring_2.5s_ease_infinite]"
         title="Tell Wardyn about your life"
-        onMouseEnter={e => (e.currentTarget.style.transform = "scale(1.1)")}
-        onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
       >
         <IconBrain size={22} color="#fff" />
       </button>
 
       {/* Modal Overlay */}
       {open && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 300,
-          background: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: 24,
-          animation: "fadeIn 0.2s ease",
-        }}>
-          <div style={{
-            width: "100%", maxWidth: 560,
-            background: "linear-gradient(135deg, rgba(15,23,42,0.98), rgba(30,41,59,0.98))",
-            borderRadius: 20, border: "1px solid rgba(255,255,255,0.1)",
-            boxShadow: "0 25px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(74,143,194,0.2)",
-            padding: 24, display: "flex", flexDirection: "column", gap: 16,
-            maxHeight: "90vh", overflowY: "auto",
-          }}>
+        <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-xl flex items-center justify-center p-6 animate-[fadeIn_0.2s_ease]">
+          <div className="w-full max-w-[560px] bg-gradient-to-br from-[rgba(15,23,42,0.98)] to-[rgba(30,41,59,0.98)]
+            rounded-[20px] border border-white/10
+            shadow-[0_25px_80px_rgba(0,0,0,0.6),0_0_0_1px_rgba(74,143,194,0.2)]
+            p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg, #4A8FC2, #7C3AED)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-[34px] h-[34px] rounded-xl bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED] flex items-center justify-center shrink-0">
                   <IconBrain size={18} color="#fff" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: "#E2E8F0" }}>Tell Wardyn</div>
-                  <div style={{ fontSize: 11, color: "#64748B" }}>Voice or type anything about your life</div>
+                  <div className="text-[15px] font-bold text-[#E2E8F0]">Tell Wardyn</div>
+                  <div className="text-[11px] text-[#64748B]">Voice or type anything about your life</div>
                 </div>
               </div>
-              <button onClick={handleClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B", padding: 4, borderRadius: 6, display: "flex" }}>
+              <button
+                onClick={handleClose}
+                className="bg-transparent border-none cursor-pointer text-[#64748B] hover:text-[#94A3B8] p-1 rounded-md flex items-center justify-center transition-colors"
+              >
                 <IconX size={18} />
               </button>
             </div>
@@ -220,7 +218,7 @@ export function LifeCaptureModal() {
             {step === "input" && (
               <>
                 {/* Textarea */}
-                <div style={{ position: "relative" }}>
+                <div className="relative">
                   <textarea
                     ref={textareaRef}
                     value={text}
@@ -228,36 +226,31 @@ export function LifeCaptureModal() {
                     onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit(); }}
                     placeholder="I have an event next week... / I need to start studying for my exam... / Planning a trip..."
                     rows={4}
-                    style={{
-                      width: "100%", background: "rgba(255,255,255,0.05)",
-                      border: `1px solid ${listening ? "rgba(239,68,68,0.5)" : "rgba(255,255,255,0.1)"}`,
-                      borderRadius: 12, color: "#E2E8F0", fontSize: 13,
-                      padding: "12px 14px", resize: "none", fontFamily: "inherit",
-                      outline: "none", lineHeight: 1.6,
-                      transition: "border-color 0.2s",
-                      boxSizing: "border-box",
-                    }}
+                    className={`w-full bg-white/[0.05] border rounded-xl text-[#E2E8F0] text-[13px]
+                      px-3.5 py-3 resize-none font-[inherit] outline-none leading-relaxed
+                      transition-colors duration-200 box-border
+                      ${listening ? "border-[rgba(239,68,68,0.5)]" : "border-white/10"}`}
                   />
                   {listening && (
-                    <div style={{ position: "absolute", top: 10, right: 10, display: "flex", alignItems: "center", gap: 5 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#EF4444", animation: "blink 1s ease infinite" }} />
-                      <span style={{ fontSize: 10, color: "#EF4444" }}>Recording</span>
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#EF4444] animate-[blink_1s_ease_infinite]" />
+                      <span className="text-[10px] text-[#EF4444]">Recording</span>
                     </div>
                   )}
                 </div>
 
                 {/* Examples */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <div style={{ fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Examples</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                <div className="flex flex-col gap-1.5">
+                  <div className="text-[10px] text-[#475569] uppercase tracking-[0.08em] font-semibold">Examples</div>
+                  <div className="flex flex-wrap gap-1.5">
                     {examples.map((ex, i) => (
-                      <button key={i} onClick={() => setText(ex)} style={{
-                        background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 6, padding: "4px 9px", fontSize: 10, color: "#94A3B8",
-                        cursor: "pointer", textAlign: "left", transition: "all 0.15s",
-                      }}
-                        onMouseEnter={e => { e.currentTarget.style.background = "rgba(74,143,194,0.1)"; e.currentTarget.style.color = "#4A8FC2"; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "#94A3B8"; }}>
+                      <button
+                        key={i}
+                        onClick={() => setText(ex)}
+                        className="bg-white/[0.04] hover:bg-[rgba(74,143,194,0.1)] border border-white/[0.08]
+                          rounded-md px-2 py-1 text-[10px] text-[#94A3B8] hover:text-[#4A8FC2]
+                          cursor-pointer text-left transition-all duration-150"
+                      >
                         {ex.length > 55 ? ex.slice(0, 55) + "…" : ex}
                       </button>
                     ))}
@@ -266,36 +259,38 @@ export function LifeCaptureModal() {
 
                 {/* Error */}
                 {error && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "8px 12px" }}>
+                  <div className="flex items-center gap-2 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.2)] rounded-lg px-3 py-2">
                     <IconAlertCircle size={14} color="#EF4444" />
-                    <span style={{ fontSize: 12, color: "#EF4444" }}>{error}</span>
+                    <span className="text-xs text-[#EF4444]">{error}</span>
                   </div>
                 )}
 
                 {/* Actions */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div className="flex items-center gap-2">
                   {/* Voice Button */}
                   {supported && (
-                    <button onClick={listening ? stop : start} style={{
-                      display: "flex", alignItems: "center", gap: 6, padding: "9px 14px",
-                      borderRadius: 10, border: `1px solid ${listening ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.1)"}`,
-                      background: listening ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.05)",
-                      color: listening ? "#EF4444" : "#94A3B8", cursor: "pointer", fontSize: 12, fontWeight: 500,
-                      transition: "all 0.2s",
-                    }}>
+                    <button
+                      onClick={listening ? stop : start}
+                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-medium cursor-pointer transition-all duration-200
+                        ${listening
+                          ? "border-[rgba(239,68,68,0.4)] bg-[rgba(239,68,68,0.12)] text-[#EF4444]"
+                          : "border-white/10 bg-white/[0.05] text-[#94A3B8]"}`}
+                    >
                       {listening ? <IconMicrophoneOff size={14} /> : <IconMicrophone size={14} />}
                       {listening ? "Stop" : "Voice"}
                     </button>
                   )}
-                  <button onClick={handleSubmit} disabled={!text.trim()} style={{
-                    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                    padding: "9px 16px", borderRadius: 10, border: "none",
-                    background: text.trim() ? "linear-gradient(135deg, #4A8FC2, #7C3AED)" : "rgba(255,255,255,0.06)",
-                    color: text.trim() ? "#fff" : "#475569", cursor: text.trim() ? "pointer" : "not-allowed",
-                    fontSize: 13, fontWeight: 600, transition: "all 0.2s",
-                  }}>
+                  <button
+                    onClick={handleSubmit}
+                    disabled={!text.trim()}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border-none
+                      text-[13px] font-semibold transition-all duration-200
+                      ${text.trim()
+                        ? "bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED] text-white cursor-pointer"
+                        : "bg-white/[0.06] text-[#475569] cursor-not-allowed"}`}
+                  >
                     <IconSend size={14} />
-                    Generate Plan  <span style={{ fontSize: 10, opacity: 0.7 }}>⌘↵</span>
+                    Generate Plan&nbsp;<span className="text-[10px] opacity-70">⌘↵</span>
                   </button>
                 </div>
               </>
@@ -303,13 +298,13 @@ export function LifeCaptureModal() {
 
             {/* Step: Processing */}
             {step === "processing" && (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: "32px 0" }}>
-                <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg, #4A8FC2, #7C3AED)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <IconLoader2 size={24} color="#fff" className="animate-spin" style={{ animation: "spin 1s linear infinite" }} />
+              <div className="flex flex-col items-center gap-4 py-8">
+                <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED] flex items-center justify-center">
+                  <IconLoader2 size={24} color="#fff" className="animate-spin" />
                 </div>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#E2E8F0", marginBottom: 4 }}>Building your plan…</div>
-                  <div style={{ fontSize: 12, color: "#64748B" }}>Ollama is parsing your input and creating tasks & reminders</div>
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-[#E2E8F0] mb-1">Building your plan…</div>
+                  <div className="text-xs text-[#64748B]">Ollama is parsing your input and creating tasks &amp; reminders</div>
                 </div>
               </div>
             )}
@@ -317,23 +312,24 @@ export function LifeCaptureModal() {
             {/* Step: Preview */}
             {step === "preview" && result && (
               <>
-                <div style={{ fontSize: 12, color: "#34D399", display: "flex", alignItems: "center", gap: 6 }}>
+                <div className="text-xs text-[#34D399] flex items-center gap-1.5">
                   <IconCheck size={14} />
                   Plan created! Tasks and reminders have been scheduled.
                 </div>
                 <PlanPreview event={result} />
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => { setStep("input"); setText(""); setResult(null); }} style={{
-                    flex: 1, padding: "9px 14px", borderRadius: 10, background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)", color: "#94A3B8", cursor: "pointer", fontSize: 12, fontWeight: 500,
-                  }}>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setStep("input"); setText(""); setResult(null); }}
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-white/[0.05] border border-white/10
+                      text-[#94A3B8] cursor-pointer text-xs font-medium hover:bg-white/[0.08] transition-colors"
+                  >
                     + Add Another
                   </button>
-                  <button onClick={handleDone} style={{
-                    flex: 1, padding: "9px 14px", borderRadius: 10,
-                    background: "linear-gradient(135deg, #4A8FC2, #7C3AED)", border: "none",
-                    color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600,
-                  }}>
+                  <button
+                    onClick={handleDone}
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED]
+                      border-none text-white cursor-pointer text-[13px] font-semibold hover:opacity-90 transition-opacity"
+                  >
                     Done — View in Productivity
                   </button>
                 </div>
@@ -349,7 +345,6 @@ export function LifeCaptureModal() {
           50% { box-shadow: 0 4px 20px rgba(74,143,194,0.6), 0 0 0 8px rgba(74,143,194,0.1); }
         }
         @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
       `}</style>
     </>

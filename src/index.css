@@ -33,13 +33,19 @@
   -webkit-font-smoothing: antialiased;
 }
 
-body {
+html, body, #root {
+  height: 100%;
+  width: 100%;
   margin: 0;
-  padding: 24px;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
   background-color: var(--bg-app);
   color: var(--text-primary);
   font-family: var(--font-ui);
-  min-height: 100vh;
+  user-select: none;
 }
 
 /* Typography Utility Classes */
@@ -108,4 +114,10 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
+}
+
+/* Shimmer animation for indeterminate progress bars */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
 }

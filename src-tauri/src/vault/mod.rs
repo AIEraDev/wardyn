@@ -147,7 +147,7 @@ pub fn write_analytics_summary(
 }
 
 fn slugify(text: &str) -> String {
-    text.to_lowercase()
+    let slug = text.to_lowercase()
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect::<String>()
@@ -155,7 +155,15 @@ fn slugify(text: &str) -> String {
         .filter(|s| !s.is_empty())
         .take(5)
         .collect::<Vec<_>>()
-        .join("-")
+        .join("-");
+
+    if slug.is_empty() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+        format!("note-{}", ts % 100_000)
+    } else {
+        slug
+    }
 }
 
 fn escape_yaml(text: &str) -> String {

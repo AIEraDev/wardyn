@@ -20,54 +20,33 @@ function NoModelAlert({ onGoToSettings, onDismiss }: { onGoToSettings: () => voi
   return (
     <div
       role="alert"
-      style={{
-        position: "fixed", top: 28, left: "50%", transform: "translateX(-50%)",
-        zIndex: 70, width: "calc(100% - 2rem)", maxWidth: 560,
-        background: "linear-gradient(135deg, rgba(234,88,12,0.15), rgba(239,68,68,0.12))",
-        border: "1px solid rgba(234,88,12,0.45)",
-        borderRadius: 14, padding: "11px 16px",
-        display: "flex", alignItems: "center", gap: 12,
-        boxShadow: "0 8px 32px rgba(234,88,12,0.2)",
-        backdropFilter: "blur(12px)",
-        animation: "slideDown 0.3s ease",
-      }}
+      className="fixed top-7 left-1/2 -translate-x-1/2 z-[70] w-[calc(100%-2rem)] max-w-[560px]
+        bg-gradient-to-br from-[rgba(234,88,12,0.15)] to-[rgba(239,68,68,0.12)]
+        border border-[rgba(234,88,12,0.45)] rounded-2xl px-4 py-3
+        flex items-center gap-3 shadow-[0_8px_32px_rgba(234,88,12,0.2)]
+        backdrop-blur-md animate-[slideDown_0.3s_ease]"
     >
       {/* Pulsing dot */}
-      <div style={{ position: "relative", flexShrink: 0, width: 20, height: 20 }}>
-        <div style={{
-          position: "absolute", inset: 0, borderRadius: "50%",
-          background: "rgba(234,88,12,0.4)",
-          animation: "ping 1.4s ease infinite",
-        }} />
-        <div style={{
-          position: "absolute", inset: 3, borderRadius: "50%",
-          background: "#EA580C",
-        }} />
+      <div className="relative shrink-0 w-5 h-5">
+        <div className="absolute inset-0 rounded-full bg-[rgba(234,88,12,0.4)] animate-ping" />
+        <div className="absolute inset-[3px] rounded-full bg-[#EA580C]" />
       </div>
 
       {/* Message */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#FED7AA", marginBottom: 2 }}>
-          No AI model installed
-        </div>
-        <div style={{ fontSize: 11, color: "#FDBA74", lineHeight: 1.4 }}>
-          Wardyn needs at least one local Ollama model to generate briefs, tag notes, and process plans.
-          {" "}
-          <span style={{ color: "#FB923C", fontWeight: 600 }}>llama3.2</span> is recommended (2 GB).
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-bold text-[#FED7AA] mb-0.5">No AI model installed</div>
+        <div className="text-[11px] text-[#FDBA74] leading-snug">
+          Wardyn needs at least one local Ollama model to generate briefs, tag notes, and process plans.{" "}
+          <span className="text-[#FB923C] font-semibold">llama3.2</span> is recommended (2 GB).
         </div>
       </div>
 
       {/* CTA */}
       <button
         onClick={onGoToSettings}
-        style={{
-          flexShrink: 0, padding: "6px 13px", borderRadius: 9,
-          background: "rgba(234,88,12,0.25)", border: "1px solid rgba(234,88,12,0.5)",
-          color: "#FED7AA", cursor: "pointer", fontSize: 11, fontWeight: 700,
-          whiteSpace: "nowrap", transition: "all 0.15s",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = "rgba(234,88,12,0.4)"; }}
-        onMouseLeave={e => { e.currentTarget.style.background = "rgba(234,88,12,0.25)"; }}
+        className="shrink-0 px-3 py-1.5 rounded-lg bg-[rgba(234,88,12,0.25)] hover:bg-[rgba(234,88,12,0.4)]
+          border border-[rgba(234,88,12,0.5)] text-[#FED7AA] cursor-pointer text-[11px] font-bold
+          whitespace-nowrap transition-colors"
       >
         Install Model →
       </button>
@@ -76,24 +55,13 @@ function NoModelAlert({ onGoToSettings, onDismiss }: { onGoToSettings: () => voi
       <button
         onClick={onDismiss}
         aria-label="Dismiss"
-        style={{
-          flexShrink: 0, width: 22, height: 22, borderRadius: 6,
-          background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-          color: "#9AA4B2", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 14, fontWeight: 700, lineHeight: 1,
-          transition: "all 0.15s",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; }}
-        onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+        className="shrink-0 w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 border border-white/10
+          text-[#9AA4B2] cursor-pointer flex items-center justify-center text-sm font-bold transition-colors"
       >
         ×
       </button>
 
       <style>{`
-        @keyframes ping {
-          0%, 100% { transform: scale(1); opacity: 0.8; }
-          50% { transform: scale(1.6); opacity: 0; }
-        }
         @keyframes slideDown {
           from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
           to   { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -278,11 +246,13 @@ export default function App() {
   };
 
   return (
-    <>
-      <h2 style={{ position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0, pointerEvents: "none" }}>Wardyn desktop app: a sidebar with navigation and a main daily brief showing reply cards awaiting approval, a content brief card, and an auto-handled summary</h2>
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#0B0E13] relative">
+      <h2 className="sr-only">
+        Wardyn desktop app: a sidebar with navigation and a main daily brief showing reply cards awaiting approval, a content brief card, and an auto-handled summary
+      </h2>
 
       {/* macOS Seamless Window Titlebar Drag Area */}
-      <div data-tauri-drag-region className="h-6 w-full fixed top-0 left-0 z-40" />
+      <div data-tauri-drag-region className="h-6 w-full shrink-0 z-40" />
 
       <StatusBanner />
 
@@ -294,24 +264,14 @@ export default function App() {
         />
       )}
 
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          maxWidth: 960,
-          margin: "0 auto",
-          padding: "14px 14px 20px",
-          position: "relative",
-          zIndex: 0,
-          alignItems: "flex-start",
-        }}
-      >
+      {/* App shell - sidebar + scrollable content container */}
+      <div className="flex-1 flex gap-3 max-w-[960px] w-full mx-auto px-4 pb-4 pt-1 min-h-0 items-start overflow-hidden">
         <Sidebar />
-        <div style={{ flex: 1, minWidth: 0, overflowY: "auto", maxHeight: "calc(100vh - 34px)" }}>
+        <main className="flex-1 min-w-0 h-full overflow-y-auto pr-1">
           {renderActiveTab()}
-        </div>
+        </main>
       </div>
       <LifeCaptureModal />
-    </>
+    </div>
   );
 }

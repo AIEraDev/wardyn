@@ -43,9 +43,8 @@ function useSpeechRecognition(onResult: (t: string) => void) {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const shouldListenRef = useRef(false);
-  const accumulatedRef = useRef(""); // full transcript across all chunks
+  const accumulatedRef = useRef("");
   const onResultRef = useRef(onResult);
   useEffect(() => { onResultRef.current = onResult; }, [onResult]);
 
@@ -80,9 +79,8 @@ function useSpeechRecognition(onResult: (t: string) => void) {
     setVolume(0);
   }, []);
 
-  // Transcribes a blob via the Tauri backend (Ollama Whisper)
   const transcribeChunk = useCallback(async (blob: Blob) => {
-    if (blob.size < 1000) return; // skip near-empty chunks (silence)
+    if (blob.size < 500) return; // skip near-empty chunks (silence)
     try {
       const arrayBuffer = await blob.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
@@ -97,7 +95,6 @@ function useSpeechRecognition(onResult: (t: string) => void) {
       }
     } catch (err: any) {
       console.warn("Transcription error:", err);
-      // Don't kill the session for a single failed chunk — just log it
     }
   }, []);
 
@@ -106,21 +103,39 @@ function useSpeechRecognition(onResult: (t: string) => void) {
     setVolume(0);
     accumulatedRef.current = "";
 
-    // 1. Get microphone stream
+    // 1. Request mic — getUserMedia triggers the macOS permission prompt
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000, // Whisper works best at 16kHz
+        }
+      });
       mediaStreamRef.current = stream;
     } catch (err: any) {
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        setError("Microphone permission denied. Enable mic access in System Settings.");
+        setError("Microphone permission denied. Go to System Settings → Privacy → Microphone and enable Wardyn.");
+      } else if (err.name === "NotFoundError") {
+        setError("No microphone found. Connect a microphone and try again.");
       } else {
-        setError("Microphone unavailable. Check your recording device.");
+        setError(`Microphone unavailable: ${err.message}`);
       }
       return;
     }
 
-    // 2. Volume visualizer
+    // 2. Watch for track ending unexpectedly (macOS permission revoked mid-session)
+    stream.getAudioTracks().forEach(track => {
+      track.onended = () => {
+        if (shouldListenRef.current) {
+          setError("Microphone access was interrupted. Check System Settings → Privacy → Microphone.");
+          stop();
+        }
+      };
+    });
+
+    // 3. Volume visualizer
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContextClass) {
@@ -142,35 +157,41 @@ function useSpeechRecognition(onResult: (t: string) => void) {
       }
     } catch { /* visualizer optional */ }
 
-    // 3. Pick best supported MIME type
-    const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"]
-      .find(m => MediaRecorder.isTypeSupported(m)) || "";
+    // 4. Pick best MIME type — wav is most compatible with Whisper
+    const mimeType = [
+      "audio/wav",
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/mp4",
+    ].find(m => MediaRecorder.isTypeSupported(m)) || "";
 
-    // 4. Start MediaRecorder — fires ondataavailable every 8s for rolling transcription
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    // 5. Start recording — 4s slices for responsive transcription feedback
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    } catch {
+      // Fallback: let browser pick the format
+      recorder = new MediaRecorder(stream);
+    }
     recorderRef.current = recorder;
-    chunksRef.current = [];
 
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) {
-        // Transcribe each time-slice independently for live feedback
         transcribeChunk(e.data);
       }
     };
 
     recorder.onerror = (e: any) => {
       console.warn("MediaRecorder error:", e);
-    };
-
-    recorder.onstop = () => {
-      // Final flush already handled by last ondataavailable
+      setError("Recording error. Please try again.");
+      stop();
     };
 
     shouldListenRef.current = true;
     setListening(true);
-    // timeslice: send a chunk every 8s so the user sees rolling results
-    recorder.start(8000);
-  }, [transcribeChunk]);
+    recorder.start(4000); // 4s slices — faster feedback than 8s
+  }, [transcribeChunk, stop]);
 
   return { listening, supported, error, volume, start, stop };
 }

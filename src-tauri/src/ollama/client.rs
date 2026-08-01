@@ -156,6 +156,48 @@ pub struct ModelPullProgressPayload {
     pub error: Option<String>,
 }
 
+/// Purges all stale `-partial*` blob files from the Ollama blobs directory.
+/// Ollama 0.32+ downloads blobs in parallel chunks — each chunk writes a
+/// `sha256-<digest>-partial-N` temp file. Interrupted downloads leave these
+/// behind, causing "remove ... no such file or directory" on the next pull
+/// because Ollama tries to clean up a chunk index that was never written.
+/// We wipe ALL partial files before every pull so downloads always start clean.
+fn purge_partial_blobs(app: &AppHandle, model_name: &str) {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let blobs_dir = std::path::Path::new(&home).join(".ollama/models/blobs");
+
+    if !blobs_dir.exists() {
+        return;
+    }
+
+    let mut removed = 0usize;
+    if let Ok(entries) = std::fs::read_dir(&blobs_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.contains("-partial") {
+                let _ = std::fs::remove_file(entry.path());
+                removed += 1;
+            }
+        }
+    }
+
+    if removed > 0 {
+        let _ = app.emit(
+            "ollama-pull-progress",
+            ModelPullProgressPayload {
+                model: model_name.to_string(),
+                status: format!("Cleaned {} stale chunk(s). Starting fresh download...", removed),
+                completed: 0,
+                total: 0,
+                percent: 0.0,
+                done: false,
+                error: None,
+            },
+        );
+    }
+}
+
 pub async fn stream_ollama_model_install(
     app: AppHandle,
     model_name: String,
@@ -189,14 +231,21 @@ pub async fn stream_ollama_model_install(
         return Err(msg.to_string());
     }
 
-    // ── 2. Start streaming pull ───────────────────────────────────────────────
+    // ── 2. Pre-pull cleanup: wipe all stale -partial* blobs ──────────────────
+    // Ollama 0.32+ uses parallel chunk downloads writing sha256-<digest>-partial-N
+    // files. If any previous attempt was interrupted, those files remain and
+    // cause "remove ... no such file or directory" on the next pull attempt.
+    // We purge them before every pull so the download always starts clean.
+    purge_partial_blobs(&app, &model_name);
+
+    // ── 3. Start streaming pull ───────────────────────────────────────────────
     let client = Client::builder()
         .timeout(Duration::from_secs(60 * 60)) // 1 h — large models take a while
         .build()
         .unwrap_or_default();
 
     let payload = serde_json::json!({
-        "name": model_name,
+        "model": model_name,
         "stream": true
     });
 
@@ -273,6 +322,30 @@ pub async fn stream_ollama_model_install(
                 let is_error = v.get("error").is_some();
                 let err_msg = v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string());
 
+                // ── Stale blob detection: Ollama 0.32 fails with "remove ... no such file"
+                // when parallel chunk temp files are missing. We've already purged them
+                // in pre-flight, but if it still happens mid-stream (race condition),
+                // purge and surface a clear retry message.
+                if let Some(ref msg) = err_msg {
+                    if msg.contains("no such file or directory") || msg.contains("remove ") {
+                        purge_partial_blobs(&app, &model_name);
+                        let retry_msg = "Chunk conflict resolved. Click Install again to retry.".to_string();
+                        let _ = app.emit(
+                            "ollama-pull-progress",
+                            ModelPullProgressPayload {
+                                model: model_name.clone(),
+                                status: "Cleaned up chunk conflict. Ready to retry.".to_string(),
+                                completed: 0,
+                                total: 0,
+                                percent: 0.0,
+                                done: true,
+                                error: Some(retry_msg.clone()),
+                            },
+                        );
+                        return Err(retry_msg);
+                    }
+                }
+
                 let _ = app.emit(
                     "ollama-pull-progress",
                     ModelPullProgressPayload {
@@ -314,7 +387,7 @@ pub async fn stream_ollama_model_install(
 pub async fn trigger_ollama_model_install(model_name: String) -> Result<String, String> {
     let client = Client::new();
     let payload = serde_json::json!({
-        "name": model_name,
+        "model": model_name,
         "stream": false
     });
 

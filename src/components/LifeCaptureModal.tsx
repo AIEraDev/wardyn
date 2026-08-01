@@ -35,30 +35,41 @@ function relDue(iso: string | null) {
 }
 
 // ─── Speech Recognition & Microphone Hook ────────────────────────────────────
+// Uses MediaRecorder to capture audio in chunks, then sends each chunk to the
+// Tauri backend which transcribes via Ollama Whisper — no webkitSpeechRecognition
+// (which is blocked on http:// in WKWebView).
 
 function useSpeechRecognition(onResult: (t: string) => void) {
-  const recogRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const shouldListenRef = useRef(false);
+  const accumulatedRef = useRef(""); // full transcript across all chunks
+  const onResultRef = useRef(onResult);
+  useEffect(() => { onResultRef.current = onResult; }, [onResult]);
+
   const [listening, setListening] = useState(false);
   const [supported, setSupported] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [volume, setVolume] = useState(0); // 0..100 for live wave animation
+  const [volume, setVolume] = useState(0);
 
-  // Check support on mount
   useEffect(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const hasMedia = typeof navigator !== "undefined" && navigator.mediaDevices && !!navigator.mediaDevices.getUserMedia;
-    setSupported(!!(SR || hasMedia));
+    setSupported(
+      typeof navigator !== "undefined" &&
+      !!navigator.mediaDevices?.getUserMedia &&
+      typeof MediaRecorder !== "undefined"
+    );
   }, []);
 
   const stop = useCallback(() => {
-    if (recogRef.current) {
-      try { recogRef.current.stop(); } catch {}
-      recogRef.current = null;
+    shouldListenRef.current = false;
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      try { recorderRef.current.stop(); } catch {}
     }
+    recorderRef.current = null;
     if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
       mediaStreamRef.current = null;
     }
     if (audioContextRef.current) {
@@ -69,110 +80,97 @@ function useSpeechRecognition(onResult: (t: string) => void) {
     setVolume(0);
   }, []);
 
+  // Transcribes a blob via the Tauri backend (Ollama Whisper)
+  const transcribeChunk = useCallback(async (blob: Blob) => {
+    if (blob.size < 1000) return; // skip near-empty chunks (silence)
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      const { invoke } = await import("@tauri-apps/api/core");
+      const text: string = await invoke("transcribe_audio_command", {
+        audioBytes: Array.from(uint8),
+        mimeType: blob.type || "audio/webm",
+      });
+      if (text && text.trim()) {
+        accumulatedRef.current = (accumulatedRef.current + " " + text).trim();
+        onResultRef.current(accumulatedRef.current);
+      }
+    } catch (err: any) {
+      console.warn("Transcription error:", err);
+      // Don't kill the session for a single failed chunk — just log it
+    }
+  }, []);
+
   const start = useCallback(async () => {
     setError(null);
     setVolume(0);
+    accumulatedRef.current = "";
 
-    // 1. Request microphone permission via Web Media API first
-    let stream: MediaStream | null = null;
+    // 1. Get microphone stream
+    let stream: MediaStream;
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaStreamRef.current = stream;
-
-        // Set up Web Audio volume analyzer for dynamic wave animation
-        try {
-          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-          if (AudioContextClass) {
-            const ctx = new AudioContextClass();
-            audioContextRef.current = ctx;
-            const source = ctx.createMediaStreamSource(stream);
-            const analyser = ctx.createAnalyser();
-            analyser.fftSize = 64;
-            source.connect(analyser);
-
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            const updateVolume = () => {
-              if (!recogRef.current && !mediaStreamRef.current) return;
-              analyser.getByteFrequencyData(dataArray);
-              const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-              setVolume(Math.min(100, Math.round((avg / 128) * 100)));
-              requestAnimationFrame(updateVolume);
-            };
-            updateVolume();
-          }
-        } catch {
-          // Audio visualizer fallback — ignore if restricted
-        }
-      }
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
     } catch (err: any) {
-      console.warn("Microphone access error:", err);
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        setError("Microphone permission denied. Enable microphone access in System Settings.");
+        setError("Microphone permission denied. Enable mic access in System Settings.");
       } else {
-        setError("Microphone input unavailable. Check your recording device.");
+        setError("Microphone unavailable. Check your recording device.");
       }
-      stop();
       return;
     }
 
-    // 2. Initialize Speech Recognition engine
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SR) {
-      try {
-        const r = new SR();
-        r.continuous = true;
-        r.interimResults = true;
-        r.lang = "en-US";
-
-        let finalTranscript = "";
-
-        r.onresult = (e: any) => {
-          let current = "";
-          for (let i = 0; i < e.results.length; i++) {
-            const res = e.results[i];
-            const text = res[0].transcript;
-            if (res.isFinal) {
-              finalTranscript += text + " ";
-            } else {
-              current += text;
-            }
-          }
-          const full = (finalTranscript + current).trim();
-          if (full) onResult(full);
+    // 2. Volume visualizer
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        const ctx = new AudioContextClass();
+        audioContextRef.current = ctx;
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 64;
+        source.connect(analyser);
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const tick = () => {
+          if (!shouldListenRef.current) return;
+          analyser.getByteFrequencyData(dataArray);
+          const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+          setVolume(Math.min(100, Math.round((avg / 128) * 100)));
+          requestAnimationFrame(tick);
         };
-
-        r.onerror = (e: any) => {
-          console.warn("Speech recognition error:", e.error);
-          if (e.error === "not-allowed") {
-            setError("Microphone permission blocked. Please allow mic access.");
-          } else if (e.error === "no-speech") {
-            // Keep listening, don't hard error
-          } else if (e.error === "network") {
-            setError("Speech engine network error. You can type your input above.");
-          }
-        };
-
-        r.onend = () => {
-          // If still marked listening but ended naturally, attempt restart or close
-          setListening(false);
-          setVolume(0);
-        };
-
-        recogRef.current = r;
-        r.start();
-        setListening(true);
-        return;
-      } catch (err: any) {
-        console.warn("Failed to start SpeechRecognition:", err);
+        tick();
       }
-    }
+    } catch { /* visualizer optional */ }
 
-    // If SpeechRecognition is not available in WKWebView, we still captured the stream!
-    // Show user-friendly notice that speech-to-text requires typing or WebKit Speech support
+    // 3. Pick best supported MIME type
+    const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"]
+      .find(m => MediaRecorder.isTypeSupported(m)) || "";
+
+    // 4. Start MediaRecorder — fires ondataavailable every 8s for rolling transcription
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    recorderRef.current = recorder;
+    chunksRef.current = [];
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        // Transcribe each time-slice independently for live feedback
+        transcribeChunk(e.data);
+      }
+    };
+
+    recorder.onerror = (e: any) => {
+      console.warn("MediaRecorder error:", e);
+    };
+
+    recorder.onstop = () => {
+      // Final flush already handled by last ondataavailable
+    };
+
+    shouldListenRef.current = true;
     setListening(true);
-    setError("Speech-to-text API is not built into this WebKit build. Please type your plan in the text box.");
-  }, [onResult, stop]);
+    // timeslice: send a chunk every 8s so the user sees rolling results
+    recorder.start(8000);
+  }, [transcribeChunk]);
 
   return { listening, supported, error, volume, start, stop };
 }
@@ -237,6 +235,27 @@ export function LifeCaptureModal() {
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<"input" | "processing" | "preview">("input");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Whisper readiness check ───────────────────────────────────────────────
+  const [whisperReady, setWhisperReady] = useState<boolean | null>(null); // null = unchecked
+
+  useEffect(() => {
+    if (!open || whisperReady !== null) return;
+    const check = async () => {
+      if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+        setWhisperReady(false);
+        return;
+      }
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const result = await invoke<{ installed: boolean; ollama_running: boolean }>("check_whisper_status_command");
+        setWhisperReady(result.installed && result.ollama_running);
+      } catch {
+        setWhisperReady(false);
+      }
+    };
+    check();
+  }, [open, whisperReady]);
 
   const handleVoiceResult = useCallback((t: string) => setText(t), []);
   const { listening, supported, error: micError, volume, start, stop } = useSpeechRecognition(handleVoiceResult);
@@ -345,7 +364,7 @@ export function LifeCaptureModal() {
                   {listening && (
                     <div className="absolute top-2.5 right-2.5 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)]">
                       <div className="w-2 h-2 rounded-full bg-[#EF4444] animate-ping" />
-                      <span className="text-[10px] font-mono font-semibold text-[#EF4444]">Live Voice</span>
+                      <span className="text-[10px] font-mono font-semibold text-[#EF4444]">Recording</span>
                       {/* Audio waveform bars */}
                       <div className="flex items-center gap-0.5 h-3 ml-1">
                         <div className="w-0.5 rounded-full bg-[#EF4444] transition-all duration-75" style={{ height: `${Math.max(4, volume * 0.12)}px` }} />
@@ -384,23 +403,40 @@ export function LifeCaptureModal() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2">
-                  {/* Voice Button */}
+                  {/* Voice Button — gated on Whisper being installed */}
                   {supported && (
-                    <button
-                      type="button"
-                      onClick={listening ? stop : start}
-                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-medium cursor-pointer transition-all duration-200
-                        ${listening
-                          ? "border-[rgba(239,68,68,0.5)] bg-[rgba(239,68,68,0.15)] text-[#EF4444] shadow-[0_0_12px_rgba(239,68,68,0.25)]"
-                          : "border-white/10 bg-white/[0.05] text-[#94A3B8] hover:text-[#E2E8F0] hover:bg-white/[0.08]"}`}
-                    >
-                      {listening ? (
-                        <IconMicrophoneOff size={14} className="animate-pulse" />
-                      ) : (
-                        <IconMicrophone size={14} />
-                      )}
-                      {listening ? "Stop Recording" : "Voice"}
-                    </button>
+                    whisperReady === false ? (
+                      // Whisper not ready — show a nudge instead of a broken mic button
+                      <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[#EF4444] text-xs">
+                        <IconMicrophoneOff size={14} />
+                        <span>
+                          Voice unavailable —{" "}
+                          <span className="underline cursor-default" title="Go to Settings → Voice Capture to install Whisper">
+                            install Whisper in Settings
+                          </span>
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={listening ? stop : start}
+                        disabled={whisperReady === null} // still checking
+                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-medium cursor-pointer transition-all duration-200
+                          ${listening
+                            ? "border-[rgba(239,68,68,0.5)] bg-[rgba(239,68,68,0.15)] text-[#EF4444] shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+                            : "border-white/10 bg-white/[0.05] text-[#94A3B8] hover:text-[#E2E8F0] hover:bg-white/[0.08]"
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        {listening ? (
+                          <IconMicrophoneOff size={14} className="animate-pulse" />
+                        ) : whisperReady === null ? (
+                          <IconLoader2 size={14} className="animate-spin" />
+                        ) : (
+                          <IconMicrophone size={14} />
+                        )}
+                        {listening ? "Stop Recording" : whisperReady === null ? "Checking..." : "Voice"}
+                      </button>
+                    )
                   )}
                   <button
                     type="button"

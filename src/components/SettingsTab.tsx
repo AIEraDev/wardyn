@@ -139,10 +139,51 @@ export const SettingsTab: React.FC = () => {
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [setupTarget, setSetupTarget] = useState<{ id: string; name: string } | null>(null);
 
+  // ── Whisper status ────────────────────────────────────────────────────────
+  const [whisperStatus, setWhisperStatus] = useState<{
+    checked: boolean;
+    installed: boolean;
+    modelName: string | null;
+    ollamaRunning: boolean;
+  }>({ checked: false, installed: false, modelName: null, ollamaRunning: false });
+  const [installingWhisper, setInstallingWhisper] = useState(false);
+
+  const checkWhisper = async () => {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<{ installed: boolean; model_name: string | null; ollama_running: boolean }>(
+        'check_whisper_status_command'
+      );
+      setWhisperStatus({
+        checked: true,
+        installed: result.installed,
+        modelName: result.model_name,
+        ollamaRunning: result.ollama_running,
+      });
+    } catch {
+      setWhisperStatus({ checked: true, installed: false, modelName: null, ollamaRunning: false });
+    }
+  };
+
+  const handleInstallWhisper = async () => {
+    setInstallingWhisper(true);
+    await sendDesktopNotification('📥 Installing Whisper', 'Downloading whisper model for voice capture...');
+    await installOllamaModel('whisper');
+    // Re-check after a short delay to pick up the new model
+    setTimeout(async () => {
+      await checkWhisper();
+      setInstallingWhisper(false);
+    }, 3000);
+  };
+
   // Auto-refresh installed models list when any download finishes
   useEffect(() => {
     const anyJustFinished = Object.values(pullProgress).some((p) => p.done && !p.error);
-    if (anyJustFinished) fetchModels();
+    if (anyJustFinished) {
+      fetchModels();
+      checkWhisper();
+    }
   }, [pullProgress]);
 
   const fetchModels = async () => {
@@ -162,18 +203,35 @@ export const SettingsTab: React.FC = () => {
     setCheckingUpdate(true);
     setUpdateStatus("Checking GitHub Releases...");
     try {
+      const { getVersion } = await import("@tauri-apps/api/app");
+      const currentVersion = await getVersion();
+
       const { check } = await import("@tauri-apps/plugin-updater");
       const update = await check();
       if (update?.available) {
         setUpdateStatus(`✨ New version v${update.version} available! Downloading...`);
-        await update.downloadAndInstall();
-        setUpdateStatus(`✅ Update installed! Please restart Wardyn.`);
+        let downloaded = 0;
+        let total = 0;
+        await update.downloadAndInstall((event) => {
+          if (event.event === "Started") {
+            total = event.data.contentLength ?? 0;
+            setUpdateStatus(`⬇️ Downloading v${update.version}...`);
+          } else if (event.event === "Progress") {
+            downloaded += event.data.chunkLength;
+            if (total > 0) {
+              const pct = Math.round((downloaded / total) * 100);
+              setUpdateStatus(`⬇️ Downloading v${update.version}... ${pct}%`);
+            }
+          } else if (event.event === "Finished") {
+            setUpdateStatus(`✅ Update installed! Please restart Wardyn.`);
+          }
+        });
       } else {
-        setUpdateStatus("Wardyn is up to date (v0.1.0).");
+        setUpdateStatus(`Wardyn v${currentVersion} is up to date.`);
       }
     } catch (err: any) {
-      console.warn("Update check notice:", err);
-      setUpdateStatus("Wardyn v0.1.0 is up to date.");
+      console.warn("Update check error:", err);
+      setUpdateStatus(`Unable to check for updates. Try again later.`);
     } finally {
       setCheckingUpdate(false);
     }
@@ -182,6 +240,7 @@ export const SettingsTab: React.FC = () => {
   useEffect(() => {
     checkAutoStartStatus();
     fetchModels();
+    checkWhisper();
   }, [checkAutoStartStatus]);
 
   const handleInstallModel = async (modelId: string, modelName: string) => {
@@ -325,11 +384,13 @@ export const SettingsTab: React.FC = () => {
               <div
                 key={model.id}
                 className={`p-3.5 rounded-lg border flex flex-col gap-2 transition-all ${
-                  isErrored
-                    ? 'bg-[rgba(239,68,68,0.04)] border-[rgba(239,68,68,0.3)]'
-                    : isPowerTier
-                      ? 'bg-[#181E27] border-[rgba(232,162,61,0.3)] shadow-[0_0_10px_rgba(232,162,61,0.04)]'
-                      : 'bg-[#181E27] border-[#242B35]'
+                  isErrored && progress?.error?.includes('Corrupted partial')
+                    ? 'bg-[rgba(232,162,61,0.04)] border-[rgba(232,162,61,0.3)]'
+                    : isErrored
+                      ? 'bg-[rgba(239,68,68,0.04)] border-[rgba(239,68,68,0.3)]'
+                      : isPowerTier
+                        ? 'bg-[#181E27] border-[rgba(232,162,61,0.3)] shadow-[0_0_10px_rgba(232,162,61,0.04)]'
+                        : 'bg-[#181E27] border-[#242B35]'
                 }`}
               >
                 <div className="flex items-center justify-between gap-4">
@@ -387,12 +448,36 @@ export const SettingsTab: React.FC = () => {
                 </div>
 
                 {/* Error state */}
-                {isErrored && progress?.error && (
-                  <div className="mt-1 pt-2 border-t border-[rgba(239,68,68,0.2)] flex items-start gap-2">
-                    <span className="text-[#EF4444] text-[10px] shrink-0 mt-0.5">⚠</span>
-                    <p className="text-[11px] text-[#EF4444] m-0 leading-snug">{progress.error}</p>
-                  </div>
-                )}
+                {isErrored && progress?.error && (() => {
+                  const isStaleBlob = progress.error.includes('Corrupted partial') || progress.error.includes('Cleaning up');
+                  return (
+                    <div className={`mt-1 pt-2 border-t flex items-start gap-2 ${
+                      isStaleBlob
+                        ? 'border-[rgba(232,162,61,0.25)]'
+                        : 'border-[rgba(239,68,68,0.2)]'
+                    }`}>
+                      <span className={`text-[10px] shrink-0 mt-0.5 ${isStaleBlob ? 'text-[#E8A23D]' : 'text-[#EF4444]'}`}>
+                        {isStaleBlob ? '🔄' : '⚠'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[11px] m-0 leading-snug ${isStaleBlob ? 'text-[#E8A23D]' : 'text-[#EF4444]'}`}>
+                          {isStaleBlob
+                            ? 'Stale partial download cleared. Ready to retry.'
+                            : progress.error}
+                        </p>
+                        {isStaleBlob && (
+                          <button
+                            type="button"
+                            onClick={() => handleInstallModel(model.id, model.name)}
+                            className="mt-1.5 font-mono text-[11px] px-2.5 py-1 rounded-md bg-[rgba(232,162,61,0.15)] text-[#E8A23D] border border-[rgba(232,162,61,0.3)] hover:bg-[rgba(232,162,61,0.25)] transition-colors cursor-pointer"
+                          >
+                            ↩ Retry Install
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Download Progress Bar — shown for both pending (before first event) and active downloads */}
                 {isDownloading && (
@@ -426,6 +511,112 @@ export const SettingsTab: React.FC = () => {
             );
           })}
         </div>
+      </div>
+
+      {/* Voice Capture — Whisper Model Card */}
+      <div className={`p-5 rounded-xl border space-y-4 ${
+        whisperStatus.installed
+          ? 'bg-[#151A21] border-[rgba(52,211,153,0.25)]'
+          : 'bg-[rgba(239,68,68,0.03)] border-[rgba(239,68,68,0.25)]'
+      }`}>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-lg border ${
+              whisperStatus.installed
+                ? 'bg-[rgba(52,211,153,0.12)] text-[#34D399] border-[rgba(52,211,153,0.3)]'
+                : 'bg-[rgba(239,68,68,0.1)] text-[#EF4444] border-[rgba(239,68,68,0.25)]'
+            }`}>
+              <IconVolume size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#F0F4F8]">Voice Capture — Whisper STT</p>
+              <p className="text-xs text-[#9AA4B2]">
+                {!whisperStatus.checked
+                  ? 'Checking status...'
+                  : !whisperStatus.ollamaRunning
+                  ? 'Ollama is not running — start it to use voice capture'
+                  : whisperStatus.installed
+                  ? `Ready — using ${whisperStatus.modelName}`
+                  : 'Whisper model not installed — voice capture is unavailable'}
+              </p>
+            </div>
+          </div>
+
+          <div className="shrink-0 flex items-center gap-2">
+            {whisperStatus.installed ? (
+              <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-3 py-1 rounded-md border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
+                <IconCheck size={14} /> Ready
+              </span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={checkWhisper}
+                  className="font-mono text-xs px-2.5 py-1.5 rounded-md bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#F0F4F8] flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <IconRefresh size={13} /> Check
+                </button>
+                {whisperStatus.ollamaRunning && (
+                  <button
+                    type="button"
+                    disabled={installingWhisper || !!pullProgress['whisper']}
+                    onClick={handleInstallWhisper}
+                    className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#4A8FC2] text-black font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                  >
+                    {(installingWhisper || pullProgress['whisper']) ? (
+                      <><IconLoader2 size={13} className="animate-spin" /> Installing...</>
+                    ) : (
+                      <><IconDownload size={13} /> Install Whisper</>
+                    )}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Whisper install progress */}
+        {pullProgress['whisper'] && !pullProgress['whisper'].done && (
+          <div className="space-y-1.5 pt-3 border-t border-[#242B35]">
+            <div className="flex items-center justify-between text-[11px] font-mono">
+              <span className="text-[#9AA4B2] flex items-center gap-1.5">
+                <IconLoader2 size={11} className="animate-spin" />
+                {pullProgress['whisper'].status || 'Downloading Whisper...'}
+              </span>
+              {pullProgress['whisper'].percent > 0 && (
+                <span className="text-[#4A8FC2] font-semibold">
+                  {pullProgress['whisper'].percent.toFixed(1)}%
+                </span>
+              )}
+            </div>
+            <div className="w-full h-1.5 bg-[#0E1318] rounded-full overflow-hidden border border-[#242B35]">
+              <div
+                className="h-full bg-gradient-to-r from-[#4A8FC2] to-[#34D399] transition-all duration-300 rounded-full"
+                style={{ width: `${Math.max(pullProgress['whisper'].percent, 5)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {pullProgress['whisper']?.done && pullProgress['whisper']?.error && (
+          <div className="flex items-start gap-2 pt-2 border-t border-[rgba(239,68,68,0.2)]">
+            <span className="text-[#EF4444] text-[10px] mt-0.5 shrink-0">⚠</span>
+            <p className="text-[11px] text-[#EF4444] m-0 leading-snug">{pullProgress['whisper'].error}</p>
+          </div>
+        )}
+
+        {/* How to use note */}
+        {!whisperStatus.installed && whisperStatus.checked && !whisperStatus.ollamaRunning && (
+          <p className="text-[11px] text-[#7A8492] font-mono m-0 pt-1">
+            Run <span className="text-[#F0F4F8] bg-[#0E1318] px-1.5 py-0.5 rounded">ollama serve</span> in your terminal, then click Check.
+          </p>
+        )}
+        {whisperStatus.installed && (
+          <p className="text-[11px] text-[#7A8492] m-0">
+            Voice capture is active. Click the mic button in the <strong className="text-[#9AA4B2]">Tell Wardyn</strong> panel to dictate life plans.
+          </p>
+        )}
       </div>
 
       {/* Gmail Integration Card */}

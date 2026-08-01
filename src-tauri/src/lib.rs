@@ -374,6 +374,58 @@ fn stop_speech_command() {
 }
 
 #[tauri::command]
+async fn transcribe_audio_command(audio_bytes: Vec<u8>, mime_type: String) -> Result<String, String> {
+    speech::transcribe_audio_bytes(audio_bytes, &mime_type).await
+}
+
+/// Returns whether a Whisper model is installed in Ollama and what its name is.
+#[derive(Debug, Clone, serde::Serialize)]
+struct WhisperStatus {
+    installed: bool,
+    model_name: Option<String>,
+    ollama_running: bool,
+}
+
+#[tauri::command]
+async fn check_whisper_status_command() -> Result<WhisperStatus, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(4))
+        .build()
+        .unwrap_or_default();
+
+    // Check Ollama is reachable first
+    let ollama_running = client.get("http://localhost:11434").send().await.is_ok();
+    if !ollama_running {
+        return Ok(WhisperStatus { installed: false, model_name: None, ollama_running: false });
+    }
+
+    // Fetch installed model list
+    let resp = client
+        .get("http://localhost:11434/api/tags")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let models = body["models"].as_array().cloned().unwrap_or_default();
+
+    let whisper_model = models.iter().find_map(|m| {
+        let name = m["name"].as_str().unwrap_or("");
+        if name.to_lowercase().contains("whisper") {
+            Some(name.to_string())
+        } else {
+            None
+        }
+    });
+
+    Ok(WhisperStatus {
+        installed: whisper_model.is_some(),
+        model_name: whisper_model,
+        ollama_running: true,
+    })
+}
+
+#[tauri::command]
 fn get_vault_path_command(state: State<'_, DbState>) -> Result<Option<String>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     db::get_app_setting(&conn, "vault_path").map_err(|e| e.to_string())
@@ -888,6 +940,7 @@ pub fn run() {
             refresh_weekly_review_command,
             speak_text_command,
             stop_speech_command,
+            transcribe_audio_command,
             get_vault_path_command,
             set_vault_path_command,
             add_custom_feed_command,
@@ -938,7 +991,8 @@ pub fn run() {
             delete_habit_reminder_command,
             toggle_habit_reminder_command,
             check_ollama_status_command,
-            start_ollama_command
+            start_ollama_command,
+            check_whisper_status_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

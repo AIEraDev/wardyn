@@ -1431,8 +1431,14 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         );
         set({ ollamaModels: models, ollamaChecked: true });
       } catch {
-        // Ollama not running — treat as zero models
-        set({ ollamaModels: [], ollamaChecked: true });
+        // Ollama not running — only mark checked (showing banner) after a retry.
+        // First failure is silently ignored; App.tsx retries after 3s.
+        const alreadyChecked = get().ollamaChecked;
+        if (alreadyChecked) {
+          // Second+ failure — Ollama is genuinely unavailable, show the banner
+          set({ ollamaModels: [], ollamaChecked: true });
+        }
+        // First failure: leave ollamaChecked: false so banner stays hidden until retry
       }
     } else {
       set({ ollamaChecked: true });

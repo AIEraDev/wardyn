@@ -114,6 +114,8 @@ export default function App() {
       // AI model presence check & background download listener (must run early)
       checkOllamaModels();
       useQueueStore.getState().initOllamaProgressListener();
+      // Retry model check after 3s — Ollama may still be starting up on boot
+      setTimeout(() => checkOllamaModels(), 3000);
 
       // Auto-generate morning brief on first launch of the day (cached if already done)
       fetchMorningBrief();
@@ -217,7 +219,6 @@ export default function App() {
   }, [gmailAccounts, syncIntervalMinutes, syncGmail, syncLinkedInTimeline, checkPendingReminders, checkOllamaModels]);
 
   const showModelAlert = ollamaChecked && ollamaModels.length === 0 && !modelAlertDismissed;
-
   const renderActiveTab = () => {
     switch (activeTab) {
       case "today":

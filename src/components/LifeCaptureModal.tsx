@@ -34,41 +34,147 @@ function relDue(iso: string | null) {
   return `in ${diff}d`;
 }
 
-// ─── Speech Recognition hook ─────────────────────────────────────────────────
+// ─── Speech Recognition & Microphone Hook ────────────────────────────────────
 
 function useSpeechRecognition(onResult: (t: string) => void) {
   const recogRef = useRef<any>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const [listening, setListening] = useState(false);
-  const [supported, setSupported] = useState(false);
+  const [supported, setSupported] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [volume, setVolume] = useState(0); // 0..100 for live wave animation
 
+  // Check support on mount
   useEffect(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SR) {
-      setSupported(true);
-      const r = new SR();
-      r.continuous = true;
-      r.interimResults = true;
-      r.lang = "en-US";
-      r.onresult = (e: any) => {
-        const transcript = Array.from(e.results as any[])
-          .map((res: any) => res[0].transcript)
-          .join("");
-        onResult(transcript);
-      };
-      r.onend = () => setListening(false);
-      recogRef.current = r;
-    }
-  }, [onResult]);
-
-  const start = useCallback(() => {
-    if (recogRef.current) { recogRef.current.start(); setListening(true); }
+    const hasMedia = typeof navigator !== "undefined" && navigator.mediaDevices && !!navigator.mediaDevices.getUserMedia;
+    setSupported(!!(SR || hasMedia));
   }, []);
 
   const stop = useCallback(() => {
-    if (recogRef.current) { recogRef.current.stop(); setListening(false); }
+    if (recogRef.current) {
+      try { recogRef.current.stop(); } catch {}
+      recogRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try { audioContextRef.current.close(); } catch {}
+      audioContextRef.current = null;
+    }
+    setListening(false);
+    setVolume(0);
   }, []);
 
-  return { listening, supported, start, stop };
+  const start = useCallback(async () => {
+    setError(null);
+    setVolume(0);
+
+    // 1. Request microphone permission via Web Media API first
+    let stream: MediaStream | null = null;
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+
+        // Set up Web Audio volume analyzer for dynamic wave animation
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            const ctx = new AudioContextClass();
+            audioContextRef.current = ctx;
+            const source = ctx.createMediaStreamSource(stream);
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 64;
+            source.connect(analyser);
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const updateVolume = () => {
+              if (!recogRef.current && !mediaStreamRef.current) return;
+              analyser.getByteFrequencyData(dataArray);
+              const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+              setVolume(Math.min(100, Math.round((avg / 128) * 100)));
+              requestAnimationFrame(updateVolume);
+            };
+            updateVolume();
+          }
+        } catch {
+          // Audio visualizer fallback — ignore if restricted
+        }
+      }
+    } catch (err: any) {
+      console.warn("Microphone access error:", err);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setError("Microphone permission denied. Enable microphone access in System Settings.");
+      } else {
+        setError("Microphone input unavailable. Check your recording device.");
+      }
+      stop();
+      return;
+    }
+
+    // 2. Initialize Speech Recognition engine
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SR) {
+      try {
+        const r = new SR();
+        r.continuous = true;
+        r.interimResults = true;
+        r.lang = "en-US";
+
+        let finalTranscript = "";
+
+        r.onresult = (e: any) => {
+          let current = "";
+          for (let i = 0; i < e.results.length; i++) {
+            const res = e.results[i];
+            const text = res[0].transcript;
+            if (res.isFinal) {
+              finalTranscript += text + " ";
+            } else {
+              current += text;
+            }
+          }
+          const full = (finalTranscript + current).trim();
+          if (full) onResult(full);
+        };
+
+        r.onerror = (e: any) => {
+          console.warn("Speech recognition error:", e.error);
+          if (e.error === "not-allowed") {
+            setError("Microphone permission blocked. Please allow mic access.");
+          } else if (e.error === "no-speech") {
+            // Keep listening, don't hard error
+          } else if (e.error === "network") {
+            setError("Speech engine network error. You can type your input above.");
+          }
+        };
+
+        r.onend = () => {
+          // If still marked listening but ended naturally, attempt restart or close
+          setListening(false);
+          setVolume(0);
+        };
+
+        recogRef.current = r;
+        r.start();
+        setListening(true);
+        return;
+      } catch (err: any) {
+        console.warn("Failed to start SpeechRecognition:", err);
+      }
+    }
+
+    // If SpeechRecognition is not available in WKWebView, we still captured the stream!
+    // Show user-friendly notice that speech-to-text requires typing or WebKit Speech support
+    setListening(true);
+    setError("Speech-to-text API is not built into this WebKit build. Please type your plan in the text box.");
+  }, [onResult, stop]);
+
+  return { listening, supported, error, volume, start, stop };
 }
 
 // ─── Plan Preview Card ────────────────────────────────────────────────────────
@@ -133,7 +239,10 @@ export function LifeCaptureModal() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleVoiceResult = useCallback((t: string) => setText(t), []);
-  const { listening, supported, start, stop } = useSpeechRecognition(handleVoiceResult);
+  const { listening, supported, error: micError, volume, start, stop } = useSpeechRecognition(handleVoiceResult);
+
+  // Combine modal error and microphone error
+  const displayError = error || micError;
 
   // Focus textarea on open
   useEffect(() => {
@@ -229,12 +338,20 @@ export function LifeCaptureModal() {
                     className={`w-full bg-white/[0.05] border rounded-xl text-[#E2E8F0] text-[13px]
                       px-3.5 py-3 resize-none font-[inherit] outline-none leading-relaxed
                       transition-colors duration-200 box-border
-                      ${listening ? "border-[rgba(239,68,68,0.5)]" : "border-white/10"}`}
+                      ${listening ? "border-[rgba(239,68,68,0.6)] bg-[rgba(239,68,68,0.03)]" : "border-white/10"}`}
                   />
+
+                  {/* Live Recording Indicator with Audio Volume Wave */}
                   {listening && (
-                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#EF4444] animate-[blink_1s_ease_infinite]" />
-                      <span className="text-[10px] text-[#EF4444]">Recording</span>
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)]">
+                      <div className="w-2 h-2 rounded-full bg-[#EF4444] animate-ping" />
+                      <span className="text-[10px] font-mono font-semibold text-[#EF4444]">Live Voice</span>
+                      {/* Audio waveform bars */}
+                      <div className="flex items-center gap-0.5 h-3 ml-1">
+                        <div className="w-0.5 rounded-full bg-[#EF4444] transition-all duration-75" style={{ height: `${Math.max(4, volume * 0.12)}px` }} />
+                        <div className="w-0.5 rounded-full bg-[#EF4444] transition-all duration-75" style={{ height: `${Math.max(6, volume * 0.16)}px` }} />
+                        <div className="w-0.5 rounded-full bg-[#EF4444] transition-all duration-75" style={{ height: `${Math.max(4, volume * 0.10)}px` }} />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -257,11 +374,11 @@ export function LifeCaptureModal() {
                   </div>
                 </div>
 
-                {/* Error */}
-                {error && (
-                  <div className="flex items-center gap-2 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.2)] rounded-lg px-3 py-2">
-                    <IconAlertCircle size={14} color="#EF4444" />
-                    <span className="text-xs text-[#EF4444]">{error}</span>
+                {/* Error Banner */}
+                {displayError && (
+                  <div className="flex items-center gap-2 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.25)] rounded-xl px-3.5 py-2.5">
+                    <IconAlertCircle size={15} color="#EF4444" className="shrink-0" />
+                    <span className="text-xs text-[#EF4444] font-medium">{displayError}</span>
                   </div>
                 )}
 
@@ -270,23 +387,29 @@ export function LifeCaptureModal() {
                   {/* Voice Button */}
                   {supported && (
                     <button
+                      type="button"
                       onClick={listening ? stop : start}
                       className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-medium cursor-pointer transition-all duration-200
                         ${listening
-                          ? "border-[rgba(239,68,68,0.4)] bg-[rgba(239,68,68,0.12)] text-[#EF4444]"
-                          : "border-white/10 bg-white/[0.05] text-[#94A3B8]"}`}
+                          ? "border-[rgba(239,68,68,0.5)] bg-[rgba(239,68,68,0.15)] text-[#EF4444] shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+                          : "border-white/10 bg-white/[0.05] text-[#94A3B8] hover:text-[#E2E8F0] hover:bg-white/[0.08]"}`}
                     >
-                      {listening ? <IconMicrophoneOff size={14} /> : <IconMicrophone size={14} />}
-                      {listening ? "Stop" : "Voice"}
+                      {listening ? (
+                        <IconMicrophoneOff size={14} className="animate-pulse" />
+                      ) : (
+                        <IconMicrophone size={14} />
+                      )}
+                      {listening ? "Stop Recording" : "Voice"}
                     </button>
                   )}
                   <button
+                    type="button"
                     onClick={handleSubmit}
                     disabled={!text.trim()}
                     className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border-none
                       text-[13px] font-semibold transition-all duration-200
                       ${text.trim()
-                        ? "bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED] text-white cursor-pointer"
+                        ? "bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED] text-white cursor-pointer hover:opacity-95"
                         : "bg-white/[0.06] text-[#475569] cursor-not-allowed"}`}
                   >
                     <IconSend size={14} />

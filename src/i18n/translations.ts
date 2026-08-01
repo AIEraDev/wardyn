@@ -33,6 +33,9 @@ export interface TranslationDictionary {
   sync_linkedin_activity: string;
   new_social_brief: string;
   analytics: string;
+  memory: string;
+  productivity: string;
+  active_life: string;
 }
 
 export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
@@ -69,6 +72,9 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     sync_linkedin_activity: 'Sync LinkedIn Activity',
     new_social_brief: 'New Social Brief',
     analytics: 'Analytics',
+    memory: 'Memory',
+    productivity: 'Productivity',
+    active_life: 'Active Life',
   },
   fr: {
     today: "Aujourd'hui",
@@ -103,6 +109,9 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     sync_linkedin_activity: 'Sync Activité LinkedIn',
     new_social_brief: 'Nouveau Brief Social',
     analytics: 'Analytique',
+    memory: 'Mémoire',
+    productivity: 'Productivité',
+    active_life: 'Vie Active',
   },
   es: {
     today: 'Hoy',
@@ -137,6 +146,9 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     sync_linkedin_activity: 'Sincronizar Actividad LinkedIn',
     new_social_brief: 'Nuevo Resumen Social',
     analytics: 'Analítica',
+    memory: 'Memoria',
+    productivity: 'Productividad',
+    active_life: 'Vida Activa',
   },
   de: {
     today: 'Heute',
@@ -171,6 +183,9 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     sync_linkedin_activity: 'LinkedIn-Aktivität Sync',
     new_social_brief: 'Neuer Social-Brief',
     analytics: 'Analytik',
+    memory: 'Gedächtnis',
+    productivity: 'Produktivität',
+    active_life: 'Aktives Leben',
   },
   zh: {
     today: '今天',
@@ -205,6 +220,9 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     sync_linkedin_activity: '同步 LinkedIn 动态',
     new_social_brief: '新建社交简报',
     analytics: '分析',
+    memory: '记忆',
+    productivity: '生产力',
+    active_life: '积极生活',
   },
   ja: {
     today: '今日',
@@ -239,6 +257,9 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     sync_linkedin_activity: 'LinkedInアクティビティを同期',
     new_social_brief: '新規ソーシャルブリーフ',
     analytics: '分析',
+    memory: 'メモリ',
+    productivity: '生産性',
+    active_life: 'アクティブライフ',
   },
 };
 

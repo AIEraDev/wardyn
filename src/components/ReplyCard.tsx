@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { IconMail, IconCheck, IconAlertCircle, IconSparkles } from '@tabler/icons-react';
+import { IconMail, IconCheck, IconAlertCircle, IconSparkles, IconCheckbox, IconBell, IconClock } from '@tabler/icons-react';
 import { QueueItem } from '../types/queue';
 import { useQueueStore } from '../store/useQueueStore';
 import { ConfirmModal } from './ConfirmModal';
@@ -9,10 +9,15 @@ interface ReplyCardProps {
 }
 
 export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
-  const { approveItem, skipItem, regenerateDraft } = useQueueStore();
+  const { approveItem, skipItem, regenerateDraft, createTaskFromItem, createReminder, tasks } = useQueueStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editedDraft, setEditedDraft] = useState(item.draft_text || '');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpDate, setFollowUpDate] = useState('');
+  const [followUpMessage, setFollowUpMessage] = useState(`Follow up with ${item.sender}`);
+
+  const hasLinkedTask = tasks.some((t) => t.source_item_id === item.id);
 
   const isLowConfidence = item.confidence < 0.6;
   const isDone = item.status === 'sent' || item.status === 'approved' || item.status === 'edited';
@@ -44,6 +49,24 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
     if (updated?.draft_text) {
       setEditedDraft(updated.draft_text);
     }
+  };
+
+  const handleCreateTask = async () => {
+    const subject = item.preview.length > 60 ? `${item.preview.slice(0, 57)}...` : item.preview;
+    await createTaskFromItem(item.id, `Reply: ${subject}`, `From ${item.sender}`);
+  };
+
+  const handleSetFollowUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!followUpDate || !followUpMessage.trim()) return;
+    const scheduledAt = new Date(followUpDate);
+    if (scheduledAt.getTime() <= Date.now()) {
+      useQueueStore.getState().showStatusMessage('error', 'Reminder must be scheduled in the future.');
+      return;
+    }
+    await createReminder(item.id, scheduledAt.toISOString(), followUpMessage.trim());
+    setShowFollowUp(false);
+    setFollowUpDate('');
   };
 
   if (isSkipped) return null;
@@ -153,6 +176,60 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
               </div>
             )}
           </div>
+        )}
+
+        {/* Productivity Actions */}
+        {!isDone && (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {!hasLinkedTask && (
+              <button
+                type="button"
+                onClick={handleCreateTask}
+                className="font-mono text-[10px] px-2 py-1 rounded bg-[rgba(74,143,194,0.1)] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] hover:bg-[rgba(74,143,194,0.18)] transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <IconCheckbox size={12} /> Add Task
+              </button>
+            )}
+            {hasLinkedTask && (
+              <span className="font-mono text-[10px] px-2 py-1 rounded text-[#34D399] bg-[rgba(52,211,153,0.1)] border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
+                <IconCheckbox size={12} /> Task linked
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowFollowUp(!showFollowUp)}
+              className="font-mono text-[10px] px-2 py-1 rounded bg-[rgba(167,139,250,0.1)] text-[#A78BFA] border border-[rgba(167,139,250,0.3)] hover:bg-[rgba(167,139,250,0.18)] transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <IconBell size={12} /> Set Follow-up
+            </button>
+          </div>
+        )}
+
+        {showFollowUp && !isDone && (
+          <form onSubmit={handleSetFollowUp} className="mb-3 p-3 rounded-lg bg-[rgba(167,139,250,0.06)] border border-[rgba(167,139,250,0.25)] space-y-2">
+            <input
+              type="text"
+              value={followUpMessage}
+              onChange={(e) => setFollowUpMessage(e.target.value)}
+              className="w-full bg-[#151A21] text-xs text-[#F0F4F8] p-2 rounded border border-[#242B35] focus:outline-none focus:border-[#A78BFA] font-mono"
+              required
+            />
+            <input
+              type="datetime-local"
+              value={followUpDate}
+              onChange={(e) => setFollowUpDate(e.target.value)}
+              className="w-full bg-[#151A21] text-xs text-[#F0F4F8] p-2 rounded border border-[#242B35] focus:outline-none focus:border-[#A78BFA] font-mono"
+              required
+            />
+            <div className="flex gap-2">
+              <button type="submit" className="px-3 py-1.5 text-xs font-medium text-black bg-[#A78BFA] rounded-lg hover:bg-[#b89afc] cursor-pointer flex items-center gap-1">
+                <IconClock size={12} /> Schedule
+              </button>
+              <button type="button" onClick={() => setShowFollowUp(false)} className="px-3 py-1.5 text-xs text-[#7A8492] hover:text-[#9AA4B2] cursor-pointer">
+                Cancel
+              </button>
+            </div>
+          </form>
         )}
 
         {/* Action Controls */}

@@ -100,6 +100,31 @@ pub async fn send_gmail_reply(
     let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
     db::update_status_and_draft(&conn, &req.item_id, "sent", Some(&req.body_text)).map_err(|e| e.to_string())?;
 
+    if let Ok(Some(item)) = db::get_queue_item_by_id(&conn, &req.item_id) {
+        let responded_at = db::now_iso();
+        let response_time_seconds = db::iso_to_unix_secs(&responded_at)
+            .zip(db::iso_to_unix_secs(&item.created_at))
+            .map(|(responded, received)| (responded - received).max(0));
+        let category = item
+            .preview
+            .split(']')
+            .next()
+            .and_then(|prefix| prefix.strip_prefix('['))
+            .map(|c| c.to_lowercase());
+
+        db::record_response_analytics(
+            &conn,
+            &req.item_id,
+            &item.sender,
+            category.as_deref(),
+            &item.created_at,
+            Some(&responded_at),
+            response_time_seconds,
+            db::get_draft_generation_time_ms(&conn, &req.item_id).ok().flatten(),
+        )
+        .ok();
+    }
+
     Ok(sent_msg_id)
 }
 

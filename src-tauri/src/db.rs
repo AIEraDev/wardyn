@@ -37,6 +37,32 @@ pub fn now_iso() -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, h, m, s)
 }
 
+pub fn iso_to_unix_secs(iso: &str) -> Option<i64> {
+    let trimmed = iso.trim();
+    if trimmed.len() < 19 {
+        return None;
+    }
+    let year: i64 = trimmed.get(0..4)?.parse().ok()?;
+    let month: i64 = trimmed.get(5..7)?.parse().ok()?;
+    let day: i64 = trimmed.get(8..10)?.parse().ok()?;
+    let hour: i64 = trimmed.get(11..13)?.parse().ok()?;
+    let minute: i64 = trimmed.get(14..16)?.parse().ok()?;
+    let second: i64 = trimmed.get(17..19)?.parse().ok()?;
+
+    let mut y = year;
+    let mut m = month;
+    if m <= 2 {
+        y -= 1;
+        m += 12;
+    }
+    let era = y / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * (m - 3) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Some(days * 86400 + hour * 3600 + minute * 60 + second)
+}
+
 pub fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     let mut year = 1970u64;
     loop {
@@ -81,6 +107,7 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     conn.execute("ALTER TABLE queue_items ADD COLUMN thread_id TEXT;", []).ok();
     conn.execute("ALTER TABLE queue_items ADD COLUMN message_id TEXT;", []).ok();
     conn.execute("ALTER TABLE queue_items ADD COLUMN urgency TEXT DEFAULT 'high';", []).ok();
+    conn.execute("ALTER TABLE queue_items ADD COLUMN draft_generation_time_ms INTEGER;", []).ok();
 
 
     conn.execute(
@@ -206,8 +233,176 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    // Analytics: Response time tracking
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS response_analytics (
+            id TEXT PRIMARY KEY,
+            queue_item_id TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            category TEXT,
+            received_at TEXT NOT NULL,
+            responded_at TEXT,
+            response_time_seconds INTEGER,
+            draft_generation_time_ms INTEGER
+        )",
+        [],
+    )?;
+
+    // Productivity: Tasks extracted from emails
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            source_item_id TEXT,
+            due_date TEXT,
+            priority TEXT DEFAULT 'medium',
+            status TEXT DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        )",
+        [],
+    )?;
+
+    // Productivity: Follow-up reminders
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS reminders (
+            id TEXT PRIMARY KEY,
+            item_id TEXT NOT NULL,
+            reminder_date TEXT NOT NULL,
+            message TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            triggered_at TEXT
+        )",
+        [],
+    )?;
+
+    // Productivity: Pomodoro sessions
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pomodoro_sessions (
+            id TEXT PRIMARY KEY,
+            task_id TEXT,
+            duration_minutes INTEGER NOT NULL,
+            completed INTEGER NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at TEXT
+        )",
+        [],
+    )?;
+
+    // Life Intelligence: Life event plans
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS life_events (
+            id          TEXT PRIMARY KEY,
+            title       TEXT NOT NULL,
+            raw_input   TEXT NOT NULL,
+            intent      TEXT NOT NULL,
+            event_date  TEXT,
+            status      TEXT DEFAULT 'active',
+            created_at  TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // Safe migration: add life_event_id FK to tasks table
+    conn.execute("ALTER TABLE tasks ADD COLUMN life_event_id TEXT;", []).ok();
+
+    // ─── Active Life: Projects ────────────────────────────────────────────────
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS active_projects (
+            id                   TEXT PRIMARY KEY,
+            name                 TEXT NOT NULL,
+            description          TEXT,
+            status               TEXT NOT NULL DEFAULT 'active',
+            daily_target_minutes INTEGER DEFAULT 60,
+            last_worked_at       TEXT,
+            color                TEXT DEFAULT '#4A8FC2',
+            created_at           TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS project_time_logs (
+            id           TEXT PRIMARY KEY,
+            project_id   TEXT NOT NULL,
+            session_date TEXT NOT NULL,
+            minutes_spent INTEGER DEFAULT 0,
+            notes        TEXT,
+            created_at   TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // ─── Active Life: Habits ──────────────────────────────────────────────────
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS daily_habits (
+            id             TEXT PRIMARY KEY,
+            name           TEXT NOT NULL,
+            icon           TEXT DEFAULT '✅',
+            category       TEXT DEFAULT 'general',
+            sort_order     INTEGER DEFAULT 0,
+            created_at     TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS habit_completions (
+            id             TEXT PRIMARY KEY,
+            habit_id       TEXT NOT NULL,
+            completed_date TEXT NOT NULL,
+            completed_at   TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // ─── Active Life: Daily Intelligence (quote, learning, social, day plan) ──
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS daily_intel (
+            date              TEXT PRIMARY KEY,
+            motivation_quote  TEXT,
+            quote_author      TEXT,
+            learning_topic    TEXT,
+            learning_summary  TEXT,
+            social_post_idea  TEXT,
+            social_format     TEXT,
+            social_platform   TEXT,
+            day_plan          TEXT,
+            generated_at      TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // ─── Active Life: Engagement Monitor ─────────────────────────────────────
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS engagement_sessions (
+            id               TEXT PRIMARY KEY,
+            app_name         TEXT NOT NULL,
+            window_title     TEXT,
+            project_id       TEXT,
+            started_at       TEXT NOT NULL,
+            ended_at         TEXT,
+            duration_seconds INTEGER DEFAULT 0
+        )",
+        [],
+    )?;
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS habit_reminders (
+            id          TEXT PRIMARY KEY,
+            habit_id    TEXT NOT NULL UNIQUE,
+            remind_time TEXT NOT NULL,
+            enabled     INTEGER DEFAULT 1,
+            created_at  TEXT NOT NULL
+        );"
+    )?;
+
     Ok(())
 }
+
+
 
 // ─── Custom RSS Feeds ────────────────────────────────────────────────────────
 
@@ -554,6 +749,36 @@ pub fn get_recent_voice_edits(conn: &Connection, limit: usize) -> Result<Vec<Voi
 }
 
 
+pub fn get_queue_item_by_id(conn: &Connection, id: &str) -> Result<Option<QueueItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency
+         FROM queue_items WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query_map(params![id], |row| {
+        let flagged_int: i32 = row.get(7)?;
+        Ok(QueueItem {
+            id: row.get(0)?,
+            source: row.get(1)?,
+            kind: row.get(2)?,
+            sender: row.get(3)?,
+            preview: row.get(4)?,
+            draft_text: row.get(5)?,
+            status: row.get(6)?,
+            flagged: flagged_int != 0,
+            confidence: row.get(8)?,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+            thread_id: row.get(11)?,
+            message_id: row.get(12)?,
+            urgency: row.get(13)?,
+        })
+    })?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
 pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
     let mut stmt = conn.prepare("SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency FROM queue_items ORDER BY created_at DESC")?;
     let items_iter = stmt.query_map([], |row| {
@@ -784,3 +1009,427 @@ pub fn is_calendar_event_synced(conn: &Connection, queue_item_id: &str) -> Resul
     )?;
     Ok(count > 0)
 }
+
+// ─── Analytics: Response Time Tracking ──────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct ResponseAnalytics {
+    pub id: String,
+    pub queue_item_id: String,
+    pub sender: String,
+    pub category: Option<String>,
+    pub received_at: String,
+    pub responded_at: Option<String>,
+    pub response_time_seconds: Option<i64>,
+    pub draft_generation_time_ms: Option<i64>,
+}
+
+pub fn record_response_analytics(
+    conn: &Connection,
+    queue_item_id: &str,
+    sender: &str,
+    category: Option<&str>,
+    received_at: &str,
+    responded_at: Option<&str>,
+    response_time_seconds: Option<i64>,
+    draft_generation_time_ms: Option<i64>,
+) -> Result<()> {
+    let id = format!("ra_{}", uuid_simple_db());
+    conn.execute(
+        "INSERT INTO response_analytics (id, queue_item_id, sender, category, received_at, responded_at, response_time_seconds, draft_generation_time_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![id, queue_item_id, sender, category, received_at, responded_at, response_time_seconds, draft_generation_time_ms],
+    )?;
+    Ok(())
+}
+
+pub fn get_response_analytics(conn: &Connection, days: i64) -> Result<Vec<ResponseAnalytics>> {
+    let offset = format!("-{} days", days);
+    let mut stmt = conn.prepare(
+        "SELECT id, queue_item_id, sender, category, received_at, responded_at, response_time_seconds, draft_generation_time_ms
+         FROM response_analytics
+         WHERE datetime(received_at) >= datetime('now', ?1)
+         ORDER BY received_at DESC"
+    )?;
+    let rows = stmt.query_map(params![offset], |row| {
+        Ok(ResponseAnalytics {
+            id: row.get(0)?,
+            queue_item_id: row.get(1)?,
+            sender: row.get(2)?,
+            category: row.get(3)?,
+            received_at: row.get(4)?,
+            responded_at: row.get(5)?,
+            response_time_seconds: row.get(6)?,
+            draft_generation_time_ms: row.get(7)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+pub fn get_avg_response_time_by_category(conn: &Connection, days: i64) -> Result<Vec<(String, f64)>> {
+    let offset = format!("-{} days", days);
+    let mut stmt = conn.prepare(
+        "SELECT category, AVG(response_time_seconds) as avg_time
+         FROM response_analytics
+         WHERE datetime(received_at) >= datetime('now', ?1) AND response_time_seconds IS NOT NULL
+         GROUP BY category
+         ORDER BY avg_time"
+    )?;
+    let rows = stmt.query_map(params![offset], |row| {
+        Ok((
+            row.get::<_, Option<String>>(0)?.unwrap_or_else(|| "uncategorized".into()),
+            row.get::<_, f64>(1)?,
+        ))
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+// ─── Productivity: Tasks ─────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct Task {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub source_item_id: Option<String>,
+    pub due_date: Option<String>,
+    pub priority: String,
+    pub status: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+pub fn create_task(conn: &Connection, task: &Task) -> Result<()> {
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, source_item_id, due_date, priority, status, created_at, completed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![task.id, task.title, task.description, task.source_item_id, task.due_date, task.priority, task.status, task.created_at, task.completed_at],
+    )?;
+    Ok(())
+}
+
+pub fn get_tasks(conn: &Connection, status_filter: Option<&str>) -> Result<Vec<Task>> {
+    fn map_task_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
+        Ok(Task {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            source_item_id: row.get(3)?,
+            due_date: row.get(4)?,
+            priority: row.get::<_, Option<String>>(5)?.unwrap_or_else(|| "medium".into()),
+            status: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "pending".into()),
+            created_at: row.get(7)?,
+            completed_at: row.get(8)?,
+        })
+    }
+
+    let mut list = Vec::new();
+
+    if let Some(status) = status_filter {
+        let mut stmt = conn.prepare(
+            "SELECT id, title, description, source_item_id, due_date, priority, status, created_at, completed_at FROM tasks WHERE status = ?1 ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![status], map_task_row)?;
+        for r in rows {
+            list.push(r?);
+        }
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT id, title, description, source_item_id, due_date, priority, status, created_at, completed_at FROM tasks ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], map_task_row)?;
+        for r in rows {
+            list.push(r?);
+        }
+    }
+
+    Ok(list)
+}
+
+pub fn update_task_status(conn: &Connection, id: &str, status: &str) -> Result<()> {
+    let completed_at = if status == "completed" { Some(now_iso()) } else { None };
+    conn.execute(
+        "UPDATE tasks SET status = ?1, completed_at = ?2 WHERE id = ?3",
+        params![status, completed_at, id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_task(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+// ─── Productivity: Reminders ─────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct Reminder {
+    pub id: String,
+    pub item_id: String,
+    pub reminder_date: String,
+    pub message: String,
+    pub status: String,
+    pub created_at: String,
+    pub triggered_at: Option<String>,
+}
+
+pub fn create_reminder(conn: &Connection, reminder: &Reminder) -> Result<()> {
+    conn.execute(
+        "INSERT INTO reminders (id, item_id, reminder_date, message, status, created_at, triggered_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![reminder.id, reminder.item_id, reminder.reminder_date, reminder.message, reminder.status, reminder.created_at, reminder.triggered_at],
+    )?;
+    Ok(())
+}
+
+pub fn get_pending_reminders(conn: &Connection) -> Result<Vec<Reminder>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, item_id, reminder_date, message, status, created_at, triggered_at
+         FROM reminders
+         WHERE status = 'pending' AND datetime(reminder_date) <= datetime('now')
+         ORDER BY reminder_date"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Reminder {
+            id: row.get(0)?,
+            item_id: row.get(1)?,
+            reminder_date: row.get(2)?,
+            message: row.get(3)?,
+            status: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "pending".into()),
+            created_at: row.get(5)?,
+            triggered_at: row.get(6)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+pub fn set_draft_generation_time_ms(conn: &Connection, id: &str, ms: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE queue_items SET draft_generation_time_ms = ?1 WHERE id = ?2",
+        params![ms, id],
+    )?;
+    Ok(())
+}
+
+pub fn get_draft_generation_time_ms(conn: &Connection, id: &str) -> Result<Option<i64>> {
+    match conn.query_row(
+        "SELECT draft_generation_time_ms FROM queue_items WHERE id = ?1",
+        params![id],
+        |row| row.get::<_, Option<i64>>(0),
+    ) {
+        Ok(val) => Ok(val),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn task_exists_for_source(conn: &Connection, source_item_id: &str) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tasks WHERE source_item_id = ?1",
+        params![source_item_id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+pub fn delete_reminder(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM reminders WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn snooze_reminder(conn: &Connection, id: &str, new_date: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE reminders SET reminder_date = ?1, status = 'pending', triggered_at = NULL WHERE id = ?2",
+        params![new_date, id],
+    )?;
+    Ok(())
+}
+
+pub fn mark_reminder_triggered(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE reminders SET status = 'triggered', triggered_at = ?1 WHERE id = ?2",
+        params![now_iso(), id],
+    )?;
+    Ok(())
+}
+
+pub fn get_reminders(conn: &Connection) -> Result<Vec<Reminder>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, item_id, reminder_date, message, status, created_at, triggered_at
+         FROM reminders
+         WHERE status = 'pending'
+         ORDER BY reminder_date",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Reminder {
+            id: row.get(0)?,
+            item_id: row.get(1)?,
+            reminder_date: row.get(2)?,
+            message: row.get(3)?,
+            status: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "pending".into()),
+            created_at: row.get(5)?,
+            triggered_at: row.get(6)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows {
+        list.push(r?);
+    }
+    Ok(list)
+}
+
+// ─── Productivity: Pomodoro Sessions ─────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct PomodoroSession {
+    pub id: String,
+    pub task_id: Option<String>,
+    pub duration_minutes: i64,
+    pub completed: bool,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+}
+
+pub fn create_pomodoro_session(conn: &Connection, session: &PomodoroSession) -> Result<()> {
+    conn.execute(
+        "INSERT INTO pomodoro_sessions (id, task_id, duration_minutes, completed, started_at, ended_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![session.id, session.task_id, session.duration_minutes, if session.completed { 1 } else { 0 }, session.started_at, session.ended_at],
+    )?;
+    Ok(())
+}
+
+pub fn get_pomodoro_sessions(conn: &Connection, days: i64) -> Result<Vec<PomodoroSession>> {
+    let offset = format!("-{} days", days);
+    let mut stmt = conn.prepare(
+        "SELECT id, task_id, duration_minutes, completed, started_at, ended_at
+         FROM pomodoro_sessions
+         WHERE datetime(started_at) >= datetime('now', ?1)
+         ORDER BY started_at DESC"
+    )?;
+    let rows = stmt.query_map(params![offset], |row| {
+        Ok(PomodoroSession {
+            id: row.get(0)?,
+            task_id: row.get(1)?,
+            duration_minutes: row.get(2)?,
+            completed: row.get::<_, i32>(3)? != 0,
+            started_at: row.get(4)?,
+            ended_at: row.get(5)?,
+        })
+    })?;
+    let mut list = Vec::new();
+    for r in rows { list.push(r?); }
+    Ok(list)
+}
+
+pub fn complete_pomodoro_session(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE pomodoro_sessions SET completed = 1, ended_at = ?1 WHERE id = ?2",
+        params![now_iso(), id],
+    )?;
+    Ok(())
+}
+
+// ─── Life Intelligence: Life Events ──────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct LifeEvent {
+    pub id: String,
+    pub title: String,
+    pub raw_input: String,
+    pub intent: String,
+    pub event_date: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    pub tasks: Vec<LifeTask>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct LifeTask {
+    pub id: String,
+    pub life_event_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub due_date: Option<String>,
+    pub priority: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+pub fn insert_life_event(conn: &Connection, id: &str, title: &str, raw_input: &str, intent: &str, event_date: Option<&str>) -> Result<()> {
+    conn.execute(
+        "INSERT INTO life_events (id, title, raw_input, intent, event_date, status, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6)",
+        params![id, title, raw_input, intent, event_date, now_iso()],
+    )?;
+    Ok(())
+}
+
+pub fn insert_life_task(conn: &Connection, id: &str, life_event_id: &str, title: &str, description: Option<&str>, due_date: Option<&str>, priority: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, source_item_id, due_date, priority, status, created_at, life_event_id)
+         VALUES (?1, ?2, ?3, NULL, ?4, ?5, 'pending', ?6, ?7)",
+        params![id, title, description, due_date, priority, now_iso(), life_event_id],
+    )?;
+    Ok(())
+}
+
+pub fn get_life_events(conn: &Connection) -> Result<Vec<LifeEvent>> {
+    // Load all life events
+    let mut stmt = conn.prepare(
+        "SELECT id, title, raw_input, intent, event_date, status, created_at
+         FROM life_events WHERE status != 'cancelled'
+         ORDER BY created_at DESC LIMIT 50"
+    )?;
+    let events: Vec<LifeEvent> = stmt.query_map([], |row| {
+        Ok(LifeEvent {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            raw_input: row.get(2)?,
+            intent: row.get(3)?,
+            event_date: row.get(4)?,
+            status: row.get::<_, Option<String>>(5)?.unwrap_or_else(|| "active".into()),
+            created_at: row.get(6)?,
+            tasks: vec![],
+        })
+    })?.filter_map(|r| r.ok()).collect();
+
+    // Load tasks for each event
+    let mut result = Vec::new();
+    for mut evt in events {
+        let mut tstmt = conn.prepare(
+            "SELECT id, life_event_id, title, description, due_date, priority, status, created_at
+             FROM tasks WHERE life_event_id = ?1 ORDER BY due_date ASC"
+        )?;
+        let tasks: Vec<LifeTask> = tstmt.query_map(params![evt.id], |row| {
+            Ok(LifeTask {
+                id: row.get(0)?,
+                life_event_id: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                title: row.get(2)?,
+                description: row.get(3)?,
+                due_date: row.get(4)?,
+                priority: row.get::<_, Option<String>>(5)?.unwrap_or_else(|| "medium".into()),
+                status: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "pending".into()),
+                created_at: row.get(7)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+        evt.tasks = tasks;
+        result.push(evt);
+    }
+    Ok(result)
+}
+
+pub fn update_life_event_status(conn: &Connection, id: &str, status: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE life_events SET status = ?1 WHERE id = ?2",
+        params![status, id],
+    )?;
+    Ok(())
+}
+

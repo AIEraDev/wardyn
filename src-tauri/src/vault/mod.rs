@@ -120,6 +120,32 @@ tags:
     Ok(())
 }
 
+pub fn write_analytics_summary(
+    conn_mutex: &std::sync::Mutex<rusqlite::Connection>,
+    content: &str,
+) -> Result<String, String> {
+    let vault_path = {
+        let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+        db::get_app_setting(&conn, "vault_path").ok().flatten()
+    };
+
+    let Some(vault) = vault_path else {
+        return Err("No vault path configured. Set one in Settings.".into());
+    };
+    if vault.trim().is_empty() {
+        return Err("No vault path configured. Set one in Settings.".into());
+    }
+
+    let dir = Path::new(&vault).join("Wardyn").join("Analytics");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let date = db::now_iso();
+    let day = if date.len() >= 10 { &date[..10] } else { "summary" };
+    let file_path = dir.join(format!("{}-executive-summary.md", day));
+    fs::write(&file_path, content).map_err(|e| e.to_string())?;
+    Ok(file_path.to_string_lossy().into_owned())
+}
+
 fn slugify(text: &str) -> String {
     text.to_lowercase()
         .chars()

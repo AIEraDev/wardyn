@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   IconMail,
   IconClock,
@@ -8,6 +8,7 @@ import {
   IconTrendingUp,
   IconCheck,
   IconArrowUpRight,
+  IconDownload,
 } from '@tabler/icons-react';
 import { useQueueStore, WeeklyAnalytics } from '../store/useQueueStore';
 import { QueueItem, SocialPost, LinkedInTimelineSummary } from '../types/queue';
@@ -61,6 +62,47 @@ function buildRealWeeklyData(
       hoursSaved: parseFloat((triagedInWeek * 0.1).toFixed(1)),
       linkedInImpressions: impressions,
       postsPublished: postsInWeek,
+    });
+  }
+
+  return weeks;
+}
+
+function formatResponseTime(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${(seconds / 3600).toFixed(1)}h`;
+}
+
+function buildResponseTimeWeeklyData(analytics: import('../types/queue').ResponseAnalytics[]): WeeklyAnalytics[] {
+  const now = new Date();
+  const weeks: WeeklyAnalytics[] = [];
+
+  for (let i = 4; i >= 0; i--) {
+    const targetDate = new Date(now.getTime() - i * 7 * 86400 * 1000);
+    const label = targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const weekStart = new Date(targetDate);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekStartMs = weekStart.getTime();
+    const weekEndMs = weekStartMs + 7 * 86400 * 1000;
+
+    const inWeek = analytics.filter((entry) => {
+      if (entry.response_time_seconds == null) return false;
+      const t = new Date(entry.received_at).getTime();
+      return !isNaN(t) && t >= weekStartMs && t < weekEndMs;
+    });
+
+    const avgSeconds = inWeek.length > 0
+      ? inWeek.reduce((sum, e) => sum + (e.response_time_seconds ?? 0), 0) / inWeek.length
+      : 0;
+
+    weeks.push({
+      week: label,
+      emailsTriaged: inWeek.length,
+      hoursSaved: parseFloat((avgSeconds / 3600).toFixed(2)),
+      linkedInImpressions: 0,
+      postsPublished: 0,
     });
   }
 
@@ -350,14 +392,40 @@ const MiniDonut: React.FC<{ pct: number; color: string; label: string; value: st
 // ─── Main Analytics Tab ───────────────────────────────────────────────────────
 
 export const AnalyticsTab: React.FC = () => {
-  const { items, socialPosts, linkedInSummary } = useQueueStore();
+  const {
+    items,
+    socialPosts,
+    linkedInSummary,
+    responseAnalytics,
+    categoryResponseTimes,
+    fetchResponseAnalytics,
+    fetchCategoryResponseTimes,
+    exportAnalyticsSummary,
+    showStatusMessage,
+  } = useQueueStore();
 
-  // Dynamically calculate 5-week metrics from real stored items & LinkedIn posts
+  useEffect(() => {
+    fetchResponseAnalytics(30);
+    fetchCategoryResponseTimes(30);
+  }, [fetchResponseAnalytics, fetchCategoryResponseTimes]);
+
   const data = buildRealWeeklyData(items, socialPosts, linkedInSummary);
 
   const totalEmailsTriaged = items.length;
   const totalHoursSaved = parseFloat((totalEmailsTriaged * 0.1).toFixed(1));
-  
+
+  const respondedEntries = responseAnalytics.filter((r) => r.response_time_seconds != null);
+  const avgResponseSeconds = respondedEntries.length > 0
+    ? respondedEntries.reduce((sum, r) => sum + (r.response_time_seconds ?? 0), 0) / respondedEntries.length
+    : 0;
+
+  const draftTimes = responseAnalytics.filter((r) => r.draft_generation_time_ms != null);
+  const avgDraftMs = draftTimes.length > 0
+    ? draftTimes.reduce((sum, r) => sum + (r.draft_generation_time_ms ?? 0), 0) / draftTimes.length
+    : 0;
+
+  const responseTrendData = buildResponseTimeWeeklyData(responseAnalytics);
+
   const totalImpressions = linkedInSummary?.feed_insights
     ? linkedInSummary.feed_insights.reduce((sum, insight) => {
         const likes = parseInt(insight.engagement.split(' ')[0], 10) || 0;
@@ -380,6 +448,51 @@ export const AnalyticsTab: React.FC = () => {
   const thisWeekEmails = data[data.length - 1]?.emailsTriaged ?? 0;
   const emailTrend = prevWeekEmails > 0 ? Math.round(((thisWeekEmails - prevWeekEmails) / prevWeekEmails) * 100) : 0;
 
+  const categoryBarData: WeeklyAnalytics[] = categoryResponseTimes.map(({ category, avg_time_seconds }) => ({
+    week: category.length > 10 ? `${category.slice(0, 9)}…` : category,
+    emailsTriaged: avg_time_seconds,
+    hoursSaved: 0,
+    linkedInImpressions: 0,
+    postsPublished: 0,
+  }));
+
+  const handleExportSummary = async () => {
+    const lines = [
+      `# Wardyn Executive Summary — ${new Date().toLocaleDateString()}`,
+      '',
+      `## Email Triage`,
+      `- Total synced: ${totalEmailsTriaged}`,
+      `- Estimated hours saved: ${totalHoursSaved.toFixed(1)}h`,
+      `- Approval rate: ${approvalRate}%`,
+      '',
+      `## Response Analytics (30 days)`,
+      `- Replies tracked: ${respondedEntries.length}`,
+      `- Avg response time: ${avgResponseSeconds > 0 ? formatResponseTime(avgResponseSeconds) : '—'}`,
+      `- Avg draft generation: ${avgDraftMs > 0 ? `${Math.round(avgDraftMs)}ms` : '—'}`,
+      '',
+      `## Category Response Times`,
+      ...categoryResponseTimes.map(({ category, avg_time_seconds }) => `- ${category}: ${formatResponseTime(avg_time_seconds)}`),
+      '',
+      `## LinkedIn`,
+      `- Estimated impressions: ${totalImpressions.toLocaleString()}`,
+      `- Posts published: ${totalPosts}`,
+    ];
+    const text = lines.join('\n');
+
+    const vaultPath = await exportAnalyticsSummary(text);
+    if (vaultPath) {
+      showStatusMessage('success', `Summary saved to vault: ${vaultPath}`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      showStatusMessage('success', 'Executive summary copied to clipboard (configure vault in Settings to save as file).');
+    } catch {
+      showStatusMessage('error', 'Could not export summary.');
+    }
+  };
+
   return (
     <div className="flex-1 min-w-0 space-y-6">
       {/* Header */}
@@ -388,9 +501,18 @@ export const AnalyticsTab: React.FC = () => {
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Executive Analytics</h1>
           <p className="font-mono text-xs text-[#7A8492] mt-0.5">Weekly performance dashboard · Real-time Metrics</p>
         </div>
-        <span className="font-mono text-[10px] px-2.5 py-1 rounded-full text-[#34D399] bg-[rgba(52,211,153,0.1)] border border-[rgba(52,211,153,0.3)] flex items-center gap-1.5">
-          <IconTrendingUp size={11} /> Live System Data
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportSummary}
+            className="font-mono text-[10px] px-2.5 py-1 rounded-full text-[#4A8FC2] bg-[rgba(74,143,194,0.1)] border border-[rgba(74,143,194,0.3)] flex items-center gap-1.5 hover:bg-[rgba(74,143,194,0.18)] transition-colors cursor-pointer"
+          >
+            <IconDownload size={11} /> Export Summary
+          </button>
+          <span className="font-mono text-[10px] px-2.5 py-1 rounded-full text-[#9AA4B2] bg-[rgba(154,164,178,0.1)] border border-[rgba(154,164,178,0.25)] flex items-center gap-1.5">
+            <IconTrendingUp size={11} /> Mixed metrics · some estimated
+          </span>
+        </div>
       </div>
 
       {/* KPI Row */}
@@ -496,6 +618,92 @@ export const AnalyticsTab: React.FC = () => {
             label="posts"
           />
         </div>
+      </div>
+
+      {/* Response Time Analytics (Phase G) */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35]">
+          <div className="flex items-center gap-2 mb-3">
+            <IconClock size={14} className="text-[#4A8FC2]" />
+            <span className="text-xs font-semibold text-[#F0F4F8]">Avg Response Time by Category</span>
+          </div>
+          {categoryResponseTimes.length === 0 ? (
+            <p className="text-xs text-[#7A8492] m-0">No response data yet. Send approved replies to start tracking.</p>
+          ) : (
+            <>
+              <BarChart
+                data={categoryBarData}
+                dataKey="emailsTriaged"
+                color="#4A8FC2"
+                gradientId="bar-category-response"
+                label="avg response (seconds)"
+                formatter={(v) => formatResponseTime(v)}
+              />
+              <div className="space-y-2 mt-3 pt-3 border-t border-[#242B35]">
+                {categoryResponseTimes.map(({ category, avg_time_seconds }) => (
+                  <div key={category} className="flex items-center justify-between text-xs">
+                    <span className="font-mono text-[#9AA4B2] uppercase">{category}</span>
+                    <span className="font-mono text-[#4A8FC2] font-semibold">{formatResponseTime(avg_time_seconds)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35]">
+          <div className="flex items-center gap-2 mb-3">
+            <IconMail size={14} className="text-[#34D399]" />
+            <span className="text-xs font-semibold text-[#F0F4F8]">Response Performance</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-2xl font-bold text-[#34D399] m-0">{respondedEntries.length}</p>
+              <p className="font-mono text-[10px] text-[#7A8492] m-0 uppercase">Replies Tracked</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-[#4A8FC2] m-0">{avgResponseSeconds > 0 ? formatResponseTime(avgResponseSeconds) : '—'}</p>
+              <p className="font-mono text-[10px] text-[#7A8492] m-0 uppercase">Avg Response</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-[#A78BFA] m-0">{avgDraftMs > 0 ? `${Math.round(avgDraftMs)}ms` : '—'}</p>
+              <p className="font-mono text-[10px] text-[#7A8492] m-0 uppercase">Avg Draft Gen</p>
+            </div>
+          </div>
+          {responseAnalytics.slice(0, 5).length > 0 && (
+            <div className="mt-3 pt-3 border-t border-[#242B35] space-y-1.5">
+              <p className="font-mono text-[10px] text-[#7A8492] uppercase m-0 mb-1">Recent</p>
+              {responseAnalytics.slice(0, 5).map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between text-[11px]">
+                  <span className="text-[#9AA4B2] truncate max-w-[60%]">{entry.sender}</span>
+                  <span className="font-mono text-[#7A8492] shrink-0">
+                    {entry.response_time_seconds != null ? formatResponseTime(entry.response_time_seconds) : 'pending'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Response Time Trend Chart */}
+      <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35]">
+        <div className="flex items-center gap-2 mb-3">
+          <IconTrendingUp size={14} className="text-[#34D399]" />
+          <span className="text-xs font-semibold text-[#F0F4F8]">Avg Response Time Trend (Weekly)</span>
+        </div>
+        {respondedEntries.length === 0 ? (
+          <p className="text-xs text-[#7A8492] m-0">Send approved replies to build response time trends.</p>
+        ) : (
+          <LineChart
+            data={responseTrendData}
+            dataKey="hoursSaved"
+            color="#34D399"
+            gradientId="line-response"
+            label="avg hours"
+            formatter={(v) => v > 0 ? `${(v * 60).toFixed(0)}m` : '0m'}
+          />
+        )}
       </div>
 
       {/* Efficiency Donuts + Summary */}

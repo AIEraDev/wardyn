@@ -40,7 +40,15 @@ export const TodayBrief: React.FC = () => {
     isPlayingAudio,
     speakText,
     stopSpeech,
+    language,
   } = useQueueStore();
+
+  const localeMap: Record<string, string> = { en: 'en-US', fr: 'fr-FR', es: 'es-ES', de: 'de-DE', zh: 'zh-CN', ja: 'ja-JP' };
+  const todayLabel = new Date().toLocaleDateString(localeMap[language] || 'en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
 
 
 
@@ -52,6 +60,7 @@ export const TodayBrief: React.FC = () => {
   useEffect(() => {
     checkGmailStatus();
     syncCalendarDeadlines();
+    useQueueStore.getState().fetchTasks();
   }, [checkGmailStatus, syncCalendarDeadlines]);
 
   const pendingItems = items.filter((i) => i.status === 'pending');
@@ -72,7 +81,7 @@ export const TodayBrief: React.FC = () => {
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Today</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Thu, 30 Jul</p>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">{todayLabel}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Scratch Email Safety Toggle */}

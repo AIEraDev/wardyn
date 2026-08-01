@@ -2,6 +2,7 @@ use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 use crate::models::QueueItem;
 use crate::ollama;
+use crate::productivity;
 
 pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> Result<usize, String> {
     let all_creds = {
@@ -140,7 +141,8 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                             urgency: Some("high".into()),
                         };
 
-                        let analysis = ollama::client::classify_and_draft_item(&temp_item, Some(conn_mutex)).await;
+                        let outcome = ollama::client::classify_and_draft_item(&temp_item, Some(conn_mutex)).await;
+                        let analysis = outcome.result;
 
                         let item = QueueItem {
                             id: item_id,
@@ -163,6 +165,29 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
 
                         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
                         if db::insert_queue_item(&conn, &item).is_ok() {
+                            db::set_draft_generation_time_ms(&conn, &item.id, outcome.generation_time_ms).ok();
+
+                            if !db::task_exists_for_source(&conn, &item.id).unwrap_or(false) {
+                                for extracted in productivity::extract::extract_tasks_from_email(&item) {
+                                    let task_id = format!(
+                                        "task_{}",
+                                        db::now_iso().replace(':', "-").replace('.', "-")
+                                    );
+                                    let task = db::Task {
+                                        id: task_id,
+                                        title: extracted.title,
+                                        description: Some(format!("Auto-extracted from email by {}", item.sender)),
+                                        source_item_id: Some(item.id.clone()),
+                                        due_date: extracted.due_date,
+                                        priority: extracted.priority,
+                                        status: "pending".into(),
+                                        created_at: db::now_iso(),
+                                        completed_at: None,
+                                    };
+                                    db::create_task(&conn, &task).ok();
+                                }
+                            }
+
                             imported_count += 1;
                         }
                     }

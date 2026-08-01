@@ -1,10 +1,11 @@
+use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use std::time::Duration;
 use crate::models::QueueItem;
 use crate::ollama::prompt::get_system_prompt;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClassificationResult {
     pub flagged: bool,
     pub urgency: Option<String>,
@@ -12,15 +13,25 @@ pub struct ClassificationResult {
     pub confidence: f64,
 }
 
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct InstalledModelInfo {
-    pub name: String,
-    pub size_gb: String,
-    pub status: String,
+#[derive(Debug, Clone)]
+pub struct ClassifyOutcome {
+    pub result: ClassificationResult,
+    pub generation_time_ms: i64,
 }
 
 pub async fn classify_and_draft_item(
+    item: &QueueItem,
+    conn_mutex: Option<&std::sync::Mutex<rusqlite::Connection>>,
+) -> ClassifyOutcome {
+    let started = Instant::now();
+    let result = classify_and_draft_item_inner(item, conn_mutex).await;
+    ClassifyOutcome {
+        result,
+        generation_time_ms: started.elapsed().as_millis() as i64,
+    }
+}
+
+async fn classify_and_draft_item_inner(
     item: &QueueItem,
     conn_mutex: Option<&std::sync::Mutex<rusqlite::Connection>>,
 ) -> ClassificationResult {
@@ -94,6 +105,13 @@ pub async fn classify_and_draft_item(
     }
 
     fallback_rule_based_classify(item)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InstalledModelInfo {
+    pub name: String,
+    pub size_gb: String,
+    pub status: String,
 }
 
 pub async fn fetch_installed_ollama_models() -> Vec<InstalledModelInfo> {

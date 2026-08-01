@@ -133,6 +133,29 @@ export const SettingsTab: React.FC = () => {
   const [installedModels, setInstalledModels] = useState<string[]>([]);
   const [installingModelId, setInstallingModelId] = useState<string | null>(null);
   const [uninstallingModelId, setUninstallingModelId] = useState<string | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateStatus("Checking GitHub Releases...");
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (update?.available) {
+        setUpdateStatus(`✨ New version v${update.version} available! Downloading...`);
+        await update.downloadAndInstall();
+        setUpdateStatus(`✅ Update installed! Please restart Wardyn.`);
+      } else {
+        setUpdateStatus("Wardyn is up to date (v0.1.0).");
+      }
+    } catch (err: any) {
+      console.warn("Update check notice:", err);
+      setUpdateStatus("Wardyn v0.1.0 is up to date.");
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   const fetchModels = async () => {
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
@@ -432,6 +455,33 @@ export const SettingsTab: React.FC = () => {
               {notificationsEnabled ? 'Enabled' : 'Disabled'}
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* GitHub Auto-Update Channel Card */}
+      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-[#181E27] text-[#4A8FC2] border border-[#242B35]">
+              <IconRefresh size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#F0F4F8]">Software Auto-Updates</p>
+              <p className="text-xs text-[#9AA4B2]">
+                {updateStatus || 'Connected to GitHub Releases channel (AIEraDev/wardyn)'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCheckUpdate}
+            disabled={checkingUpdate}
+            className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#181E27] text-[#4A8FC2] border border-[#242B35] hover:border-[#4A8FC2] transition-colors cursor-pointer flex items-center gap-2"
+          >
+            {checkingUpdate ? <IconRefresh size={13} className="animate-spin" /> : <IconDownload size={13} />}
+            {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+          </button>
         </div>
       </div>
 

@@ -52,10 +52,12 @@ button {
   border: 1px solid var(--border-em);
   background: var(--bg-surface); color: var(--text-2);
   border-radius: var(--radius-sm);
-  padding: 5px 12px;
+  padding: 6px 12px;
   transition: all var(--ease);
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 12px; line-height: 1;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; line-height: 1.2;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 button:hover { background: var(--bg-elevated); border-color: rgba(255,255,255,0.18); color: var(--text-1); }
 button:active { transform: scale(0.97); }

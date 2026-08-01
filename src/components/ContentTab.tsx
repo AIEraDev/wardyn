@@ -67,18 +67,18 @@ export const ContentTab: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 min-w-0 space-y-6">
+    <div className="tab-pane" style={{ gap: 16 }}>
       {/* Header Bar */}
-      <div className="flex items-baseline justify-between mb-2">
+      <div className="page-header" style={{ marginBottom: 12 }}>
         <div>
-          <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Content & Personal Post Engine</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">LinkedIn Feed Learning, Vision AI & Cadence Scheduler</p>
+          <h1 className="page-title">Content & Personal Post Engine</h1>
+          <p className="page-subtitle">LinkedIn Feed Learning, Vision AI & Cadence Scheduler</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
           {/* Generate Cadence Post Button */}
           <button
             onClick={generateCadenceLinkedInPost}
-            className="font-mono text-xs bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] px-3 py-1 rounded-md font-medium border border-[rgba(74,143,194,0.35)] hover:bg-[rgba(74,143,194,0.25)] transition-colors flex items-center gap-1.5 cursor-pointer"
+            style={{ background: 'rgba(74,143,194,0.14)', color: 'var(--accent)', borderColor: 'rgba(74,143,194,0.35)', fontWeight: 600 }}
           >
             <IconWand size={14} /> Auto-Draft Personal Brief
           </button>
@@ -86,14 +86,13 @@ export const ContentTab: React.FC = () => {
           <button
             onClick={handleTimelineSync}
             disabled={isSyncingTimeline}
-            className="font-mono text-xs bg-[#151A21] text-[#4A8FC2] px-3 py-1 rounded-md font-medium border border-[rgba(74,143,194,0.3)] hover:bg-[#181E27] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
             <IconRefresh size={13} className={isSyncingTimeline ? 'animate-spin' : ''} />
             {isSyncingTimeline ? 'Syncing...' : 'Sync Feed'}
           </button>
           <button
             onClick={() => setShowNewModal(true)}
-            className="font-mono text-xs bg-[#4A8FC2] text-black px-3 py-1 rounded-md font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1 cursor-pointer"
+            style={{ background: 'var(--accent)', color: '#000', fontWeight: 600, borderColor: 'transparent' }}
           >
             <IconPlus size={14} /> Custom Topic
           </button>
@@ -101,37 +100,38 @@ export const ContentTab: React.FC = () => {
       </div>
 
       {/* Cadence Scheduling Bar */}
-      <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-[rgba(74,143,194,0.16)] text-[#4A8FC2]">
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 240 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(74,143,194,0.14)', border: '1px solid rgba(74,143,194,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', flexShrink: 0 }}>
               <IconCalendarTime size={18} />
             </div>
             <div>
-              <h4 className="text-xs font-semibold text-[#F0F4F8] m-0">Personal Brief Auto-Draft Cadence</h4>
-              <p className="text-[11px] text-[#7A8492] m-0">
-                Auto-drafts brief cards for review. <strong className="text-[#34D399]">Never auto-publishes unattended</strong> — human approval required.
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', margin: 0 }}>Personal Brief Auto-Draft Cadence</h4>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
+                Auto-drafts brief cards for review. <strong style={{ color: 'var(--success)' }}>Never auto-publishes unattended</strong> — human approval required.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {(
               [
-                { id: 'daily', label: '🗓️ Auto-Draft Daily' },
-                { id: 'every_2_days', label: '⚡ Auto-Draft 2 Days' },
-                { id: 'weekly', label: '📅 Auto-Draft Weekly' },
+                { id: 'daily', label: '🗓️ Daily' },
+                { id: 'every_2_days', label: '⚡ 2 Days' },
+                { id: 'weekly', label: '📅 Weekly' },
                 { id: 'manual', label: '🖐️ Manual Only' },
               ] as const
             ).map((c) => (
               <button
                 key={c.id}
                 onClick={() => setLinkedInCadence(c.id as PostCadence)}
-                className={`font-mono text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
-                  linkedInCadence === c.id
-                    ? 'bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] border-[rgba(74,143,194,0.35)]'
-                    : 'bg-[#181E27] text-[#7A8492] border-[#242B35] hover:text-[#F0F4F8]'
-                }`}
+                style={{
+                  background: linkedInCadence === c.id ? 'rgba(74,143,194,0.14)' : 'var(--bg-elevated)',
+                  color: linkedInCadence === c.id ? 'var(--accent)' : 'var(--text-2)',
+                  borderColor: linkedInCadence === c.id ? 'rgba(74,143,194,0.35)' : 'var(--border-em)',
+                  fontWeight: linkedInCadence === c.id ? 600 : 400,
+                }}
               >
                 {c.label}
               </button>
@@ -140,11 +140,11 @@ export const ContentTab: React.FC = () => {
         </div>
 
         {/* Explicit Guardrail Notice */}
-        <div className="p-2.5 bg-[#181E27] rounded-lg border border-[#242B35] flex items-center justify-between font-mono text-[10px] text-[#9AA4B2]">
-          <span className="flex items-center gap-1.5 text-[#34D399]">
-            <IconCheck size={13} /> Strict Guardrail Active: Zero Unattended Publishing
+        <div style={{ padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, fontFamily: 'monospace', color: 'var(--text-2)', flexWrap: 'wrap', gap: 8 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success)' }}>
+            <IconCheck size={14} /> Strict Guardrail Active: Zero Unattended Publishing
           </span>
-          <span className="text-[#7A8492]">All posts require manual approval click</span>
+          <span style={{ color: 'var(--text-3)' }}>All posts require manual approval click</span>
         </div>
       </div>
 

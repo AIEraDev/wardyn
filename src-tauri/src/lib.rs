@@ -504,15 +504,16 @@ async fn start_native_transcription_command(
     // Reset transcript for new session
     *transcript.lock().unwrap() = String::new();
 
-    // Emit status so UI knows recording started
-    let _ = app.emit("transcription-status", "started");
-
+    let app_start = app.clone();
     tokio::spawn(async move {
-        if let Err(e) = audio::start_native_capture(app.clone(), running, transcript).await {
+        // Emit started immediately so UI transitions to recording mode
+        let _ = app_start.emit("transcription-status", "started");
+
+        if let Err(e) = audio::start_native_capture(app_start.clone(), running, transcript).await {
             eprintln!("[audio] capture error: {}", e);
-            let _ = app.emit("transcription-status", format!("error: {}", e));
+            let _ = app_start.emit("transcription-status", format!("error: {}", e));
         }
-        let _ = app.emit("transcription-status", "stopped");
+        let _ = app_start.emit("transcription-status", "stopped");
     });
 
     Ok(())

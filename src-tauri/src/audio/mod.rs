@@ -1,11 +1,8 @@
 /// Native audio capture pipeline — Rust-side only, bypasses WKWebView entirely.
 ///
 /// Flow:
-///   cpal mic stream → ring buffer → VAD (energy threshold) → 16kHz mono f32 chunks
-///   → Ollama /v1/audio/transcriptions → Tauri event "transcription-delta" → UI
-///
-/// This avoids every WKWebView/entitlements/QuickTime issue because the WebView
-/// never touches the audio hardware.
+///   cpal mic → mono f32 ring buffer → 4s chunks → VAD → resample to 16kHz
+///   → PCM WAV → Ollama /v1/audio/transcriptions → Tauri "transcription-delta" event
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
@@ -13,11 +10,11 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
-// ─── Shared recording state ───────────────────────────────────────────────────
+
+// ─── Shared state ─────────────────────────────────────────────────────────────
 
 pub struct AudioRecordingState {
     pub running: Arc<AtomicBool>,
-    /// Accumulates transcribed text across all chunks so the UI shows a growing transcript
     pub transcript: Arc<Mutex<String>>,
 }
 
@@ -32,14 +29,12 @@ impl Default for AudioRecordingState {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/// Whisper requires 16 kHz mono f32 audio
 const WHISPER_SAMPLE_RATE: u32 = 16_000;
-/// Collect 4 seconds of audio per chunk before sending to Whisper
-const CHUNK_SECONDS: usize = 4;
-/// Energy threshold below which a chunk is treated as silence and skipped
-const SILENCE_THRESHOLD: f32 = 0.008;
+const CHUNK_SECONDS: f32 = 4.0;
+/// RMS energy threshold — chunks below this are silence and skipped
+const SILENCE_RMS: f32 = 0.01;
 
-// ─── Entry point ─────────────────────────────────────────────────────────────
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 pub async fn start_native_capture(
     app: AppHandle,
@@ -48,106 +43,94 @@ pub async fn start_native_capture(
 ) -> Result<(), String> {
     running.store(true, Ordering::SeqCst);
 
-    let (sample_tx, mut sample_rx) = mpsc::channel::<Vec<f32>>(64);
+    // Channel carries (samples: Vec<f32>, sample_rate: u32)
+    let (tx, mut rx) = mpsc::channel::<(Vec<f32>, u32)>(32);
 
-    // ── Spawn the cpal capture on a dedicated OS thread ──────────────────────
-    let running_clone = Arc::clone(&running);
+    // Spawn cpal on its own OS thread — cpal streams are not Send/Sync-friendly
+    let running_cpal = Arc::clone(&running);
     std::thread::spawn(move || {
-        if let Err(e) = run_cpal_capture(sample_tx, running_clone) {
-            eprintln!("[audio] cpal capture error: {}", e);
+        if let Err(e) = run_cpal_capture(tx, running_cpal) {
+            eprintln!("[audio] cpal error: {}", e);
         }
     });
 
-    // ── Process chunks: resample → VAD → Whisper → emit ──────────────────────
-    let chunk_size_native = Arc::new(Mutex::new(0usize)); // set after first samples arrive
+    // Resolve whisper model once upfront
+    let whisper_model = crate::speech::find_installed_whisper_model().await;
+    if whisper_model.is_none() {
+        let _ = app.emit("transcription-status", "error: No Whisper model installed. Go to Settings → Voice Capture.");
+        running.store(false, Ordering::SeqCst);
+        return Err("No Whisper model".to_string());
+    }
+    let whisper_model = whisper_model.unwrap();
+
     let mut accumulator: Vec<f32> = Vec::new();
     let mut native_sr: Option<u32> = None;
 
     while running.load(Ordering::SeqCst) {
-        match tokio::time::timeout(
+        // Wait up to 200ms for new audio data
+        let recv = tokio::time::timeout(
             tokio::time::Duration::from_millis(200),
-            sample_rx.recv(),
-        )
-        .await
-        {
-            Ok(Some(mut chunk)) => {
-                // First chunk carries sample-rate info encoded as a sentinel
-                if native_sr.is_none() {
-                    if let Some(first) = chunk.first().copied() {
-                        // We encode the sample rate as the first f32 value (as u32 bits)
-                        let sr = f32::to_bits(first);
-                        if sr > 8000 && sr < 200_000 {
-                            native_sr = Some(sr);
-                            *chunk_size_native.lock().unwrap() =
-                                (sr as usize) * CHUNK_SECONDS;
-                            chunk.remove(0);
-                        }
-                    }
-                }
+            rx.recv(),
+        ).await;
 
+        match recv {
+            Ok(Some((chunk, sr))) => {
+                // Set sample rate on first chunk
+                if native_sr.is_none() {
+                    native_sr = Some(sr);
+                    eprintln!("[audio] mic sample rate: {} Hz, {} ch", sr, 1);
+                }
                 accumulator.extend_from_slice(&chunk);
 
-                let target_native = *chunk_size_native.lock().unwrap();
-                if target_native == 0 || accumulator.len() < target_native {
+                // How many samples make up CHUNK_SECONDS at the native rate?
+                let target = (native_sr.unwrap_or(44100) as f32 * CHUNK_SECONDS) as usize;
+                if accumulator.len() < target {
                     continue;
                 }
 
-                // Take exactly one chunk's worth
-                let raw_chunk: Vec<f32> = accumulator.drain(..target_native).collect();
+                let raw: Vec<f32> = accumulator.drain(..target).collect();
 
-                // VAD: skip silent chunks
-                let energy = raw_chunk.iter().map(|s| s * s).sum::<f32>() / raw_chunk.len() as f32;
-                if energy < SILENCE_THRESHOLD * SILENCE_THRESHOLD {
+                // VAD — skip silence
+                let rms = (raw.iter().map(|s| s * s).sum::<f32>() / raw.len() as f32).sqrt();
+                if rms < SILENCE_RMS {
                     continue;
                 }
 
-                // Resample to 16kHz if needed
-                let resampled = if native_sr == Some(WHISPER_SAMPLE_RATE) {
-                    raw_chunk
+                // Resample to 16kHz
+                let sr = native_sr.unwrap_or(44100);
+                let resampled = if sr == WHISPER_SAMPLE_RATE {
+                    raw
                 } else {
-                    let sr = native_sr.unwrap_or(44100) as f64;
-                    match resample_to_16k(&raw_chunk, sr) {
+                    match resample(&raw, sr) {
                         Ok(r) => r,
-                        Err(e) => {
-                            eprintln!("[audio] resample error: {}", e);
-                            continue;
-                        }
+                        Err(e) => { eprintln!("[audio] resample error: {}", e); continue; }
                     }
                 };
 
-                // Encode as WAV bytes for Whisper
-                let wav_bytes = match encode_wav_bytes(&resampled, WHISPER_SAMPLE_RATE) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        eprintln!("[audio] WAV encode error: {}", e);
-                        continue;
-                    }
-                };
+                // Encode WAV
+                let wav = encode_wav(&resampled, WHISPER_SAMPLE_RATE);
 
-                // Transcribe via Ollama Whisper
-                let app_clone = app.clone();
-                let transcript_clone = Arc::clone(&transcript);
+                // Transcribe in background — don't block the accumulator loop
+                let app2 = app.clone();
+                let transcript2 = Arc::clone(&transcript);
+                let model = whisper_model.clone();
                 tokio::spawn(async move {
-                    match transcribe_chunk(wav_bytes).await {
+                    match transcribe(wav, &model).await {
                         Ok(text) if !text.trim().is_empty() => {
-                            // Append to running transcript
-                            let mut t = transcript_clone.lock().unwrap();
+                            let mut t = transcript2.lock().unwrap();
                             if !t.is_empty() { t.push(' '); }
                             t.push_str(text.trim());
                             let full = t.clone();
                             drop(t);
-                            // Emit to UI — sends the full accumulated transcript
-                            let _ = app_clone.emit("transcription-delta", full);
+                            let _ = app2.emit("transcription-delta", full);
                         }
-                        Err(e) => {
-                            eprintln!("[audio] transcription error: {}", e);
-                        }
+                        Err(e) => eprintln!("[audio] transcribe error: {}", e),
                         _ => {}
                     }
                 });
             }
-            Ok(None) => break, // channel closed
-            Err(_) => {} // timeout — just loop and check running flag
+            Ok(None) => break,
+            Err(_) => {} // timeout, loop
         }
     }
 
@@ -155,224 +138,202 @@ pub async fn start_native_capture(
     Ok(())
 }
 
-pub fn stop_native_capture(running: &Arc<AtomicBool>, transcript: &Arc<Mutex<String>>) -> String {
+pub fn stop_native_capture(
+    running: &Arc<AtomicBool>,
+    transcript: &Arc<Mutex<String>>,
+) -> String {
     running.store(false, Ordering::SeqCst);
     let t = transcript.lock().unwrap().clone();
-    // Clear for next session
     *transcript.lock().unwrap() = String::new();
     t
 }
 
 // ─── cpal capture ────────────────────────────────────────────────────────────
 
+/// Captures mono f32 audio from the default input device.
+/// Sends (mono_samples, sample_rate) pairs over the channel.
 fn run_cpal_capture(
-    tx: mpsc::Sender<Vec<f32>>,
+    tx: mpsc::Sender<(Vec<f32>, u32)>,
     running: Arc<AtomicBool>,
 ) -> Result<(), String> {
     let host = cpal::default_host();
+    let device = host.default_input_device()
+        .ok_or_else(|| "No input device available".to_string())?;
 
-    let device = host
-        .default_input_device()
-        .ok_or("No input device available")?;
+    let config = device.default_input_config()
+        .map_err(|e| format!("Input config error: {}", e))?;
 
-    let config = device
-        .default_input_config()
-        .map_err(|e| format!("Default input config error: {}", e))?;
+    let sr = config.sample_rate().0;
+    let ch = config.channels() as usize;
 
-    let sample_rate = config.sample_rate().0;
-    let channels = config.channels() as usize;
+    eprintln!("[audio] opening device: {}, sr={}, ch={}, fmt={:?}",
+        device.name().unwrap_or_default(), sr, ch, config.sample_format());
 
-    // Send sample rate as first sentinel value
-    let tx_clone = tx.clone();
-    let _ = tx_clone.blocking_send(vec![f32::from_bits(sample_rate)]);
+    let err_fn = |e| eprintln!("[audio] stream error: {}", e);
 
-    let tx_data = tx.clone();
-    let running_stream = Arc::clone(&running);
-
-    let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => build_stream::<f32>(
-            &device, &config.into(), channels, tx_data, running_stream,
-        ),
-        cpal::SampleFormat::I16 => build_stream_i16(
-            &device, &config.into(), channels, tx_data, running_stream,
-        ),
-        cpal::SampleFormat::U16 => build_stream_u16(
-            &device, &config.into(), channels, tx_data, running_stream,
-        ),
-        _ => Err("Unsupported sample format".to_string()),
-    }?;
+    let stream: cpal::Stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => {
+            let tx = tx.clone();
+            let r = Arc::clone(&running);
+            device.build_input_stream(
+                &config.into(),
+                move |data: &[f32], _| {
+                    if !r.load(Ordering::Relaxed) { return; }
+                    let mono = downmix_f32(data, ch);
+                    let _ = tx.try_send((mono, sr));
+                },
+                err_fn, None,
+            ).map_err(|e| e.to_string())?
+        }
+        cpal::SampleFormat::I16 => {
+            let tx = tx.clone();
+            let r = Arc::clone(&running);
+            device.build_input_stream(
+                &config.into(),
+                move |data: &[i16], _| {
+                    if !r.load(Ordering::Relaxed) { return; }
+                    let mono = downmix_i16(data, ch);
+                    let _ = tx.try_send((mono, sr));
+                },
+                err_fn, None,
+            ).map_err(|e| e.to_string())?
+        }
+        cpal::SampleFormat::U16 => {
+            let tx = tx.clone();
+            let r = Arc::clone(&running);
+            device.build_input_stream(
+                &config.into(),
+                move |data: &[u16], _| {
+                    if !r.load(Ordering::Relaxed) { return; }
+                    let mono = downmix_u16(data, ch);
+                    let _ = tx.try_send((mono, sr));
+                },
+                err_fn, None,
+            ).map_err(|e| e.to_string())?
+        }
+        fmt => return Err(format!("Unsupported sample format: {:?}", fmt)),
+    };
 
     stream.play().map_err(|e| format!("Stream play error: {}", e))?;
 
-    // Keep the stream alive while recording
-    while running.load(Ordering::SeqCst) {
+    while running.load(Ordering::Relaxed) {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
 
+    drop(stream);
     Ok(())
 }
 
-fn build_stream<T: cpal::Sample + cpal::SizedSample + Into<f32> + Send + 'static>(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-    channels: usize,
-    tx: mpsc::Sender<Vec<f32>>,
-    running: Arc<AtomicBool>,
-) -> Result<cpal::Stream, String> {
-    device
-        .build_input_stream(
-            config,
-            move |data: &[T], _| {
-                if !running.load(Ordering::SeqCst) { return; }
-                // Downmix to mono
-                let mono: Vec<f32> = data
-                    .chunks(channels)
-                    .map(|frame| frame.iter().map(|&s| s.into()).sum::<f32>() / channels as f32)
-                    .collect();
-                let _ = tx.try_send(mono);
-            },
-            |e| eprintln!("[audio] stream error: {}", e),
-            None,
-        )
-        .map_err(|e| format!("Build stream error: {}", e))
+fn downmix_f32(data: &[f32], ch: usize) -> Vec<f32> {
+    if ch == 1 { return data.to_vec(); }
+    data.chunks(ch)
+        .map(|f| f.iter().sum::<f32>() / ch as f32)
+        .collect()
 }
 
-fn build_stream_i16(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-    channels: usize,
-    tx: mpsc::Sender<Vec<f32>>,
-    running: Arc<AtomicBool>,
-) -> Result<cpal::Stream, String> {
-    device
-        .build_input_stream(
-            config,
-            move |data: &[i16], _| {
-                if !running.load(Ordering::SeqCst) { return; }
-                let mono: Vec<f32> = data
-                    .chunks(channels)
-                    .map(|frame| frame.iter().map(|&s| s as f32 / 32768.0).sum::<f32>() / channels as f32)
-                    .collect();
-                let _ = tx.try_send(mono);
-            },
-            |e| eprintln!("[audio] stream error: {}", e),
-            None,
-        )
-        .map_err(|e| format!("Build stream error: {}", e))
+fn downmix_i16(data: &[i16], ch: usize) -> Vec<f32> {
+    data.chunks(ch)
+        .map(|f| f.iter().map(|&s| s as f32 / 32768.0).sum::<f32>() / ch as f32)
+        .collect()
 }
 
-fn build_stream_u16(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-    channels: usize,
-    tx: mpsc::Sender<Vec<f32>>,
-    running: Arc<AtomicBool>,
-) -> Result<cpal::Stream, String> {
-    device
-        .build_input_stream(
-            config,
-            move |data: &[u16], _| {
-                if !running.load(Ordering::SeqCst) { return; }
-                let mono: Vec<f32> = data
-                    .chunks(channels)
-                    .map(|frame| frame.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum::<f32>() / channels as f32)
-                    .collect();
-                let _ = tx.try_send(mono);
-            },
-            |e| eprintln!("[audio] stream error: {}", e),
-            None,
-        )
-        .map_err(|e| format!("Build stream error: {}", e))
+fn downmix_u16(data: &[u16], ch: usize) -> Vec<f32> {
+    data.chunks(ch)
+        .map(|f| f.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum::<f32>() / ch as f32)
+        .collect()
 }
 
 // ─── Resampling ───────────────────────────────────────────────────────────────
 
-fn resample_to_16k(samples: &[f32], from_sr: f64) -> Result<Vec<f32>, String> {
+fn resample(samples: &[f32], from_sr: u32) -> Result<Vec<f32>, String> {
+    let ratio = WHISPER_SAMPLE_RATE as f64 / from_sr as f64;
+
+    // rubato SincFixedIn expects the number of input frames per call
+    // Use a fixed chunk size of 1024 frames and process in batches
+    const FRAMES: usize = 1024;
+
     let params = SincInterpolationParameters {
-        sinc_len: 64,
+        sinc_len: 256,
         f_cutoff: 0.95,
         interpolation: SincInterpolationType::Linear,
-        oversampling_factor: 64,
+        oversampling_factor: 256,
         window: WindowFunction::BlackmanHarris2,
     };
 
-    let ratio = WHISPER_SAMPLE_RATE as f64 / from_sr;
-    let mut resampler = SincFixedIn::<f32>::new(
-        ratio,
-        2.0,
-        params,
-        samples.len(),
-        1, // mono
-    )
-    .map_err(|e| format!("Resampler init error: {:?}", e))?;
+    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, FRAMES, 1)
+        .map_err(|e| format!("Resampler init: {:?}", e))?;
 
-    let input = vec![samples.to_vec()];
-    let output = resampler
-        .process(&input, None)
-        .map_err(|e| format!("Resample error: {:?}", e))?;
+    let mut output: Vec<f32> = Vec::with_capacity((samples.len() as f64 * ratio) as usize + 1024);
+    let mut pos = 0;
 
-    Ok(output.into_iter().next().unwrap_or_default())
+    while pos + FRAMES <= samples.len() {
+        let frame = &samples[pos..pos + FRAMES];
+        let inp = vec![frame.to_vec()];
+        match resampler.process(&inp, None) {
+            Ok(out) => output.extend_from_slice(&out[0]),
+            Err(e) => return Err(format!("Resample process: {:?}", e)),
+        }
+        pos += FRAMES;
+    }
+
+    // Handle remaining samples
+    if pos < samples.len() {
+        let mut padded = samples[pos..].to_vec();
+        padded.resize(FRAMES, 0.0);
+        let inp = vec![padded];
+        if let Ok(out) = resampler.process(&inp, None) {
+            let expected = ((samples.len() - pos) as f64 * ratio) as usize;
+            output.extend_from_slice(&out[0][..expected.min(out[0].len())]);
+        }
+    }
+
+    Ok(output)
 }
 
 // ─── WAV encoding ─────────────────────────────────────────────────────────────
 
-fn encode_wav_bytes(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
-    // PCM 16-bit WAV — universally supported by Whisper
+fn encode_wav(samples: &[f32], sr: u32) -> Vec<u8> {
     let pcm: Vec<i16> = samples
         .iter()
         .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
         .collect();
 
     let data_len = (pcm.len() * 2) as u32;
-    let file_len = 36 + data_len;
+    let mut w = Vec::with_capacity(44 + data_len as usize);
 
-    let mut wav = Vec::with_capacity((44 + pcm.len() * 2) as usize);
-
-    // RIFF header
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&file_len.to_le_bytes());
-    wav.extend_from_slice(b"WAVE");
-    // fmt chunk
-    wav.extend_from_slice(b"fmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());       // chunk size
-    wav.extend_from_slice(&1u16.to_le_bytes());         // PCM
-    wav.extend_from_slice(&1u16.to_le_bytes());         // mono
-    wav.extend_from_slice(&sample_rate.to_le_bytes());  // sample rate
-    wav.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
-    wav.extend_from_slice(&2u16.to_le_bytes());         // block align
-    wav.extend_from_slice(&16u16.to_le_bytes());        // bits per sample
-    // data chunk
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_len.to_le_bytes());
-    for sample in pcm {
-        wav.extend_from_slice(&sample.to_le_bytes());
-    }
-
-    Ok(wav)
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + data_len).to_le_bytes());
+    w.extend_from_slice(b"WAVE");
+    w.extend_from_slice(b"fmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());       // PCM
+    w.extend_from_slice(&1u16.to_le_bytes());       // mono
+    w.extend_from_slice(&sr.to_le_bytes());
+    w.extend_from_slice(&(sr * 2).to_le_bytes());   // byte rate
+    w.extend_from_slice(&2u16.to_le_bytes());       // block align
+    w.extend_from_slice(&16u16.to_le_bytes());      // bits per sample
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&data_len.to_le_bytes());
+    for s in pcm { w.extend_from_slice(&s.to_le_bytes()); }
+    w
 }
 
-// ─── Whisper transcription ────────────────────────────────────────────────────
+// ─── Transcription ────────────────────────────────────────────────────────────
 
-async fn transcribe_chunk(wav_bytes: Vec<u8>) -> Result<String, String> {
-    use crate::speech::find_installed_whisper_model;
-
-    let model_name = find_installed_whisper_model()
-        .await
-        .ok_or("No Whisper model installed")?;
-
+async fn transcribe(wav: Vec<u8>, model: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let file_part = reqwest::multipart::Part::bytes(wav_bytes)
+    let part = reqwest::multipart::Part::bytes(wav)
         .file_name("audio.wav")
         .mime_str("audio/wav")
         .map_err(|e| e.to_string())?;
 
     let form = reqwest::multipart::Form::new()
-        .part("file", file_part)
-        .text("model", model_name)
+        .part("file", part)
+        .text("model", model.to_string())
         .text("response_format", "json");
 
     #[derive(serde::Deserialize)]
@@ -386,7 +347,9 @@ async fn transcribe_chunk(wav_bytes: Vec<u8>) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
 
     if !resp.status().is_success() {
-        return Err(format!("Whisper HTTP {}", resp.status()));
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Whisper HTTP {}: {}", status, body));
     }
 
     let r: Resp = resp.json().await.map_err(|e| e.to_string())?;

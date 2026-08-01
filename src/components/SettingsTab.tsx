@@ -113,6 +113,9 @@ export const SettingsTab: React.FC = () => {
     customFeeds,
     addCustomFeed,
     deleteCustomFeed,
+    pullProgress,
+    installOllamaModel,
+    cancelOllamaModelInstall,
   } = useQueueStore();
 
 
@@ -131,7 +134,6 @@ export const SettingsTab: React.FC = () => {
   const [installedModels, setInstalledModels] = useState<string[]>([]);
   const [installingModelId, setInstallingModelId] = useState<string | null>(null);
   const [uninstallingModelId, setUninstallingModelId] = useState<string | null>(null);
-  const [pullProgress, setPullProgress] = useState<Record<string, { status: string; completed: number; total: number; percent: number; done: boolean; error?: string }>>({});
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
 
@@ -174,87 +176,18 @@ export const SettingsTab: React.FC = () => {
     fetchModels();
   }, [checkAutoStartStatus]);
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    const setupPullListener = async () => {
-      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-        try {
-          const { listen } = await import('@tauri-apps/api/event');
-          unlisten = await listen<any>('ollama-pull-progress', (event) => {
-            const data = event.payload;
-            if (data && data.model) {
-              setPullProgress((prev) => ({
-                ...prev,
-                [data.model]: {
-                  status: data.status,
-                  completed: data.completed,
-                  total: data.total,
-                  percent: data.percent,
-                  done: data.done,
-                  error: data.error,
-                },
-              }));
-              if (data.done) {
-                fetchModels();
-                if (!data.error) {
-                  sendDesktopNotification(
-                    '✅ High-Performance Model Ready',
-                    `Successfully installed ${data.model}!`
-                  );
-                }
-              }
-            }
-          });
-        } catch (e) {
-          console.warn('Could not listen to pull progress:', e);
-        }
-      }
-    };
-    setupPullListener();
-    return () => {
-      unlisten?.();
-    };
-  }, []);
-
   const handleInstallModel = async (modelId: string, modelName: string) => {
     setInstallingModelId(modelId);
-    setPullProgress((prev) => ({
-      ...prev,
-      [modelId]: { status: 'Starting download...', completed: 0, total: 0, percent: 0, done: false },
-    }));
     await sendDesktopNotification(
       '📥 Downloading High-Performance Local Model',
-      `Pulling ${modelName} (${modelId}) to local Ollama runtime...`
+      `Pulling ${modelName} (${modelId}) in background...`
     );
-
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('install_ollama_model_command', { modelName: modelId });
-      } catch (err: any) {
-        console.error('Model pull error:', err);
-        setPullProgress((prev) => ({
-          ...prev,
-          [modelId]: { status: 'Failed to start download', completed: 0, total: 0, percent: 0, done: true, error: String(err) },
-        }));
-        await sendDesktopNotification(
-          '❌ Model Download Error',
-          `Could not pull ${modelName}. Ensure Ollama is running.`
-        );
-      }
-    }
+    await installOllamaModel(modelId);
   };
 
   const handleCancelInstall = async (modelId: string, modelName: string) => {
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('cancel_model_install_command', { modelName: modelId });
-        await sendDesktopNotification('⏹️ Download Cancelled', `Cancelled download for ${modelName}.`);
-      } catch (err) {
-        console.error('Cancel error:', err);
-      }
-    }
+    await cancelOllamaModelInstall(modelId);
+    await sendDesktopNotification('⏹️ Download Cancelled', `Cancelled download for ${modelName}.`);
     setInstallingModelId(null);
   };
 

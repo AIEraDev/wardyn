@@ -281,10 +281,15 @@ interface QueueStore {
   fetchLifeEvents: () => Promise<void>;
   updateLifeEventStatus: (id: string, status: string) => Promise<void>;
 
-  // Ollama Model Guard
+  // Ollama Model Guard & Background Downloads
   ollamaModels: Array<{ name: string; size_gb: string }>;
   ollamaChecked: boolean;
+  pullProgress: Record<string, { status: string; completed: number; total: number; percent: number; done: boolean; error?: string }>;
+  _ollamaListenerInitialized: boolean;
   checkOllamaModels: () => Promise<void>;
+  initOllamaProgressListener: () => Promise<void>;
+  installOllamaModel: (modelName: string) => Promise<void>;
+  cancelOllamaModelInstall: (modelName: string) => Promise<void>;
 
   // Active Life
   activeProjects: ActiveProject[];
@@ -359,6 +364,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   lifeEventCapturing: false,
   ollamaModels: [],
   ollamaChecked: false,
+  pullProgress: {},
+  _ollamaListenerInitialized: false,
 
   setLanguage: (lang: SupportedLanguage) => {
     set({ language: lang });
@@ -1427,6 +1434,74 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
     } else {
       set({ ollamaChecked: true });
+    }
+  },
+
+  initOllamaProgressListener: async () => {
+    if (get()._ollamaListenerInitialized) return;
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        set({ _ollamaListenerInitialized: true });
+        await listen<any>("ollama-pull-progress", (event) => {
+          const data = event.payload;
+          if (data && data.model) {
+            set((state) => ({
+              pullProgress: {
+                ...state.pullProgress,
+                [data.model]: {
+                  status: data.status,
+                  completed: data.completed,
+                  total: data.total,
+                  percent: data.percent,
+                  done: data.done,
+                  error: data.error,
+                },
+              },
+            }));
+            if (data.done) {
+              get().checkOllamaModels();
+              if (!data.error) {
+                get().sendDesktopNotification(
+                  "🎉 AI Model Installed",
+                  `Model ${data.model} has been downloaded and is ready for local AI synthesis.`
+                );
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.warn("Failed to attach ollama-pull-progress listener:", err);
+      }
+    }
+  },
+
+  installOllamaModel: async (modelName: string) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("install_ollama_model_command", { modelName });
+        // Auto-initialize listener if not done yet
+        get().initOllamaProgressListener();
+      } catch (err: any) {
+        get().showStatusMessage("error", `Failed to start model download: ${err?.message || err}`);
+      }
+    }
+  },
+
+  cancelOllamaModelInstall: async (modelName: string) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("cancel_model_install_command", { modelName });
+        set((state) => {
+          const updated = { ...state.pullProgress };
+          delete updated[modelName];
+          return { pullProgress: updated };
+        });
+      } catch (err: any) {
+        get().showStatusMessage("error", `Failed to cancel download: ${err?.message || err}`);
+      }
     }
   },
 

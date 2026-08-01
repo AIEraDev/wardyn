@@ -142,8 +142,9 @@ export default function App() {
       await syncCalendarDeadlines();
       await syncLinkedInTimeline();
 
-      // AI model presence check (must run early)
+      // AI model presence check & background download listener (must run early)
       checkOllamaModels();
+      useQueueStore.getState().initOllamaProgressListener();
 
       // Auto-generate morning brief on first launch of the day (cached if already done)
       fetchMorningBrief();

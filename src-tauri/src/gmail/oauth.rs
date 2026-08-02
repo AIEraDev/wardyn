@@ -3,13 +3,24 @@ use std::net::TcpListener;
 use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 
-const DEFAULT_GOOGLE_CLIENT_ID: &str = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+// Credentials baked in at compile time via build.rs / cargo:rustc-env.
+// Falls back to runtime env var (dev with dotenvy) then empty string.
+const COMPILED_GOOGLE_CLIENT_ID: &str = env!("GOOGLE_CLIENT_ID");
+const COMPILED_GOOGLE_CLIENT_SECRET: &str = env!("GOOGLE_CLIENT_SECRET");
+
 const REDIRECT_URI: &str = "http://127.0.0.1:14220/callback";
 const REDIRECT_URI_ENCODED: &str = "http%3A%2F%2F127.0.0.1%3A14220%2Fcallback";
 
 pub async fn start_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
-    let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| DEFAULT_GOOGLE_CLIENT_ID.to_string());
-    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default();
+    // Prefer runtime env var (set by dotenvy in dev) over compile-time constant
+    let client_id = std::env::var("GOOGLE_CLIENT_ID")
+        .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string());
+    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET")
+        .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_SECRET.to_string());
+
+    if client_id.is_empty() || client_id.contains("YOUR_GOOGLE") {
+        return Err("Google OAuth client ID is not configured. Please set GOOGLE_CLIENT_ID.".to_string());
+    }
 
     // 1. Build Google OAuth Auth URL
     let auth_url = format!(

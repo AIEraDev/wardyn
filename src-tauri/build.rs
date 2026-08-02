@@ -1,10 +1,10 @@
 fn main() {
     tauri_build::build();
 
-    // Embed OAuth credentials at compile time.
-    // In dev: sourced from .env via dotenvy at runtime (see lib.rs).
-    // In production CI: sourced from GitHub Actions secrets injected as env vars.
-    // This ensures release builds always have credentials baked in.
+    // Embed OAuth credentials at compile time using cargo:rustc-env.
+    // These are accessed via env!() macros in the source (NOT std::env::var at runtime).
+    // In CI: sourced from GitHub Actions secrets.
+    // In dev: sourced from the shell environment (run: source .env && cargo build, or use direnv).
     let vars = [
         "GOOGLE_CLIENT_ID",
         "GOOGLE_CLIENT_SECRET",
@@ -12,12 +12,8 @@ fn main() {
         "LINKEDIN_CLIENT_SECRET",
     ];
     for var in vars {
-        if let Ok(val) = std::env::var(var) {
-            // Pass through to the compiled binary so env::var() finds them at runtime
-            // even without a .env file present
-            println!("cargo:rustc-env={}={}", var, val);
-        }
-        // Tell cargo to rerun if the var changes
+        let val = std::env::var(var).unwrap_or_default();
+        println!("cargo:rustc-env={}={}", var, val);
         println!("cargo:rerun-if-env-changed={}", var);
     }
 }

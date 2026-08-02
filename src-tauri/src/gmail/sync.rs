@@ -4,6 +4,10 @@ use crate::models::QueueItem;
 use crate::ollama;
 use crate::productivity;
 
+// Baked in at compile time — see build.rs
+const COMPILED_GOOGLE_CLIENT_ID: &str = env!("GOOGLE_CLIENT_ID");
+const COMPILED_GOOGLE_CLIENT_SECRET: &str = env!("GOOGLE_CLIENT_SECRET");
+
 pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> Result<usize, String> {
     let all_creds = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
@@ -219,8 +223,10 @@ async fn get_valid_access_token(
         return Ok(creds.access_token.clone());
     }
 
-    let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com".to_string());
-    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default();
+    let client_id = std::env::var("GOOGLE_CLIENT_ID")
+        .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string());
+    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET")
+        .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_SECRET.to_string());
 
     let mut params = vec![
         ("client_id", client_id.as_str()),

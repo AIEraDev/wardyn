@@ -3,9 +3,19 @@ use std::net::TcpListener;
 use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 
+// Baked in at compile time — see build.rs
+const COMPILED_LINKEDIN_CLIENT_ID: &str = env!("LINKEDIN_CLIENT_ID");
+const COMPILED_LINKEDIN_CLIENT_SECRET: &str = env!("LINKEDIN_CLIENT_SECRET");
+
 pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
-    let client_id = std::env::var("LINKEDIN_CLIENT_ID").map_err(|_| "LINKEDIN_CLIENT_ID missing from .env. Please set LINKEDIN_CLIENT_ID in your .env file.".to_string())?;
-    let client_secret = std::env::var("LINKEDIN_CLIENT_SECRET").map_err(|_| "LINKEDIN_CLIENT_SECRET missing from .env. Please set LINKEDIN_CLIENT_SECRET in your .env file.".to_string())?;
+    let client_id = std::env::var("LINKEDIN_CLIENT_ID")
+        .unwrap_or_else(|_| COMPILED_LINKEDIN_CLIENT_ID.to_string());
+    let client_secret = std::env::var("LINKEDIN_CLIENT_SECRET")
+        .unwrap_or_else(|_| COMPILED_LINKEDIN_CLIENT_SECRET.to_string());
+
+    if client_id.is_empty() {
+        return Err("LinkedIn OAuth client ID is not configured. Please set LINKEDIN_CLIENT_ID.".to_string());
+    }
     
     // Configurable redirect URI (defaults to http://localhost:14220/callback)
     let redirect_uri = std::env::var("LINKEDIN_REDIRECT_URI").unwrap_or_else(|_| "http://localhost:14220/callback".to_string());

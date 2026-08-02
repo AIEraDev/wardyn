@@ -28,9 +28,14 @@ prompt=consent",
     let listener = TcpListener::bind("127.0.0.1:14220").map_err(|e| format!("Failed to bind local OAuth port 14220: {}", e))?;
     listener.set_nonblocking(true).ok();
 
-    // 3. Open system browser
-    if let Err(_) = open::that(&auth_url) {
-        println!("Could not automatically open browser, URL: {}", auth_url);
+    // 3. Open system browser — use explicit path so it works inside a .app bundle
+    let opened = std::process::Command::new("/usr/bin/open")
+        .arg(&auth_url)
+        .spawn()
+        .is_ok();
+    if !opened {
+        // fallback to open crate
+        open::that(&auth_url).ok();
     }
 
     // 4. Wait for redirect callback connection (non-blocking with 2-minute timeout)

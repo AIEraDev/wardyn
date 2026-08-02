@@ -59,41 +59,8 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     description:
       "Auto-sync deadline events and appointment requests automatically",
     iconName: "IconCalendar",
-    status: "disconnected",
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    category: "work",
-    description:
-      "Channels, DMs, workspace mentions, and executive thread triaging",
-    iconName: "IconBrandSlack",
-    status: "disconnected",
-  },
-  {
-    id: "discord",
-    name: "Discord",
-    category: "work",
-    description: "Server channels, direct messages, and bot command triggers",
-    iconName: "IconBrandDiscord",
-    status: "disconnected",
-  },
-  {
-    id: "telegram",
-    name: "Telegram",
-    category: "messaging",
-    description:
-      "Bot API integration for priority direct messaging and channel alerts",
-    iconName: "IconBrandTelegram",
-    status: "disconnected",
-  },
-  {
-    id: "imessage",
-    name: "iMessage",
-    category: "messaging",
-    description: "Native macOS messaging bridge for priority contact triaging",
-    iconName: "IconBrandApple",
-    status: "disconnected",
+    status: "connected",
+    accountLabel: "Auto-synced via Gmail OAuth",
   },
   {
     id: "linkedin",
@@ -102,30 +69,6 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     description:
       "Executive network outreach, personal profile timeline ingestion & content briefs",
     iconName: "IconBrandLinkedin",
-    status: "disconnected",
-  },
-  {
-    id: "twitter",
-    name: "Twitter / X",
-    category: "social",
-    description: "High-signal DMs, social mentions, and viral thread drafting",
-    iconName: "IconBrandX",
-    status: "disconnected",
-  },
-  {
-    id: "whatsapp",
-    name: "WhatsApp",
-    category: "messaging",
-    description: "Priority direct messages and scheduled status updates",
-    iconName: "IconBrandWhatsapp",
-    status: "disconnected",
-  },
-  {
-    id: "teams",
-    name: "Microsoft Teams",
-    category: "work",
-    description: "Enterprise conversations and Bot Framework bridge",
-    iconName: "IconBrandTeams",
     status: "disconnected",
   },
 ];

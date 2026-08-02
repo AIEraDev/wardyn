@@ -306,13 +306,15 @@ async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Ve
 
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
-    open::that(&url).or_else(|_| {
-        std::process::Command::new("open")
-            .arg(&url)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    })
+    // Use explicit /usr/bin/open so it works inside a .app bundle (stripped PATH)
+    let opened = std::process::Command::new("/usr/bin/open")
+        .arg(&url)
+        .spawn()
+        .is_ok();
+    if !opened {
+        open::that(&url).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

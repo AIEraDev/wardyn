@@ -37,12 +37,12 @@ scope={}",
         .map_err(|e| format!("Failed to bind local OAuth port 14220: {}", e))?;
     listener.set_nonblocking(true).ok();
 
-    // 3. Open system default browser
-    let launch_res = std::process::Command::new("open")
+    // 3. Open system default browser — use explicit path so it works inside a .app bundle
+    let opened = std::process::Command::new("/usr/bin/open")
         .arg(&auth_url)
-        .spawn();
-
-    if launch_res.is_err() {
+        .spawn()
+        .is_ok();
+    if !opened {
         open::that(&auth_url).ok();
     }
 

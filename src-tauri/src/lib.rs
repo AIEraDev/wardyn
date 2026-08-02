@@ -442,6 +442,7 @@ fn set_vault_path_command(path: String, state: State<'_, DbState>) -> Result<(),
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct OAuthCredentials {
     google_client_id: Option<String>,
+    google_client_secret: Option<String>,
     linkedin_client_id: Option<String>,
     linkedin_client_secret: Option<String>,
 }
@@ -451,6 +452,7 @@ fn get_oauth_credentials_command(state: State<'_, DbState>) -> Result<OAuthCrede
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     Ok(OAuthCredentials {
         google_client_id: db::get_app_setting(&conn, "oauth_google_client_id").ok().flatten(),
+        google_client_secret: db::get_app_setting(&conn, "oauth_google_client_secret").ok().flatten(),
         linkedin_client_id: db::get_app_setting(&conn, "oauth_linkedin_client_id").ok().flatten(),
         linkedin_client_secret: db::get_app_setting(&conn, "oauth_linkedin_client_secret").ok().flatten(),
     })
@@ -459,6 +461,7 @@ fn get_oauth_credentials_command(state: State<'_, DbState>) -> Result<OAuthCrede
 #[tauri::command]
 fn save_oauth_credentials_command(
     google_client_id: Option<String>,
+    google_client_secret: Option<String>,
     linkedin_client_id: Option<String>,
     linkedin_client_secret: Option<String>,
     state: State<'_, DbState>,
@@ -466,6 +469,9 @@ fn save_oauth_credentials_command(
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     if let Some(v) = &google_client_id {
         db::set_app_setting(&conn, "oauth_google_client_id", v).map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = &google_client_secret {
+        db::set_app_setting(&conn, "oauth_google_client_secret", v).map_err(|e| e.to_string())?;
     }
     if let Some(v) = &linkedin_client_id {
         db::set_app_setting(&conn, "oauth_linkedin_client_id", v).map_err(|e| e.to_string())?;
@@ -482,6 +488,7 @@ fn clear_oauth_credentials_command(service: String, state: State<'_, DbState>) -
     match service.as_str() {
         "google" => {
             db::set_app_setting(&conn, "oauth_google_client_id", "").map_err(|e| e.to_string())?;
+            db::set_app_setting(&conn, "oauth_google_client_secret", "").map_err(|e| e.to_string())?;
         }
         "linkedin" => {
             db::set_app_setting(&conn, "oauth_linkedin_client_id", "").map_err(|e| e.to_string())?;

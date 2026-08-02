@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   IconMail,
   IconCalendar,
@@ -7,6 +7,8 @@ import {
   IconPlus,
   IconCheck,
   IconSearch,
+  IconAlertTriangle,
+  IconSettings,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 
@@ -24,9 +26,103 @@ export const ChannelsTab: React.FC = () => {
     disconnectGmail,
     gmailAccounts,
     connectLinkedIn,
+    setActiveTab,
   } = useQueueStore();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Credential presence state — checked on mount
+  const [hasGoogleCred, setHasGoogleCred] = useState<boolean | null>(null);
+  const [hasLinkedInCreds, setHasLinkedInCreds] = useState<boolean | null>(
+    null,
+  );
+
+  useEffect(() => {
+    const checkCreds = async () => {
+      if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+        return;
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const creds = await invoke<{
+          google_client_id: string | null;
+          google_client_secret: string | null;
+          linkedin_client_id: string | null;
+          linkedin_client_secret: string | null;
+        }>("get_oauth_credentials_command");
+        setHasGoogleCred(
+          !!creds.google_client_id?.trim() &&
+            !!creds.google_client_secret?.trim(),
+        );
+        setHasLinkedInCreds(
+          !!creds.linkedin_client_id?.trim() &&
+            !!creds.linkedin_client_secret?.trim(),
+        );
+      } catch {
+        setHasGoogleCred(false);
+        setHasLinkedInCreds(false);
+      }
+    };
+    checkCreds();
+  }, []);
+
+  const handleConnect = async (channelId: string) => {
+    setErrors((e) => ({ ...e, [channelId]: "" }));
+
+    // Pre-flight validation with clear messaging
+    if (channelId === "gmail" && hasGoogleCred === false) {
+      setErrors((e) => ({
+        ...e,
+        gmail:
+          "Google Client ID & Secret not configured. Add them in Settings → OAuth Credentials.",
+      }));
+      return;
+    }
+    if (channelId === "linkedin" && hasLinkedInCreds === false) {
+      setErrors((e) => ({
+        ...e,
+        linkedin:
+          "LinkedIn Client ID & Secret not configured. Add them in Settings → OAuth Credentials.",
+      }));
+      return;
+    }
+
+    setConnecting(channelId);
+    // Safety timeout — never leave button stuck longer than 3 minutes
+    const timeout = setTimeout(() => setConnecting(null), 180_000);
+    try {
+      if (channelId === "gmail") await connectGmail();
+      if (channelId === "linkedin") await connectLinkedIn();
+
+      // Re-check credential presence so the UI refreshes correctly after auth
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const creds = await invoke<{
+          google_client_id: string | null;
+          google_client_secret: string | null;
+          linkedin_client_id: string | null;
+          linkedin_client_secret: string | null;
+        }>("get_oauth_credentials_command");
+        setHasGoogleCred(
+          !!creds.google_client_id?.trim() &&
+            !!creds.google_client_secret?.trim(),
+        );
+        setHasLinkedInCreds(
+          !!creds.linkedin_client_id?.trim() &&
+            !!creds.linkedin_client_secret?.trim(),
+        );
+      }
+    } catch (err: any) {
+      setErrors((e) => ({
+        ...e,
+        [channelId]: err?.toString() ?? "Connection failed",
+      }));
+    } finally {
+      clearTimeout(timeout);
+      setConnecting(null);
+    }
+  };
 
   const filteredChannels = channels.filter(
     (ch) =>
@@ -74,6 +170,13 @@ export const ChannelsTab: React.FC = () => {
           const isGmail = channel.id === "gmail";
           const isCalendar = channel.id === "calendar";
           const isLinkedIn = channel.id === "linkedin";
+          const isConnecting = connecting === channel.id;
+          const error = errors[channel.id];
+
+          // Credential warning
+          const missingCreds =
+            (isGmail && hasGoogleCred === false) ||
+            (isLinkedIn && hasLinkedInCreds === false);
 
           return (
             <div
@@ -81,7 +184,9 @@ export const ChannelsTab: React.FC = () => {
               className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
                 isConnected
                   ? "bg-[#151A21] border-[rgba(74,143,194,0.4)] shadow-[0_0_12px_rgba(74,143,194,0.08)]"
-                  : "bg-[#181E27] border-[#242B35] hover:border-[#384352]"
+                  : missingCreds
+                    ? "bg-[#181E27] border-[rgba(232,162,61,0.3)]"
+                    : "bg-[#181E27] border-[#242B35] hover:border-[#384352]"
               }`}
             >
               <div>
@@ -92,7 +197,9 @@ export const ChannelsTab: React.FC = () => {
                       className={`p-2 rounded-lg ${
                         isConnected
                           ? "bg-[rgba(74,143,194,0.16)] text-[#4A8FC2]"
-                          : "bg-[#151A21] text-[#7A8492]"
+                          : missingCreds
+                            ? "bg-[rgba(232,162,61,0.1)] text-[#E8A23D]"
+                            : "bg-[#151A21] text-[#7A8492]"
                       }`}
                     >
                       <Icon size={20} />
@@ -111,7 +218,9 @@ export const ChannelsTab: React.FC = () => {
                     className={`font-mono text-[11px] px-2 py-0.5 rounded ${
                       isConnected
                         ? "bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)]"
-                        : "bg-[#151A21] text-[#7A8492] border border-[#242B35]"
+                        : missingCreds
+                          ? "bg-[rgba(232,162,61,0.1)] text-[#E8A23D] border border-[rgba(232,162,61,0.3)]"
+                          : "bg-[#151A21] text-[#7A8492] border border-[#242B35]"
                     }`}
                   >
                     {isGmail && isConnected
@@ -120,7 +229,9 @@ export const ChannelsTab: React.FC = () => {
                         ? "Auto-Synced"
                         : isConnected
                           ? "Active"
-                          : "Available"}
+                          : missingCreds
+                            ? "Setup Required"
+                            : "Available"}
                   </span>
                 </div>
 
@@ -161,6 +272,34 @@ export const ChannelsTab: React.FC = () => {
                     • {channel.accountLabel}
                   </p>
                 )}
+
+                {/* Inline missing-creds warning */}
+                {missingCreds && !isConnected && (
+                  <div className="flex items-start gap-2 bg-[rgba(232,162,61,0.07)] border border-[rgba(232,162,61,0.2)] rounded-lg px-3 py-2 mb-3">
+                    <IconAlertTriangle
+                      size={13}
+                      className="text-[#E8A23D] mt-0.5 shrink-0"
+                    />
+                    <p className="text-[11px] text-[#E8A23D] leading-snug">
+                      {isGmail
+                        ? "Add your Google Client ID in Settings → OAuth Credentials before connecting."
+                        : "Add your LinkedIn Client ID & Secret in Settings → OAuth Credentials before connecting."}
+                    </p>
+                  </div>
+                )}
+
+                {/* Inline error from failed connect attempt */}
+                {error && (
+                  <div className="flex items-start gap-2 bg-[rgba(239,68,68,0.07)] border border-[rgba(239,68,68,0.2)] rounded-lg px-3 py-2 mb-3">
+                    <IconAlertTriangle
+                      size={13}
+                      className="text-[#EF4444] mt-0.5 shrink-0"
+                    />
+                    <p className="text-[11px] text-[#EF4444] leading-snug break-words">
+                      {error}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Action row */}
@@ -169,16 +308,32 @@ export const ChannelsTab: React.FC = () => {
                   <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#4A8FC2]">
                     <IconCheck size={13} /> Synced automatically via Gmail OAuth
                   </div>
+                ) : missingCreds && !isConnected ? (
+                  /* Missing creds — show "Go to Settings" shortcut */
+                  <button
+                    type="button"
+                    onClick={() => (setActiveTab as any)("settings")}
+                    className="w-full py-1.5 text-xs font-medium text-[#E8A23D] bg-[rgba(232,162,61,0.08)] border border-[rgba(232,162,61,0.3)] rounded-lg hover:bg-[rgba(232,162,61,0.15)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono"
+                  >
+                    <IconSettings size={14} /> Go to OAuth Credentials Setup
+                  </button>
                 ) : isGmail ? (
                   <button
                     type="button"
-                    onClick={() => connectGmail()}
-                    className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono"
+                    onClick={() => handleConnect("gmail")}
+                    disabled={isConnecting}
+                    className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono disabled:opacity-50"
                   >
-                    <IconPlus size={14} />
-                    {gmailAccounts.length > 0
-                      ? "Connect Another Gmail Account"
-                      : "Connect Gmail OAuth"}
+                    {isConnecting ? (
+                      <span className="animate-pulse">Opening browser...</span>
+                    ) : (
+                      <>
+                        <IconPlus size={14} />
+                        {gmailAccounts.length > 0
+                          ? "Connect Another Gmail Account"
+                          : "Connect Gmail OAuth"}
+                      </>
+                    )}
                   </button>
                 ) : isLinkedIn ? (
                   isConnected ? (
@@ -197,10 +352,19 @@ export const ChannelsTab: React.FC = () => {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => connectLinkedIn()}
-                      className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono"
+                      onClick={() => handleConnect("linkedin")}
+                      disabled={isConnecting}
+                      className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono disabled:opacity-50"
                     >
-                      <IconPlus size={14} /> Connect LinkedIn OAuth
+                      {isConnecting ? (
+                        <span className="animate-pulse">
+                          Opening browser...
+                        </span>
+                      ) : (
+                        <>
+                          <IconPlus size={14} /> Connect LinkedIn OAuth
+                        </>
+                      )}
                     </button>
                   )
                 ) : null}

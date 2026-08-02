@@ -222,24 +222,27 @@ async fn get_valid_access_token(
         return Ok(creds.access_token.clone());
     }
 
-    let client_id = {
+    let (client_id, client_secret) = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
-        crate::db::get_app_setting(&conn, "oauth_google_client_id")
-            .ok()
-            .flatten()
-            .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| {
-                std::env::var("GOOGLE_CLIENT_ID")
-                    .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string())
-            })
+        let id = crate::db::get_app_setting(&conn, "oauth_google_client_id")
+            .ok().flatten().filter(|v| !v.is_empty())
+            .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_ID")
+                .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string()));
+        let secret = crate::db::get_app_setting(&conn, "oauth_google_client_secret")
+            .ok().flatten().filter(|v| !v.is_empty())
+            .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default());
+        (id, secret)
     };
 
-    // PKCE flow — no client_secret needed for token refresh on installed apps
-    let params = vec![
+    // PKCE flow — client_secret still required for Google Desktop app token refresh
+    let mut params = vec![
         ("client_id",     client_id.as_str()),
         ("refresh_token", creds.refresh_token.as_str()),
         ("grant_type",    "refresh_token"),
     ];
+    if !client_secret.is_empty() {
+        params.push(("client_secret", client_secret.as_str()));
+    }
 
     let res = client.post("https://oauth2.googleapis.com/token")
         .form(&params)

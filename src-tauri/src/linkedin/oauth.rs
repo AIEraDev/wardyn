@@ -10,9 +10,9 @@ use crate::db::{self, GmailCredentials};
 // LINKEDIN_CLIENT_SECRET in your .env file.
 const COMPILED_LINKEDIN_CLIENT_ID: &str = env!("LINKEDIN_CLIENT_ID");
 
-// LinkedIn uses a different port to avoid conflicts with Gmail OAuth (14220)
-const REDIRECT_PORT: u16 = 14221;
-const REDIRECT_URI: &str = "http://localhost:14221/callback";
+// LinkedIn uses the same port as Gmail (14220) — they never run concurrently
+const REDIRECT_PORT: u16 = 14220;
+const REDIRECT_URI: &str = "http://localhost:14220/callback";
 
 pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
     // Read user-supplied credentials from DB first
@@ -55,10 +55,10 @@ scope={}",
         client_id, redirect_encoded, state_token, scope_encoded
     );
 
-    // 2. Bind callback listener on port 14221
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", REDIRECT_PORT))
-        .or_else(|_| TcpListener::bind(format!("0.0.0.0:{}", REDIRECT_PORT)))
-        .map_err(|e| format!("Failed to bind LinkedIn OAuth port {}: {}", REDIRECT_PORT, e))?;
+    // 2. Bind callback listener — try both localhost variants on 14220
+    let listener = TcpListener::bind("127.0.0.1:14220")
+        .or_else(|_| TcpListener::bind("0.0.0.0:14220"))
+        .map_err(|e| format!("Failed to bind LinkedIn OAuth port 14220: {}", e))?;
     listener.set_nonblocking(true).ok();
 
     // 3. Open browser — explicit /usr/bin/open works inside .app bundle
@@ -93,27 +93,69 @@ scope={}",
         reader.read_line(&mut request_line).map_err(|e| e.to_string())?;
 
         let (html, is_err) = if request_line.contains("error=") {
-            (
-                "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;\
-                display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
-                <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;\
-                border:1px solid #242B35;max-width:540px;'>\
-                <h2 style='color:#E8A23D;margin-top:0;'>Authorization Error</h2>\
-                <p style='color:#9AA4B2;'>Please check your LinkedIn Developer Console redirect URI settings.</p>\
-                </div></body></html>".to_string(),
-                true,
-            )
+            (r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wardyn — Authorization Error</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0B0E13; color: #F0F4F8; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #151A21; border: 1px solid #242B35; border-radius: 16px; padding: 48px 56px; text-align: center; max-width: 480px; width: 90%; box-shadow: 0 24px 64px rgba(0,0,0,0.5); }
+    .icon-wrap { width: 64px; height: 64px; background: rgba(232,162,61,0.12); border: 1px solid rgba(232,162,61,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
+    .x-icon { width: 26px; height: 26px; stroke: #E8A23D; stroke-width: 2.5; fill: none; stroke-linecap: round; }
+    .brand { font-size: 11px; font-family: 'SF Mono', monospace; color: #4A8FC2; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
+    h1 { font-size: 22px; font-weight: 600; color: #F0F4F8; margin-bottom: 10px; }
+    p { font-size: 14px; color: #9AA4B2; line-height: 1.6; margin-bottom: 16px; }
+    .hint { font-size: 12px; color: #E8A23D; font-family: 'SF Mono', monospace; background: rgba(232,162,61,0.08); border: 1px solid rgba(232,162,61,0.2); border-radius: 8px; padding: 10px 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-wrap">
+      <svg class="x-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </div>
+    <div class="brand">Wardyn</div>
+    <h1>Authorization Error</h1>
+    <p>LinkedIn declined the authorization request.</p>
+    <div class="hint">Check that your redirect URI matches exactly in the LinkedIn Developer Console, then try again.</div>
+  </div>
+</body>
+</html>"#.to_string(), true)
         } else {
-            (
-                "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;\
-                display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
-                <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;\
-                border:1px solid #242B35;'>\
-                <h2 style='color:#4A8FC2;margin-top:0;'>LinkedIn Connected!</h2>\
-                <p style='color:#9AA4B2;'>Authentication complete. You can close this window.</p>\
-                </div></body></html>".to_string(),
-                false,
-            )
+            (r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wardyn — LinkedIn Connected</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0B0E13; color: #F0F4F8; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #151A21; border: 1px solid #242B35; border-radius: 16px; padding: 48px 56px; text-align: center; max-width: 480px; width: 90%; box-shadow: 0 24px 64px rgba(0,0,0,0.5); }
+    .icon-wrap { width: 64px; height: 64px; background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
+    .checkmark { width: 28px; height: 28px; stroke: #34D399; stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .brand { font-size: 11px; font-family: 'SF Mono', monospace; color: #4A8FC2; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
+    h1 { font-size: 22px; font-weight: 600; color: #F0F4F8; margin-bottom: 10px; }
+    p { font-size: 14px; color: #9AA4B2; line-height: 1.6; margin-bottom: 28px; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.25); border-radius: 999px; padding: 6px 16px; font-size: 12px; font-family: 'SF Mono', monospace; color: #34D399; }
+    .dot { width: 7px; height: 7px; background: #34D399; border-radius: 50%; animation: pulse 1.8s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+    .close-hint { margin-top: 24px; font-size: 11px; color: #4A5568; font-family: 'SF Mono', monospace; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-wrap">
+      <svg class="checkmark" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div class="brand">Wardyn</div>
+    <h1>LinkedIn Connected</h1>
+    <p>Your LinkedIn profile has been authenticated successfully.<br/>Wardyn will now sync your timeline and content briefs.</p>
+    <div class="pill"><div class="dot"></div> Authentication complete</div>
+    <div class="close-hint">You can close this window and return to Wardyn</div>
+  </div>
+</body>
+</html>"#.to_string(), false)
         };
 
         let response = format!(

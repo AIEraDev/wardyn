@@ -153,9 +153,11 @@ export const SettingsTab: React.FC = () => {
 
   // ── OAuth Credentials (user-provided, stored locally) ──
   const [googleClientId, setGoogleClientId] = useState("");
+  const [googleClientSecret, setGoogleClientSecret] = useState("");
   const [linkedinClientId, setLinkedinClientId] = useState("");
   const [linkedinClientSecret, setLinkedinClientSecret] = useState("");
   const [oauthSaved, setOauthSaved] = useState(false);
+  const [showGoogleSecret, setShowGoogleSecret] = useState(false);
   const [showLinkedinSecret, setShowLinkedinSecret] = useState(false);
 
   useEffect(() => {
@@ -165,10 +167,13 @@ export const SettingsTab: React.FC = () => {
           const { invoke } = await import("@tauri-apps/api/core");
           const creds = await invoke<{
             google_client_id: string | null;
+            google_client_secret: string | null;
             linkedin_client_id: string | null;
             linkedin_client_secret: string | null;
           }>("get_oauth_credentials_command");
           if (creds.google_client_id) setGoogleClientId(creds.google_client_id);
+          if (creds.google_client_secret)
+            setGoogleClientSecret(creds.google_client_secret);
           if (creds.linkedin_client_id)
             setLinkedinClientId(creds.linkedin_client_id);
           if (creds.linkedin_client_secret)
@@ -188,6 +193,7 @@ export const SettingsTab: React.FC = () => {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("save_oauth_credentials_command", {
           googleClientId: googleClientId.trim() || null,
+          googleClientSecret: googleClientSecret.trim() || null,
           linkedinClientId: linkedinClientId.trim() || null,
           linkedinClientSecret: linkedinClientSecret.trim() || null,
         });
@@ -933,6 +939,26 @@ export const SettingsTab: React.FC = () => {
               placeholder="your-client-id.apps.googleusercontent.com"
               className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
             />
+            <div className="relative">
+              <input
+                type={showGoogleSecret ? "text" : "password"}
+                value={googleClientSecret}
+                onChange={(e) => setGoogleClientSecret(e.target.value)}
+                placeholder="Google Client Secret"
+                className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 pr-9 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowGoogleSecret((v) => !v)}
+                className="absolute right-2.5 top-2 text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
+              >
+                {showGoogleSecret ? (
+                  <IconEyeOff size={14} />
+                ) : (
+                  <IconEye size={14} />
+                )}
+              </button>
+            </div>
           </div>
 
           {/* LinkedIn */}
@@ -943,9 +969,9 @@ export const SettingsTab: React.FC = () => {
             <div className="text-[10px] text-[#5D6A7A] font-mono mb-1">
               Create app → Products: Sign In with LinkedIn → add{" "}
               <span className="text-[#4A8FC2]">
-                http://localhost:14221/callback
+                http://localhost:14220/callback
               </span>{" "}
-              as redirect URI
+              as redirect URI (same port as Google)
             </div>
             <input
               type="text"

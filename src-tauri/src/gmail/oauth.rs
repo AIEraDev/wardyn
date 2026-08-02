@@ -40,20 +40,26 @@ fn generate_pkce_verifier() -> String {
 
 pub async fn start_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
     // Prefer user-supplied credentials from DB, then compiled-in fallback
-    let client_id = {
+    let (client_id, client_secret) = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
-        crate::db::get_app_setting(&conn, "oauth_google_client_id")
-            .ok()
-            .flatten()
-            .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| {
-                std::env::var("GOOGLE_CLIENT_ID")
-                    .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string())
-            })
+        let id = crate::db::get_app_setting(&conn, "oauth_google_client_id")
+            .ok().flatten().filter(|v| !v.is_empty())
+            .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_ID")
+                .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string()));
+        // For Google Desktop apps the client_secret is required even with PKCE.
+        // It is NOT a true secret — Google's docs explicitly state desktop client
+        // secrets are not confidential and can be distributed in apps.
+        let secret = crate::db::get_app_setting(&conn, "oauth_google_client_secret")
+            .ok().flatten().filter(|v| !v.is_empty())
+            .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default());
+        (id, secret)
     };
 
     if client_id.is_empty() || client_id.contains("YOUR_GOOGLE") {
         return Err("Google OAuth client ID is not configured. Go to Settings → OAuth Credentials and paste your Google Client ID.".to_string());
+    }
+    if client_secret.is_empty() {
+        return Err("Google OAuth client secret is not configured. Go to Settings → OAuth Credentials and paste your Google Client Secret.".to_string());
     }
 
     // PKCE — plain method: code_challenge = code_verifier (Google supports for installed apps)
@@ -113,11 +119,111 @@ code_challenge_method=plain",
     let code = parse_code_from_http_request(&request_line)
         .ok_or("No authorization code in OAuth callback")?;
 
-    let response_body = "<html><body style='font-family:sans-serif;background:#0B0E13;color:#F0F4F8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>\
-        <div style='text-align:center;background:#151A21;padding:40px;border-radius:12px;border:1px solid #242B35;'>\
-        <h2 style='color:#4A8FC2;margin-top:0;'>Wardyn Connected!</h2>\
-        <p style='color:#9AA4B2;'>Gmail authentication complete. You can close this window.</p>\
-        </div></body></html>";
+    let response_body = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wardyn — Gmail Connected</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0B0E13;
+      color: #F0F4F8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #151A21;
+      border: 1px solid #242B35;
+      border-radius: 16px;
+      padding: 48px 56px;
+      text-align: center;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+    .icon-wrap {
+      width: 64px; height: 64px;
+      background: rgba(52, 211, 153, 0.12);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 24px;
+    }
+    .checkmark {
+      width: 28px; height: 28px;
+      stroke: #34D399; stroke-width: 2.5;
+      fill: none; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .brand {
+      font-size: 11px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: #4A8FC2;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #F0F4F8;
+      margin-bottom: 10px;
+    }
+    p {
+      font-size: 14px;
+      color: #9AA4B2;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(52,211,153,0.1);
+      border: 1px solid rgba(52,211,153,0.25);
+      border-radius: 999px;
+      padding: 6px 16px;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: #34D399;
+    }
+    .dot {
+      width: 7px; height: 7px;
+      background: #34D399;
+      border-radius: 50%;
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+    .close-hint {
+      margin-top: 24px;
+      font-size: 11px;
+      color: #4A5568;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-wrap">
+      <svg class="checkmark" viewBox="0 0 24 24">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    </div>
+    <div class="brand">Wardyn</div>
+    <h1>Gmail Connected</h1>
+    <p>Your Gmail account has been authenticated successfully.<br/>Wardyn will now sync your inbox in the background.</p>
+    <div class="pill"><div class="dot"></div> Authentication complete</div>
+    <div class="close-hint">You can close this window and return to Wardyn</div>
+  </div>
+</body>
+</html>"#;
     let http_response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         response_body.len(), response_body
@@ -125,10 +231,11 @@ code_challenge_method=plain",
     stream.write_all(http_response.as_bytes()).ok();
     stream.flush().ok();
 
-    // 5. Exchange code for tokens — PKCE: send code_verifier instead of client_secret
+    // 5. Exchange code for tokens — Google Desktop apps require client_secret even with PKCE
     let client = reqwest::Client::new();
     let params = vec![
         ("client_id",      client_id.as_str()),
+        ("client_secret",  client_secret.as_str()),
         ("code",           code.as_str()),
         ("grant_type",     "authorization_code"),
         ("redirect_uri",   REDIRECT_URI),

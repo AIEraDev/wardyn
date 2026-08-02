@@ -587,27 +587,44 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   connectLinkedIn: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const profileName = await invoke<string>("start_linkedin_auth");
-        set({ linkedInAccount: profileName });
-        set((state) => ({
-          channels: state.channels.map((c) =>
-            c.id === "linkedin"
-              ? { ...c, status: "connected", accountLabel: profileName }
-              : c,
-          ),
-        }));
-        await get().syncLinkedInTimeline();
-        await get().sendDesktopNotification(
-          "💼 LinkedIn Personal Profile Connected",
-          `Authenticated profile for: ${profileName}`,
-        );
-      } catch (err: any) {
-        const msg = err?.toString() || "LinkedIn OAuth failed";
+      const { invoke } = await import("@tauri-apps/api/core");
+
+      // Validate credentials before opening browser
+      const creds = await invoke<{
+        linkedin_client_id: string | null;
+        linkedin_client_secret: string | null;
+      }>("get_oauth_credentials_command");
+      const clientId = creds?.linkedin_client_id?.trim() ?? "";
+      const clientSecret = creds?.linkedin_client_secret?.trim() ?? "";
+      if (!clientId) {
+        const msg =
+          "LinkedIn Client ID not set. Go to Settings → OAuth Credentials first.";
         set({ error: msg });
-        await get().sendDesktopNotification("LinkedIn OAuth Error", msg);
+        await get().sendDesktopNotification("⚠️ LinkedIn Setup Required", msg);
+        throw new Error(msg);
       }
+      if (!clientSecret) {
+        const msg =
+          "LinkedIn Client Secret not set. Go to Settings → OAuth Credentials first.";
+        set({ error: msg });
+        await get().sendDesktopNotification("⚠️ LinkedIn Setup Required", msg);
+        throw new Error(msg);
+      }
+
+      const profileName = await invoke<string>("start_linkedin_auth");
+      set({ linkedInAccount: profileName });
+      set((state) => ({
+        channels: state.channels.map((c) =>
+          c.id === "linkedin"
+            ? { ...c, status: "connected", accountLabel: profileName }
+            : c,
+        ),
+      }));
+      await get().syncLinkedInTimeline();
+      await get().sendDesktopNotification(
+        "💼 LinkedIn Personal Profile Connected",
+        `Authenticated profile for: ${profileName}`,
+      );
     }
   },
 
@@ -1037,7 +1054,13 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             ),
           }));
         }
+      } catch (err) {
+        console.error("Failed to check Gmail auth status:", err);
+      }
 
+      // LinkedIn check is independent — a failure here must not affect Gmail state
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
         const linkedinAccount = await invoke<string | null>(
           "get_linkedin_auth_status",
         );
@@ -1051,26 +1074,47 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             ),
           }));
         }
-      } catch (err) {
-        console.error("Failed to check auth status:", err);
+      } catch {
+        // LinkedIn not connected — non-fatal
       }
     }
   },
 
   connectGmail: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const email = await invoke<string>("start_gmail_auth");
-        await get().checkGmailStatus();
-        await get().syncGmail();
-        await get().sendDesktopNotification(
-          "🔒 Gmail Account Connected",
-          `Successfully authenticated: ${email}`,
-        );
-      } catch (err: any) {
-        set({ error: err.toString() });
+      const { invoke } = await import("@tauri-apps/api/core");
+
+      // Validate: check user has saved Google credentials before opening browser
+      const creds = await invoke<{
+        google_client_id: string | null;
+        google_client_secret: string | null;
+      }>("get_oauth_credentials_command");
+      const clientId = creds?.google_client_id?.trim() ?? "";
+      const clientSecret = creds?.google_client_secret?.trim() ?? "";
+      if (!clientId || clientId.includes("YOUR_GOOGLE")) {
+        const msg =
+          "Google Client ID not set. Go to Settings → OAuth Credentials first.";
+        set({ error: msg });
+        await get().sendDesktopNotification("⚠️ Gmail Setup Required", msg);
+        throw new Error(msg);
       }
+      if (!clientSecret) {
+        const msg =
+          "Google Client Secret not set. Go to Settings → OAuth Credentials first.";
+        set({ error: msg });
+        await get().sendDesktopNotification("⚠️ Gmail Setup Required", msg);
+        throw new Error(msg);
+      }
+
+      const email = await invoke<string>("start_gmail_auth");
+      // Update channel state immediately — don't wait for sync to unblock the button
+      await get().checkGmailStatus();
+      // Kick off inbox sync in background — non-blocking
+      get().syncGmail().catch(console.error);
+      await get().sendDesktopNotification(
+        "🔒 Gmail Account Connected",
+        `Successfully authenticated: ${email}`,
+      );
     }
   },
 

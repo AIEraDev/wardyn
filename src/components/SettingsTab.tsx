@@ -14,6 +14,10 @@ import {
   IconFlame,
   IconFolder,
   IconLoader2,
+  IconKey,
+  IconExternalLink,
+  IconEye,
+  IconEyeOff,
 } from "@tabler/icons-react";
 import { OllamaSetupModal } from "./OllamaSetupModal";
 
@@ -146,6 +150,54 @@ export const SettingsTab: React.FC = () => {
 
   const [vaultInput, setVaultInput] = useState(vaultPath || "");
   const [vaultSaved, setVaultSaved] = useState(false);
+
+  // ── OAuth Credentials (user-provided, stored locally) ──
+  const [googleClientId, setGoogleClientId] = useState("");
+  const [linkedinClientId, setLinkedinClientId] = useState("");
+  const [linkedinClientSecret, setLinkedinClientSecret] = useState("");
+  const [oauthSaved, setOauthSaved] = useState(false);
+  const [showLinkedinSecret, setShowLinkedinSecret] = useState(false);
+
+  useEffect(() => {
+    const loadOAuthCreds = async () => {
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const creds = await invoke<{
+            google_client_id: string | null;
+            linkedin_client_id: string | null;
+            linkedin_client_secret: string | null;
+          }>("get_oauth_credentials_command");
+          if (creds.google_client_id) setGoogleClientId(creds.google_client_id);
+          if (creds.linkedin_client_id)
+            setLinkedinClientId(creds.linkedin_client_id);
+          if (creds.linkedin_client_secret)
+            setLinkedinClientSecret(creds.linkedin_client_secret);
+        } catch (e) {
+          console.warn("Failed to load OAuth credentials:", e);
+        }
+      }
+    };
+    loadOAuthCreds();
+  }, []);
+
+  const handleSaveOAuthCreds = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("save_oauth_credentials_command", {
+          googleClientId: googleClientId.trim() || null,
+          linkedinClientId: linkedinClientId.trim() || null,
+          linkedinClientSecret: linkedinClientSecret.trim() || null,
+        });
+        setOauthSaved(true);
+        setTimeout(() => setOauthSaved(false), 2500);
+      } catch (e) {
+        console.error("Failed to save OAuth credentials:", e);
+      }
+    }
+  };
 
   const [newFeedTitle, setNewFeedTitle] = useState("");
   const [newFeedUrl, setNewFeedUrl] = useState("");
@@ -806,6 +858,132 @@ export const SettingsTab: React.FC = () => {
             <option value={30}>Every 30 minutes</option>
           </select>
         </div>
+      </div>
+
+      {/* OAuth Credentials — user brings their own */}
+      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-lg bg-[#181E27] text-[#4A8FC2] border border-[#242B35]">
+            <IconKey size={18} />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-[#F0F4F8]">
+              OAuth Credentials
+            </p>
+            <p className="text-xs text-[#9AA4B2]">
+              Your credentials — stored locally, never shared
+            </p>
+          </div>
+        </div>
+
+        {/* Info box */}
+        <div className="bg-[#181E27] border border-[rgba(74,143,194,0.2)] rounded-lg p-3 space-y-1.5">
+          <p className="text-xs text-[#9AA4B2] leading-relaxed">
+            Wardyn is{" "}
+            <span className="text-[#F0F4F8] font-medium">100% local-first</span>
+            . To connect Gmail or LinkedIn, paste your own OAuth app credentials
+            below. They're stored only in your local database — never sent to
+            any server.
+          </p>
+          <div className="flex items-center gap-3 pt-1">
+            <a
+              href="#"
+              onClick={async (e) => {
+                e.preventDefault();
+                const { invoke } = await import("@tauri-apps/api/core");
+                invoke("open_external_url", {
+                  url: "https://console.cloud.google.com/apis/credentials",
+                });
+              }}
+              className="font-mono text-[11px] text-[#4A8FC2] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <IconExternalLink size={11} /> Google Cloud Console
+            </a>
+            <a
+              href="#"
+              onClick={async (e) => {
+                e.preventDefault();
+                const { invoke } = await import("@tauri-apps/api/core");
+                invoke("open_external_url", {
+                  url: "https://www.linkedin.com/developers/apps",
+                });
+              }}
+              className="font-mono text-[11px] text-[#4A8FC2] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <IconExternalLink size={11} /> LinkedIn Developer Portal
+            </a>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveOAuthCreds} className="space-y-3">
+          {/* Google */}
+          <div className="space-y-1.5">
+            <p className="font-mono text-[10px] text-[#7A8492] uppercase">
+              Google OAuth App
+            </p>
+            <div className="text-[10px] text-[#5D6A7A] font-mono mb-1">
+              Create a project → OAuth 2.0 Client ID → Desktop app type → add{" "}
+              <span className="text-[#4A8FC2]">http://127.0.0.1:14220</span> as
+              redirect URI
+            </div>
+            <input
+              type="text"
+              value={googleClientId}
+              onChange={(e) => setGoogleClientId(e.target.value)}
+              placeholder="your-client-id.apps.googleusercontent.com"
+              className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+            />
+          </div>
+
+          {/* LinkedIn */}
+          <div className="space-y-1.5">
+            <p className="font-mono text-[10px] text-[#7A8492] uppercase">
+              LinkedIn OAuth App
+            </p>
+            <div className="text-[10px] text-[#5D6A7A] font-mono mb-1">
+              Create app → Products: Sign In with LinkedIn → add{" "}
+              <span className="text-[#4A8FC2]">
+                http://localhost:14221/callback
+              </span>{" "}
+              as redirect URI
+            </div>
+            <input
+              type="text"
+              value={linkedinClientId}
+              onChange={(e) => setLinkedinClientId(e.target.value)}
+              placeholder="LinkedIn Client ID"
+              className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+            />
+            <div className="relative">
+              <input
+                type={showLinkedinSecret ? "text" : "password"}
+                value={linkedinClientSecret}
+                onChange={(e) => setLinkedinClientSecret(e.target.value)}
+                placeholder="LinkedIn Client Secret"
+                className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 pr-9 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowLinkedinSecret((v) => !v)}
+                className="absolute right-2.5 top-2 text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
+              >
+                {showLinkedinSecret ? (
+                  <IconEyeOff size={14} />
+                ) : (
+                  <IconEye size={14} />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="px-4 py-2 bg-[#4A8FC2] text-black text-xs font-semibold rounded-lg hover:bg-[#5b9bd1] transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            {oauthSaved ? <IconCheck size={13} /> : <IconKey size={13} />}
+            {oauthSaved ? "Saved!" : "Save Credentials"}
+          </button>
+        </form>
       </div>
 
       {/* Local Markdown Vault Sync (Obsidian / Logseq) */}

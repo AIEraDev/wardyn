@@ -435,6 +435,63 @@ fn set_vault_path_command(path: String, state: State<'_, DbState>) -> Result<(),
     db::set_app_setting(&conn, "vault_path", &path).map_err(|e| e.to_string())
 }
 
+// ─── User-provided OAuth Credentials ─────────────────────────────────────────
+// Users bring their own Google / LinkedIn OAuth app credentials.
+// Stored locally in SQLite app_settings — never sent anywhere.
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct OAuthCredentials {
+    google_client_id: Option<String>,
+    linkedin_client_id: Option<String>,
+    linkedin_client_secret: Option<String>,
+}
+
+#[tauri::command]
+fn get_oauth_credentials_command(state: State<'_, DbState>) -> Result<OAuthCredentials, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(OAuthCredentials {
+        google_client_id: db::get_app_setting(&conn, "oauth_google_client_id").ok().flatten(),
+        linkedin_client_id: db::get_app_setting(&conn, "oauth_linkedin_client_id").ok().flatten(),
+        linkedin_client_secret: db::get_app_setting(&conn, "oauth_linkedin_client_secret").ok().flatten(),
+    })
+}
+
+#[tauri::command]
+fn save_oauth_credentials_command(
+    google_client_id: Option<String>,
+    linkedin_client_id: Option<String>,
+    linkedin_client_secret: Option<String>,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(v) = &google_client_id {
+        db::set_app_setting(&conn, "oauth_google_client_id", v).map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = &linkedin_client_id {
+        db::set_app_setting(&conn, "oauth_linkedin_client_id", v).map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = &linkedin_client_secret {
+        db::set_app_setting(&conn, "oauth_linkedin_client_secret", v).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_oauth_credentials_command(service: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    match service.as_str() {
+        "google" => {
+            db::set_app_setting(&conn, "oauth_google_client_id", "").map_err(|e| e.to_string())?;
+        }
+        "linkedin" => {
+            db::set_app_setting(&conn, "oauth_linkedin_client_id", "").map_err(|e| e.to_string())?;
+            db::set_app_setting(&conn, "oauth_linkedin_client_secret", "").map_err(|e| e.to_string())?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn add_custom_feed_command(
     title: String,
@@ -941,6 +998,9 @@ pub fn run() {
             stop_speech_command,
             get_vault_path_command,
             set_vault_path_command,
+            get_oauth_credentials_command,
+            save_oauth_credentials_command,
+            clear_oauth_credentials_command,
             add_custom_feed_command,
             get_custom_feeds_command,
             delete_custom_feed_command,

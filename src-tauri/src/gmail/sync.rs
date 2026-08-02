@@ -222,8 +222,17 @@ async fn get_valid_access_token(
         return Ok(creds.access_token.clone());
     }
 
-    let client_id = std::env::var("GOOGLE_CLIENT_ID")
-        .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string());
+    let client_id = {
+        let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+        crate::db::get_app_setting(&conn, "oauth_google_client_id")
+            .ok()
+            .flatten()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| {
+                std::env::var("GOOGLE_CLIENT_ID")
+                    .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string())
+            })
+    };
 
     // PKCE flow — no client_secret needed for token refresh on installed apps
     let params = vec![

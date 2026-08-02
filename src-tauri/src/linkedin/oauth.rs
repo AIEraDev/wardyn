@@ -15,11 +15,23 @@ const REDIRECT_PORT: u16 = 14221;
 const REDIRECT_URI: &str = "http://localhost:14221/callback";
 
 pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
-    let client_id = std::env::var("LINKEDIN_CLIENT_ID")
-        .unwrap_or_else(|_| COMPILED_LINKEDIN_CLIENT_ID.to_string());
+    // Read user-supplied credentials from DB first
+    let (client_id, client_secret) = {
+        let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+        let id = crate::db::get_app_setting(&conn, "oauth_linkedin_client_id")
+            .ok().flatten().filter(|v| !v.is_empty())
+            .unwrap_or_else(|| {
+                std::env::var("LINKEDIN_CLIENT_ID")
+                    .unwrap_or_else(|_| COMPILED_LINKEDIN_CLIENT_ID.to_string())
+            });
+        let secret = crate::db::get_app_setting(&conn, "oauth_linkedin_client_secret")
+            .ok().flatten().filter(|v| !v.is_empty())
+            .unwrap_or_else(|| std::env::var("LINKEDIN_CLIENT_SECRET").unwrap_or_default());
+        (id, secret)
+    };
 
     if client_id.is_empty() {
-        return Err("LinkedIn client ID is not configured.".to_string());
+        return Err("LinkedIn client ID is not configured. Go to Settings → OAuth Credentials and paste your LinkedIn Client ID and Secret.".to_string());
     }
 
     let scope_encoded = urlencoding::encode("openid profile email w_member_social");
@@ -127,12 +139,10 @@ scope={}",
         return Err("LinkedIn OAuth authorization failed or returned no code.".into());
     }
 
-    // 5. Token exchange — requires client_secret (not baked into binary)
-    let client_secret = std::env::var("LINKEDIN_CLIENT_SECRET").unwrap_or_default();
+    // 5. Token exchange — uses client_secret from user's DB credentials
     if client_secret.is_empty() {
         return Err(
-            "LinkedIn token exchange requires LINKEDIN_CLIENT_SECRET. \
-            Set it in .env for development. Production requires a backend proxy."
+            "LinkedIn client secret is not configured. Go to Settings → OAuth Credentials and paste your LinkedIn Client Secret."
                 .to_string(),
         );
     }

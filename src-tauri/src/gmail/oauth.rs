@@ -39,11 +39,21 @@ fn generate_pkce_verifier() -> String {
 }
 
 pub async fn start_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
-    let client_id = std::env::var("GOOGLE_CLIENT_ID")
-        .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string());
+    // Prefer user-supplied credentials from DB, then compiled-in fallback
+    let client_id = {
+        let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+        crate::db::get_app_setting(&conn, "oauth_google_client_id")
+            .ok()
+            .flatten()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| {
+                std::env::var("GOOGLE_CLIENT_ID")
+                    .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string())
+            })
+    };
 
     if client_id.is_empty() || client_id.contains("YOUR_GOOGLE") {
-        return Err("Google OAuth client ID is not configured.".to_string());
+        return Err("Google OAuth client ID is not configured. Go to Settings → OAuth Credentials and paste your Google Client ID.".to_string());
     }
 
     // PKCE — plain method: code_challenge = code_verifier (Google supports for installed apps)

@@ -1,7 +1,34 @@
 import { create } from "zustand";
-import { QueueItem, QueueItemStatus, TabType, SocialPost, SocialPlatform, ChannelConfig, LinkedInTimelineSummary, FeedInsight, KnowledgeItem, Decision, CustomFeed, Task, Reminder, PomodoroSession, ResponseAnalytics, LifeEvent, ActiveProject, DailyHabit, HabitCompletion, DailyIntel, GeneratedPost, HabitReminder } from "../types/queue";
+import {
+  QueueItem,
+  QueueItemStatus,
+  TabType,
+  SocialPost,
+  SocialPlatform,
+  ChannelConfig,
+  LinkedInTimelineSummary,
+  FeedInsight,
+  KnowledgeItem,
+  Decision,
+  CustomFeed,
+  Task,
+  Reminder,
+  PomodoroSession,
+  ResponseAnalytics,
+  LifeEvent,
+  ActiveProject,
+  DailyHabit,
+  HabitCompletion,
+  DailyIntel,
+  GeneratedPost,
+  HabitReminder,
+} from "../types/queue";
 
-import { SupportedLanguage, TRANSLATIONS, TranslationDictionary } from "../i18n/translations";
+import {
+  SupportedLanguage,
+  TRANSLATIONS,
+  TranslationDictionary,
+} from "../i18n/translations";
 
 export type PostCadence = "daily" | "every_2_days" | "weekly" | "manual";
 
@@ -19,7 +46,8 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     id: "gmail",
     name: "Gmail",
     category: "email",
-    description: "Inbox triage, thread monitoring & voice drafting over OAuth 2.0 PKCE",
+    description:
+      "Inbox triage, thread monitoring & voice drafting over OAuth 2.0 PKCE",
     iconName: "IconMail",
     status: "disconnected",
   },
@@ -27,7 +55,8 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     id: "calendar",
     name: "Google Calendar",
     category: "email",
-    description: "Auto-sync deadline events and appointment requests automatically",
+    description:
+      "Auto-sync deadline events and appointment requests automatically",
     iconName: "IconCalendar",
     status: "disconnected",
   },
@@ -35,7 +64,8 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     id: "slack",
     name: "Slack",
     category: "work",
-    description: "Channels, DMs, workspace mentions, and executive thread triaging",
+    description:
+      "Channels, DMs, workspace mentions, and executive thread triaging",
     iconName: "IconBrandSlack",
     status: "disconnected",
   },
@@ -51,7 +81,8 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     id: "telegram",
     name: "Telegram",
     category: "messaging",
-    description: "Bot API integration for priority direct messaging and channel alerts",
+    description:
+      "Bot API integration for priority direct messaging and channel alerts",
     iconName: "IconBrandTelegram",
     status: "disconnected",
   },
@@ -67,7 +98,8 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     id: "linkedin",
     name: "LinkedIn",
     category: "social",
-    description: "Executive network outreach, personal profile timeline ingestion & content briefs",
+    description:
+      "Executive network outreach, personal profile timeline ingestion & content briefs",
     iconName: "IconBrandLinkedin",
     status: "disconnected",
   },
@@ -121,7 +153,11 @@ function clearPomodoroAutoCompleteTimer() {
   }
 }
 
-function schedulePomodoroAutoComplete(sessionId: string, delayMs: number, onComplete: () => Promise<void>) {
+function schedulePomodoroAutoComplete(
+  sessionId: string,
+  delayMs: number,
+  onComplete: () => Promise<void>,
+) {
   clearPomodoroAutoCompleteTimer();
   pomodoroAutoCompleteTimer = setTimeout(async () => {
     pomodoroAutoCompleteTimer = null;
@@ -169,11 +205,18 @@ interface QueueStore {
   approveItem: (id: string, editedDraft?: string) => Promise<void>;
   skipItem: (id: string) => Promise<void>;
   updateDraft: (id: string, text: string) => void;
-  regenerateDraft: (id: string, tone: "shorter" | "formal" | "availability") => void;
+  regenerateDraft: (
+    id: string,
+    tone: "shorter" | "formal" | "availability",
+  ) => void;
   setTestOverrideRecipient: (email: string | null) => void;
 
   // Multi-Channel Actions
-  connectChannel: (channelId: string, apiKey?: string, webhookUrl?: string) => void;
+  connectChannel: (
+    channelId: string,
+    apiKey?: string,
+    webhookUrl?: string,
+  ) => void;
   disconnectChannel: (channelId: string) => void;
 
   // LinkedIn OAuth Actions
@@ -182,7 +225,10 @@ interface QueueStore {
   // Social Post Actions (LinkedIn & Twitter/X)
   approveSocialPost: (id: string, editedContent?: string) => Promise<void>;
   skipSocialPost: (id: string) => void;
-  regenerateSocialPost: (id: string, tone: "punchy" | "detailed" | "thread" | "leadership" | "story") => void;
+  regenerateSocialPost: (
+    id: string,
+    tone: "punchy" | "detailed" | "thread" | "leadership" | "story",
+  ) => void;
   createSocialPost: (platform: SocialPlatform, topic: string) => void;
   generateCadenceLinkedInPost: () => void;
   remixInsightToPersonalPost: (insight: FeedInsight) => void;
@@ -222,7 +268,11 @@ interface QueueStore {
   decisions: Decision[];
   saveKnowledgeItem: (content: string, url?: string) => Promise<void>;
   fetchKnowledgeItems: () => Promise<void>;
-  saveDecision: (decision: string, rationale: string, alternatives?: string) => Promise<void>;
+  saveDecision: (
+    decision: string,
+    rationale: string,
+    alternatives?: string,
+  ) => Promise<void>;
   fetchDecisions: () => Promise<void>;
 
   // Phase C: Weekly Review & Interest Learning
@@ -230,11 +280,16 @@ interface QueueStore {
   weeklyReviewLoading: boolean;
   fetchWeeklyReview: () => Promise<void>;
   refreshWeeklyReview: () => Promise<void>;
-  recordFeedInteraction: (itemId: string, itemSource: string, tags: string, action: string) => Promise<void>;
+  recordFeedInteraction: (
+    itemId: string,
+    itemSource: string,
+    tags: string,
+    action: string,
+  ) => Promise<void>;
 
-  // Phase D: Audio Brief & Vault Sync
-  isPlayingAudio: boolean;
+  // Phase D: Vault Sync
   vaultPath: string | null;
+  isPlayingAudio: boolean;
   speakText: (text: string) => Promise<void>;
   stopSpeech: () => Promise<void>;
   fetchVaultPath: () => Promise<void>;
@@ -243,7 +298,11 @@ interface QueueStore {
   // Phase E & F: Custom RSS Feeds & Deep Reader
   customFeeds: CustomFeed[];
   fetchCustomFeeds: () => Promise<void>;
-  addCustomFeed: (title: string, url: string, category?: string) => Promise<void>;
+  addCustomFeed: (
+    title: string,
+    url: string,
+    category?: string,
+  ) => Promise<void>;
   deleteCustomFeed: (id: string) => Promise<void>;
   deepReadUrl: (url: string) => Promise<string>;
 
@@ -259,12 +318,27 @@ interface QueueStore {
   reminders: Reminder[];
   pomodoroSessions: PomodoroSession[];
   activePomodoroSession: PomodoroSession | null;
-  createTask: (title: string, description?: string, sourceItemId?: string, dueDate?: string, priority?: string) => Promise<void>;
-  createTaskFromItem: (itemId: string, title: string, description?: string, priority?: string) => Promise<Task | null>;
+  createTask: (
+    title: string,
+    description?: string,
+    sourceItemId?: string,
+    dueDate?: string,
+    priority?: string,
+  ) => Promise<void>;
+  createTaskFromItem: (
+    itemId: string,
+    title: string,
+    description?: string,
+    priority?: string,
+  ) => Promise<Task | null>;
   fetchTasks: (statusFilter?: string) => Promise<void>;
   updateTaskStatus: (id: string, status: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
-  createReminder: (itemId: string, reminderDate: string, message: string) => Promise<void>;
+  createReminder: (
+    itemId: string,
+    reminderDate: string,
+    message: string,
+  ) => Promise<void>;
   fetchReminders: () => Promise<void>;
   deleteReminder: (id: string) => Promise<void>;
   snoozeReminder: (id: string, newDate: string) => Promise<void>;
@@ -284,8 +358,18 @@ interface QueueStore {
   // Ollama Model Guard & Background Downloads
   ollamaModels: Array<{ name: string; size_gb: string }>;
   ollamaChecked: boolean;
-  pullProgress: Record<string, { status: string; completed: number; total: number; percent: number; done: boolean; error?: string }>;
-  pendingDownloads: Set<string>;  // models invoked but no progress event yet
+  pullProgress: Record<
+    string,
+    {
+      status: string;
+      completed: number;
+      total: number;
+      percent: number;
+      done: boolean;
+      error?: string;
+    }
+  >;
+  pendingDownloads: Set<string>; // models invoked but no progress event yet
   _ollamaListenerInitialized: boolean;
   checkOllamaModels: () => Promise<void>;
   initOllamaProgressListener: () => Promise<void>;
@@ -303,17 +387,37 @@ interface QueueStore {
   generatedPost: GeneratedPost | null;
   generatedPostLoading: boolean;
   fetchActiveProjects: () => Promise<void>;
-  addActiveProject: (name: string, description?: string, daily_target_minutes?: number, color?: string) => Promise<void>;
-  updateActiveProject: (id: string, updates: Partial<ActiveProject>) => Promise<void>;
+  addActiveProject: (
+    name: string,
+    description?: string,
+    daily_target_minutes?: number,
+    color?: string,
+  ) => Promise<void>;
+  updateActiveProject: (
+    id: string,
+    updates: Partial<ActiveProject>,
+  ) => Promise<void>;
   deleteActiveProject: (id: string) => Promise<void>;
-  logProjectSession: (projectId: string, minutes: number, notes?: string) => Promise<void>;
+  logProjectSession: (
+    projectId: string,
+    minutes: number,
+    notes?: string,
+  ) => Promise<void>;
   fetchDailyHabits: () => Promise<void>;
-  addDailyHabit: (name: string, icon?: string, category?: string) => Promise<void>;
+  addDailyHabit: (
+    name: string,
+    icon?: string,
+    category?: string,
+  ) => Promise<void>;
   deleteDailyHabit: (id: string) => Promise<void>;
   toggleHabitComplete: (habitId: string) => Promise<void>;
   fetchDailyIntel: (forceRefresh?: boolean) => Promise<void>;
   generateDayPlan: () => Promise<void>;
-  generateSocialPost: (platform: string, idea: string, format: string) => Promise<void>;
+  generateSocialPost: (
+    platform: string,
+    idea: string,
+    format: string,
+  ) => Promise<void>;
 
   // Habit Reminders
   habitReminders: HabitReminder[];
@@ -371,7 +475,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   setLanguage: (lang: SupportedLanguage) => {
     set({ language: lang });
-    get().sendDesktopNotification("🌐 Language Updated", `Wardyn interface switched to ${lang.toUpperCase()}`);
+    get().sendDesktopNotification(
+      "🌐 Language Updated",
+      `Wardyn interface switched to ${lang.toUpperCase()}`,
+    );
   },
 
   t: (key: keyof TranslationDictionary) => {
@@ -386,8 +493,18 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   setLinkedInCadence: (cadence: PostCadence) => {
     set({ linkedInCadence: cadence });
-    const label = cadence === "daily" ? "Daily (9:00 AM)" : cadence === "every_2_days" ? "Every 2 Days" : cadence === "weekly" ? "Weekly" : "Manual";
-    get().sendDesktopNotification("🗓️ Post Cadence Updated", `LinkedIn personal post auto-drafting frequency set to: ${label}`);
+    const label =
+      cadence === "daily"
+        ? "Daily (9:00 AM)"
+        : cadence === "every_2_days"
+          ? "Every 2 Days"
+          : cadence === "weekly"
+            ? "Weekly"
+            : "Manual";
+    get().sendDesktopNotification(
+      "🗓️ Post Cadence Updated",
+      `LinkedIn personal post auto-drafting frequency set to: ${label}`,
+    );
   },
 
   toggleNotifications: (enabled: boolean) => {
@@ -409,7 +526,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   toggleAutoStart: async (enable: boolean) => {
     try {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-        const { enable: enableAutostart, disable: disableAutostart } = await import("@tauri-apps/plugin-autostart");
+        const { enable: enableAutostart, disable: disableAutostart } =
+          await import("@tauri-apps/plugin-autostart");
         if (enable) {
           await enableAutostart();
           set({ autoStartEnabled: true });
@@ -428,7 +546,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   showStatusMessage: (type: StatusMessageType, text: string) => {
-    set({ statusMessage: { type, text }, error: type === "error" ? text : null });
+    set({
+      statusMessage: { type, text },
+      error: type === "error" ? text : null,
+    });
   },
 
   clearStatusMessage: () => {
@@ -439,7 +560,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (!get().notificationsEnabled) return;
     try {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-        const { isPermissionGranted, requestPermission, sendNotification } = await import("@tauri-apps/plugin-notification");
+        const { isPermissionGranted, requestPermission, sendNotification } =
+          await import("@tauri-apps/plugin-notification");
         let permission = await isPermissionGranted();
         if (!permission) {
           const permissionGranted = await requestPermission();
@@ -481,18 +603,41 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
 
     set((state) => ({
-      channels: state.channels.map((c) => (c.id === channelId ? { ...c, status: "connected", apiKey, webhookUrl, accountLabel: "Active Bridge" } : c)),
+      channels: state.channels.map((c) =>
+        c.id === channelId
+          ? {
+              ...c,
+              status: "connected",
+              apiKey,
+              webhookUrl,
+              accountLabel: "Active Bridge",
+            }
+          : c,
+      ),
     }));
 
     const ch = get().channels.find((c) => c.id === channelId);
     if (ch) {
-      get().sendDesktopNotification(`🔌 Channel Connected: ${ch.name}`, `Successfully integrated ${ch.name} into Wardyn Multi-Channel Hub.`);
+      get().sendDesktopNotification(
+        `🔌 Channel Connected: ${ch.name}`,
+        `Successfully integrated ${ch.name} into Wardyn Multi-Channel Hub.`,
+      );
     }
   },
 
   disconnectChannel: (channelId: string) => {
     set((state) => ({
-      channels: state.channels.map((c) => (c.id === channelId ? { ...c, status: "disconnected", accountLabel: undefined, apiKey: undefined, webhookUrl: undefined } : c)),
+      channels: state.channels.map((c) =>
+        c.id === channelId
+          ? {
+              ...c,
+              status: "disconnected",
+              accountLabel: undefined,
+              apiKey: undefined,
+              webhookUrl: undefined,
+            }
+          : c,
+      ),
     }));
   },
 
@@ -503,10 +648,17 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const profileName = await invoke<string>("start_linkedin_auth");
         set({ linkedInAccount: profileName });
         set((state) => ({
-          channels: state.channels.map((c) => (c.id === "linkedin" ? { ...c, status: "connected", accountLabel: profileName } : c)),
+          channels: state.channels.map((c) =>
+            c.id === "linkedin"
+              ? { ...c, status: "connected", accountLabel: profileName }
+              : c,
+          ),
         }));
         await get().syncLinkedInTimeline();
-        await get().sendDesktopNotification("💼 LinkedIn Personal Profile Connected", `Authenticated profile for: ${profileName}`);
+        await get().sendDesktopNotification(
+          "💼 LinkedIn Personal Profile Connected",
+          `Authenticated profile for: ${profileName}`,
+        );
       } catch (err: any) {
         set({ error: err.toString() });
       }
@@ -517,14 +669,19 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     const target = get().items.find((i) => i.id === id);
     if (!target) return;
 
-    const finalDraft = editedDraft !== undefined ? editedDraft : target.draft_text;
+    const finalDraft =
+      editedDraft !== undefined ? editedDraft : target.draft_text;
     if (!finalDraft) return;
 
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
 
-        if (editedDraft !== undefined && target.draft_text && editedDraft !== target.draft_text) {
+        if (
+          editedDraft !== undefined &&
+          target.draft_text &&
+          editedDraft !== target.draft_text
+        ) {
           invoke("record_voice_edit_command", {
             itemId: id,
             original: target.draft_text,
@@ -559,13 +716,24 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           statusMessage: null,
         }));
 
-        const actionLabel = editedDraft !== undefined ? "✍️ Edited Reply Sent" : "✅ Reply Approved & Sent";
-        const overrideNotice = get().testOverrideRecipient ? ` (to test target: ${get().testOverrideRecipient})` : "";
-        await get().sendDesktopNotification(actionLabel, `Sent response to ${target.sender}${overrideNotice}`);
+        const actionLabel =
+          editedDraft !== undefined
+            ? "✍️ Edited Reply Sent"
+            : "✅ Reply Approved & Sent";
+        const overrideNotice = get().testOverrideRecipient
+          ? ` (to test target: ${get().testOverrideRecipient})`
+          : "";
+        await get().sendDesktopNotification(
+          actionLabel,
+          `Sent response to ${target.sender}${overrideNotice}`,
+        );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("Failed to send via Gmail API:", err);
-        get().showStatusMessage("error", `Send failed — your reply to ${target.sender} was not sent. ${msg}`);
+        get().showStatusMessage(
+          "error",
+          `Send failed — your reply to ${target.sender} was not sent. ${msg}`,
+        );
       }
     }
   },
@@ -586,7 +754,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }));
 
     if (target) {
-      await get().sendDesktopNotification("⏭️ Item Skipped", `Skipped reply card for ${target.sender}`);
+      await get().sendDesktopNotification(
+        "⏭️ Item Skipped",
+        `Skipped reply card for ${target.sender}`,
+      );
     }
 
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
@@ -601,11 +772,18 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   updateDraft: (id: string, text: string) => {
     set((state) => ({
-      items: state.items.map((item) => (item.id === id ? { ...item, draft_text: text, updated_at: new Date().toISOString() } : item)),
+      items: state.items.map((item) =>
+        item.id === id
+          ? { ...item, draft_text: text, updated_at: new Date().toISOString() }
+          : item,
+      ),
     }));
   },
 
-  regenerateDraft: (id: string, tone: "shorter" | "formal" | "availability") => {
+  regenerateDraft: (
+    id: string,
+    tone: "shorter" | "formal" | "availability",
+  ) => {
     const target = get().items.find((i) => i.id === id);
     if (!target) return;
 
@@ -613,26 +791,44 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (tone === "shorter") {
       newDraft = "Thanks, received. Will follow up shortly.";
     } else if (tone === "formal") {
-      newDraft = "Thank you for your message. I have noted the details and will provide a formal response by Friday.";
+      newDraft =
+        "Thank you for your message. I have noted the details and will provide a formal response by Friday.";
     } else if (tone === "availability") {
-      newDraft = "Thanks for the invite. I am available Thursday between 2pm - 4pm WAT. Let me know if that works.";
+      newDraft =
+        "Thanks for the invite. I am available Thursday between 2pm - 4pm WAT. Let me know if that works.";
     }
 
     set((state) => ({
-      items: state.items.map((item) => (item.id === id ? { ...item, draft_text: newDraft, updated_at: new Date().toISOString() } : item)),
+      items: state.items.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              draft_text: newDraft,
+              updated_at: new Date().toISOString(),
+            }
+          : item,
+      ),
     }));
 
-    get().sendDesktopNotification(`✨ Draft Refined (${tone.toUpperCase()})`, `Updated reply draft for ${target.sender}`);
+    get().sendDesktopNotification(
+      `✨ Draft Refined (${tone.toUpperCase()})`,
+      `Updated reply draft for ${target.sender}`,
+    );
   },
 
   approveSocialPost: async (id: string, editedContent?: string) => {
     const target = get().socialPosts.find((p) => p.id === id);
     if (!target) return;
 
-    const finalContent = editedContent !== undefined ? editedContent : target.content;
+    const finalContent =
+      editedContent !== undefined ? editedContent : target.content;
 
     set((state) => ({
-      socialPosts: state.socialPosts.map((post) => (post.id === id ? { ...post, status: "posted", content: finalContent } : post)),
+      socialPosts: state.socialPosts.map((post) =>
+        post.id === id
+          ? { ...post, status: "posted", content: finalContent }
+          : post,
+      ),
     }));
 
     try {
@@ -643,7 +839,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       console.warn("Clipboard write warning:", err);
     }
 
-    const shareUrl = target.platform === "linkedin" ? `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(finalContent)}` : `https://twitter.com/intent/tweet?text=${encodeURIComponent(finalContent)}`;
+    const shareUrl =
+      target.platform === "linkedin"
+        ? `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(finalContent)}`
+        : `https://twitter.com/intent/tweet?text=${encodeURIComponent(finalContent)}`;
 
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
@@ -657,18 +856,27 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       window.open(shareUrl, "_blank");
     }
 
-    const platformLabel = target.platform === "linkedin" ? "LinkedIn" : "Twitter / X";
-    await get().sendDesktopNotification(`🚀 ${platformLabel} Post Approved`, `Copied to clipboard! Opened ${platformLabel} composer window.`);
+    const platformLabel =
+      target.platform === "linkedin" ? "LinkedIn" : "Twitter / X";
+    await get().sendDesktopNotification(
+      `🚀 ${platformLabel} Post Approved`,
+      `Copied to clipboard! Opened ${platformLabel} composer window.`,
+    );
   },
 
   skipSocialPost: (id: string) => {
     const target = get().socialPosts.find((p) => p.id === id);
     set((state) => ({
-      socialPosts: state.socialPosts.map((post) => (post.id === id ? { ...post, status: "skipped" } : post)),
+      socialPosts: state.socialPosts.map((post) =>
+        post.id === id ? { ...post, status: "skipped" } : post,
+      ),
     }));
 
     if (target) {
-      get().sendDesktopNotification("⏭️ Social Brief Skipped", `Skipped ${target.platform.toUpperCase()} post brief for ${target.topic}`);
+      get().sendDesktopNotification(
+        "⏭️ Social Brief Skipped",
+        `Skipped ${target.platform.toUpperCase()} post brief for ${target.topic}`,
+      );
     }
   },
 
@@ -682,26 +890,41 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     try {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         const { invoke } = await import("@tauri-apps/api/core");
-        const postId = await invoke<string>("publish_linkedin_post_command", { text: finalContent });
+        const postId = await invoke<string>("publish_linkedin_post_command", {
+          text: finalContent,
+        });
 
         // Mark as posted in store
         set((state) => ({
           publishingStatus: "success",
-          socialPosts: state.socialPosts.map((post) => (post.id === id ? { ...post, status: "posted", content: finalContent } : post)),
+          socialPosts: state.socialPosts.map((post) =>
+            post.id === id
+              ? { ...post, status: "posted", content: finalContent }
+              : post,
+          ),
         }));
 
-        await get().sendDesktopNotification("🚀 Published to LinkedIn", `Post published directly via API${postId !== "published" ? ` (ID: ${postId})` : ""}. No browser needed.`);
+        await get().sendDesktopNotification(
+          "🚀 Published to LinkedIn",
+          `Post published directly via API${postId !== "published" ? ` (ID: ${postId})` : ""}. No browser needed.`,
+        );
       } else {
         throw new Error("Tauri not available — cannot publish directly.");
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       set({ publishingStatus: "error", publishingError: errMsg });
-      await get().sendDesktopNotification("❌ LinkedIn Publish Failed", errMsg.length > 100 ? errMsg.slice(0, 100) + "…" : errMsg);
+      await get().sendDesktopNotification(
+        "❌ LinkedIn Publish Failed",
+        errMsg.length > 100 ? errMsg.slice(0, 100) + "…" : errMsg,
+      );
     }
   },
 
-  regenerateSocialPost: (id: string, tone: "punchy" | "detailed" | "thread" | "leadership" | "story") => {
+  regenerateSocialPost: (
+    id: string,
+    tone: "punchy" | "detailed" | "thread" | "leadership" | "story",
+  ) => {
     const target = get().socialPosts.find((p) => p.id === id);
     if (!target) return;
 
@@ -719,10 +942,15 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
 
     set((state) => ({
-      socialPosts: state.socialPosts.map((post) => (post.id === id ? { ...post, content: newContent } : post)),
+      socialPosts: state.socialPosts.map((post) =>
+        post.id === id ? { ...post, content: newContent } : post,
+      ),
     }));
 
-    get().sendDesktopNotification(`✨ Social Brief Refined (${tone.toUpperCase()})`, `Updated ${target.platform.toUpperCase()} draft content`);
+    get().sendDesktopNotification(
+      `✨ Social Brief Refined (${tone.toUpperCase()})`,
+      `Updated ${target.platform.toUpperCase()} draft content`,
+    );
   },
 
   createSocialPost: (platform: SocialPlatform, topic: string) => {
@@ -730,7 +958,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       id: `soc-${Date.now()}`,
       platform,
       topic,
-      content: platform === "linkedin" ? `Excited to announce: ${topic}. Building in public and pushing the boundaries of executive chief-of-staff software. #BuildInPublic #AI` : `1/ Quick breakdown on ${topic} 🧵\n\nBuilding local-first apps with Tauri & React. #BuildInPublic`,
+      content:
+        platform === "linkedin"
+          ? `Excited to announce: ${topic}. Building in public and pushing the boundaries of executive chief-of-staff software. #BuildInPublic #AI`
+          : `1/ Quick breakdown on ${topic} 🧵\n\nBuilding local-first apps with Tauri & React. #BuildInPublic`,
       hashtags: ["#BuildInPublic", "#Tech", "#AI"],
       media_cue: "Demo screenshot / screen recording",
       status: "pending",
@@ -741,11 +972,19 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       socialPosts: [newPost, ...state.socialPosts],
     }));
 
-    get().sendDesktopNotification(`✍️ New ${platform.toUpperCase()} Brief Generated`, `Created social post brief for "${topic}"`);
+    get().sendDesktopNotification(
+      `✍️ New ${platform.toUpperCase()} Brief Generated`,
+      `Created social post brief for "${topic}"`,
+    );
   },
 
   generateCadenceLinkedInPost: () => {
-    const topics = ["Local-First Executive Chief-of-Staff Software Architecture", "AI Multilingual Triage & High-Signal Inbox Management", "Building Latency-Free Native Desktop Apps with Tauri & Rust", "Privately Hosting Open-Source 70B Frontier LLMs Locally"];
+    const topics = [
+      "Local-First Executive Chief-of-Staff Software Architecture",
+      "AI Multilingual Triage & High-Signal Inbox Management",
+      "Building Latency-Free Native Desktop Apps with Tauri & Rust",
+      "Privately Hosting Open-Source 70B Frontier LLMs Locally",
+    ];
     const chosenTopic = topics[Math.floor(Math.random() * topics.length)];
 
     const newPost: SocialPost = {
@@ -763,7 +1002,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       socialPosts: [newPost, ...state.socialPosts],
     }));
 
-    get().sendDesktopNotification("🗓️ Cadence Post Draft Ready", `Auto-generated personal LinkedIn post brief for: "${chosenTopic}"`);
+    get().sendDesktopNotification(
+      "🗓️ Cadence Post Draft Ready",
+      `Auto-generated personal LinkedIn post brief for: "${chosenTopic}"`,
+    );
   },
 
   remixInsightToPersonalPost: (insight: FeedInsight) => {
@@ -785,22 +1027,35 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       socialPosts: [newPost, ...state.socialPosts],
     }));
 
-    get().sendDesktopNotification("♻️ Feed Insight Remixed", `Created personalized LinkedIn post draft inspired by ${insight.author_name}`);
+    get().sendDesktopNotification(
+      "♻️ Feed Insight Remixed",
+      `Created personalized LinkedIn post draft inspired by ${insight.author_name}`,
+    );
   },
 
   syncLinkedInTimeline: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const authStatus = await invoke<string | null>("get_linkedin_auth_status");
+        const authStatus = await invoke<string | null>(
+          "get_linkedin_auth_status",
+        );
         if (!authStatus) {
-          await get().sendDesktopNotification("💼 LinkedIn Account Unsynced", 'Click "Connect LinkedIn OAuth" in Channels or Settings to connect your personal profile.');
+          await get().sendDesktopNotification(
+            "💼 LinkedIn Account Unsynced",
+            'Click "Connect LinkedIn OAuth" in Channels or Settings to connect your personal profile.',
+          );
           return;
         }
 
-        const summary = await invoke<LinkedInTimelineSummary>("fetch_linkedin_timeline_command");
+        const summary = await invoke<LinkedInTimelineSummary>(
+          "fetch_linkedin_timeline_command",
+        );
         set({ linkedInSummary: summary });
-        await get().sendDesktopNotification("💼 LinkedIn Personal Profile & Feed Synced", `Fetched network insights & feed briefs for ${summary.profile_name}`);
+        await get().sendDesktopNotification(
+          "💼 LinkedIn Personal Profile & Feed Synced",
+          `Fetched network insights & feed briefs for ${summary.profile_name}`,
+        );
       } catch (err: any) {
         console.info("LinkedIn live API check:", err);
       }
@@ -811,26 +1066,43 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const res = await invoke<string[] | string | null>("get_gmail_auth_status");
+        const res = await invoke<string[] | string | null>(
+          "get_gmail_auth_status",
+        );
         const list: string[] = Array.isArray(res) ? res : res ? [res] : [];
         set({ gmailAccounts: list, gmailAccount: list[0] || null });
 
         if (list.length > 0) {
-          const label = list.length === 1 ? list[0] : `${list.length} Connected Accounts`;
+          const label =
+            list.length === 1 ? list[0] : `${list.length} Connected Accounts`;
           set((state) => ({
-            channels: state.channels.map((c) => (c.id === "gmail" ? { ...c, status: "connected", accountLabel: label } : c)),
+            channels: state.channels.map((c) =>
+              c.id === "gmail"
+                ? { ...c, status: "connected", accountLabel: label }
+                : c,
+            ),
           }));
         } else {
           set((state) => ({
-            channels: state.channels.map((c) => (c.id === "gmail" ? { ...c, status: "disconnected", accountLabel: undefined } : c)),
+            channels: state.channels.map((c) =>
+              c.id === "gmail"
+                ? { ...c, status: "disconnected", accountLabel: undefined }
+                : c,
+            ),
           }));
         }
 
-        const linkedinAccount = await invoke<string | null>("get_linkedin_auth_status");
+        const linkedinAccount = await invoke<string | null>(
+          "get_linkedin_auth_status",
+        );
         if (linkedinAccount) {
           set({ linkedInAccount: linkedinAccount });
           set((state) => ({
-            channels: state.channels.map((c) => (c.id === "linkedin" ? { ...c, status: "connected", accountLabel: linkedinAccount } : c)),
+            channels: state.channels.map((c) =>
+              c.id === "linkedin"
+                ? { ...c, status: "connected", accountLabel: linkedinAccount }
+                : c,
+            ),
           }));
         }
       } catch (err) {
@@ -846,7 +1118,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const email = await invoke<string>("start_gmail_auth");
         await get().checkGmailStatus();
         await get().syncGmail();
-        await get().sendDesktopNotification("🔒 Gmail Account Connected", `Successfully authenticated: ${email}`);
+        await get().sendDesktopNotification(
+          "🔒 Gmail Account Connected",
+          `Successfully authenticated: ${email}`,
+        );
       } catch (err: any) {
         set({ error: err.toString() });
       }
@@ -859,7 +1134,12 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("disconnect_gmail", { email: targetEmail || null });
         await get().checkGmailStatus();
-        await get().sendDesktopNotification("Gmail Disconnected", targetEmail ? `Cleared credentials for ${targetEmail}` : "Cleared all Gmail credentials.");
+        await get().sendDesktopNotification(
+          "Gmail Disconnected",
+          targetEmail
+            ? `Cleared credentials for ${targetEmail}`
+            : "Cleared all Gmail credentials.",
+        );
       } catch (err) {
         console.error("Failed to disconnect Gmail:", err);
       }
@@ -877,19 +1157,35 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
         if (newItemsCount > 0) {
           const latestItems = get().items;
-          const urgentFlagged = latestItems.find((i) => i.flagged && i.status === "pending");
-          const highUrgentItem = latestItems.find((i) => (i.urgency === "high" || !i.urgency) && i.status === "pending");
+          const urgentFlagged = latestItems.find(
+            (i) => i.flagged && i.status === "pending",
+          );
+          const highUrgentItem = latestItems.find(
+            (i) =>
+              (i.urgency === "high" || !i.urgency) && i.status === "pending",
+          );
 
           if (urgentFlagged) {
-            await get().sendDesktopNotification("⚠️ Urgent Visa / Deadline Alert", `Action Required: ${urgentFlagged.sender} — ${urgentFlagged.preview}`);
+            await get().sendDesktopNotification(
+              "⚠️ Urgent Visa / Deadline Alert",
+              `Action Required: ${urgentFlagged.sender} — ${urgentFlagged.preview}`,
+            );
           } else if (highUrgentItem) {
-            await get().sendDesktopNotification("📩 Priority Message Triaged", `High Urgency: ${highUrgentItem.sender} — ${highUrgentItem.preview}`);
+            await get().sendDesktopNotification(
+              "📩 Priority Message Triaged",
+              `High Urgency: ${highUrgentItem.sender} — ${highUrgentItem.preview}`,
+            );
           } else {
-            console.log(`[Executive Triage] ${newItemsCount} low-urgency item(s) suppressed from desktop alerts and batched to Daily Digest.`);
+            console.log(
+              `[Executive Triage] ${newItemsCount} low-urgency item(s) suppressed from desktop alerts and batched to Daily Digest.`,
+            );
           }
         }
       } catch (err: any) {
-        if (err.toString().includes("revoked") || err.toString().includes("expired")) {
+        if (
+          err.toString().includes("revoked") ||
+          err.toString().includes("expired")
+        ) {
           set({ gmailAccount: null });
         }
         console.error("Sync Gmail error:", err);
@@ -901,7 +1197,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const updatedItem = await invoke<QueueItem>("process_item_with_ollama", { id });
+        const updatedItem = await invoke<QueueItem>(
+          "process_item_with_ollama",
+          { id },
+        );
         set((state) => ({
           items: state.items.map((i) => (i.id === id ? updatedItem : i)),
         }));
@@ -915,12 +1214,19 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const events = await invoke<SyncedCalendarEvent[]>("sync_calendar_deadlines_command");
-        const customEvents = get().calendarEvents.filter((e) => e.id.startsWith("custom_"));
+        const events = await invoke<SyncedCalendarEvent[]>(
+          "sync_calendar_deadlines_command",
+        );
+        const customEvents = get().calendarEvents.filter((e) =>
+          e.id.startsWith("custom_"),
+        );
         set({ calendarEvents: [...customEvents, ...events] });
       } catch (err) {
         console.error("Calendar sync error:", err);
-        get().showStatusMessage("error", "Calendar sync failed. Custom events were preserved.");
+        get().showStatusMessage(
+          "error",
+          "Calendar sync failed. Custom events were preserved.",
+        );
       }
     }
   },
@@ -957,11 +1263,14 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const item = await invoke<KnowledgeItem>("save_knowledge_item_command", {
-          content,
-          url: url || null,
-          source: "manual",
-        });
+        const item = await invoke<KnowledgeItem>(
+          "save_knowledge_item_command",
+          {
+            content,
+            url: url || null,
+            source: "manual",
+          },
+        );
         // Optimistically prepend; Ollama tagging happens in background on server
         set((state) => ({ knowledgeItems: [item, ...state.knowledgeItems] }));
         // Re-fetch after brief delay to pick up Ollama tags
@@ -976,7 +1285,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const items = await invoke<KnowledgeItem[]>("get_knowledge_items_command");
+        const items = await invoke<KnowledgeItem[]>(
+          "get_knowledge_items_command",
+        );
         set({ knowledgeItems: items });
       } catch (err) {
         console.error("Fetch knowledge items error:", err);
@@ -984,7 +1295,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
-  saveDecision: async (decision: string, rationale: string, alternatives?: string) => {
+  saveDecision: async (
+    decision: string,
+    rationale: string,
+    alternatives?: string,
+  ) => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -1040,11 +1355,21 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
-  recordFeedInteraction: async (itemId: string, itemSource: string, tags: string, action: string) => {
+  recordFeedInteraction: async (
+    itemId: string,
+    itemSource: string,
+    tags: string,
+    action: string,
+  ) => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("record_feed_interaction_command", { itemId, itemSource, tags, action });
+        await invoke("record_feed_interaction_command", {
+          itemId,
+          itemSource,
+          tags,
+          action,
+        });
       } catch (err) {
         console.error("Record feed interaction error:", err);
       }
@@ -1133,7 +1458,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("delete_custom_feed_command", { id });
-        set((state) => ({ customFeeds: state.customFeeds.filter((f) => f.id !== id) }));
+        set((state) => ({
+          customFeeds: state.customFeeds.filter((f) => f.id !== id),
+        }));
       } catch (err) {
         console.error("Delete custom feed error:", err);
       }
@@ -1154,7 +1481,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const analytics = await invoke<ResponseAnalytics[]>("get_response_analytics_command", { days });
+        const analytics = await invoke<ResponseAnalytics[]>(
+          "get_response_analytics_command",
+          { days },
+        );
         set({ responseAnalytics: analytics });
       } catch (err) {
         console.error("Fetch response analytics error:", err);
@@ -1166,8 +1496,14 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const times = await invoke<Array<[string, number]>>("get_avg_response_time_by_category_command", { days });
-        const formatted = times.map(([category, avg_time_seconds]) => ({ category, avg_time_seconds }));
+        const times = await invoke<Array<[string, number]>>(
+          "get_avg_response_time_by_category_command",
+          { days },
+        );
+        const formatted = times.map(([category, avg_time_seconds]) => ({
+          category,
+          avg_time_seconds,
+        }));
         set({ categoryResponseTimes: formatted });
       } catch (err) {
         console.error("Fetch category response times error:", err);
@@ -1179,7 +1515,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        return await invoke<string>("export_analytics_summary_command", { content: markdown });
+        return await invoke<string>("export_analytics_summary_command", {
+          content: markdown,
+        });
       } catch (err) {
         console.error("Export analytics summary error:", err);
         return null;
@@ -1190,7 +1528,13 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   // ─── Productivity: Tasks ─────────────────────────────────────────────────────
 
-  createTask: async (title: string, description?: string, sourceItemId?: string, dueDate?: string, priority?: string) => {
+  createTask: async (
+    title: string,
+    description?: string,
+    sourceItemId?: string,
+    dueDate?: string,
+    priority?: string,
+  ) => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -1209,7 +1553,12 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
-  createTaskFromItem: async (itemId: string, title: string, description?: string, priority?: string) => {
+  createTaskFromItem: async (
+    itemId: string,
+    title: string,
+    description?: string,
+    priority?: string,
+  ) => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -1224,7 +1573,12 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         return task;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        get().showStatusMessage("error", msg.includes("already exists") ? "A task already exists for this email." : "Failed to create task from email.");
+        get().showStatusMessage(
+          "error",
+          msg.includes("already exists")
+            ? "A task already exists for this email."
+            : "Failed to create task from email.",
+        );
         return null;
       }
     }
@@ -1235,7 +1589,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const tasks = await invoke<Task[]>("get_tasks_command", { statusFilter: statusFilter || null });
+        const tasks = await invoke<Task[]>("get_tasks_command", {
+          statusFilter: statusFilter || null,
+        });
         set({ tasks });
       } catch (err) {
         console.error("Fetch tasks error:", err);
@@ -1249,7 +1605,16 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("update_task_status_command", { id, status });
         set((state) => ({
-          tasks: state.tasks.map((t) => (t.id === id ? { ...t, status: status as any, completed_at: status === "completed" ? new Date().toISOString() : null } : t)),
+          tasks: state.tasks.map((t) =>
+            t.id === id
+              ? {
+                  ...t,
+                  status: status as any,
+                  completed_at:
+                    status === "completed" ? new Date().toISOString() : null,
+                }
+              : t,
+          ),
         }));
       } catch (err) {
         console.error("Update task status error:", err);
@@ -1271,7 +1636,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   // ─── Productivity: Reminders ─────────────────────────────────────────────────
 
-  createReminder: async (itemId: string, reminderDate: string, message: string) => {
+  createReminder: async (
+    itemId: string,
+    reminderDate: string,
+    message: string,
+  ) => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -1305,7 +1674,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("delete_reminder_command", { id });
-        set((state) => ({ reminders: state.reminders.filter((r) => r.id !== id) }));
+        set((state) => ({
+          reminders: state.reminders.filter((r) => r.id !== id),
+        }));
       } catch (err) {
         console.error("Delete reminder error:", err);
         get().showStatusMessage("error", "Failed to delete reminder.");
@@ -1331,11 +1702,16 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const pending = await invoke<Reminder[]>("get_pending_reminders_command");
+        const pending = await invoke<Reminder[]>(
+          "get_pending_reminders_command",
+        );
 
         for (const reminder of pending) {
           await invoke("mark_reminder_triggered_command", { id: reminder.id });
-          await get().sendDesktopNotification("⏰ Follow-up Reminder", reminder.message);
+          await get().sendDesktopNotification(
+            "⏰ Follow-up Reminder",
+            reminder.message,
+          );
         }
 
         if (pending.length > 0) {
@@ -1354,18 +1730,31 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       try {
         clearPomodoroAutoCompleteTimer();
         const { invoke } = await import("@tauri-apps/api/core");
-        const session = await invoke<PomodoroSession>("start_pomodoro_command", {
-          taskId: taskId || null,
-          durationMinutes,
-        });
+        const session = await invoke<PomodoroSession>(
+          "start_pomodoro_command",
+          {
+            taskId: taskId || null,
+            durationMinutes,
+          },
+        );
         set({ activePomodoroSession: session });
 
-        await get().sendDesktopNotification("🍅 Pomodoro Started", `Focus session started: ${durationMinutes} minutes`);
+        await get().sendDesktopNotification(
+          "🍅 Pomodoro Started",
+          `Focus session started: ${durationMinutes} minutes`,
+        );
 
-        schedulePomodoroAutoComplete(session.id, durationMinutes * 60 * 1000, async () => {
-          await get().completePomodoro(session.id);
-          await get().sendDesktopNotification("✅ Pomodoro Complete", "Great work! Time for a break.");
-        });
+        schedulePomodoroAutoComplete(
+          session.id,
+          durationMinutes * 60 * 1000,
+          async () => {
+            await get().completePomodoro(session.id);
+            await get().sendDesktopNotification(
+              "✅ Pomodoro Complete",
+              "Great work! Time for a break.",
+            );
+          },
+        );
       } catch (err) {
         console.error("Start pomodoro error:", err);
         get().showStatusMessage("error", "Failed to start Pomodoro session.");
@@ -1393,17 +1782,25 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     const now = Date.now();
     const active = pomodoroSessions.find((session) => {
       if (session.completed) return false;
-      const endTime = new Date(session.started_at).getTime() + session.duration_minutes * 60 * 1000;
+      const endTime =
+        new Date(session.started_at).getTime() +
+        session.duration_minutes * 60 * 1000;
       return endTime > now;
     });
 
     if (!active) return;
 
     set({ activePomodoroSession: active });
-    const remainingMs = new Date(active.started_at).getTime() + active.duration_minutes * 60 * 1000 - now;
+    const remainingMs =
+      new Date(active.started_at).getTime() +
+      active.duration_minutes * 60 * 1000 -
+      now;
     schedulePomodoroAutoComplete(active.id, remainingMs, async () => {
       await get().completePomodoro(active.id);
-      await get().sendDesktopNotification("✅ Pomodoro Complete", "Great work! Time for a break.");
+      await get().sendDesktopNotification(
+        "✅ Pomodoro Complete",
+        "Great work! Time for a break.",
+      );
     });
   },
 
@@ -1411,7 +1808,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const sessions = await invoke<PomodoroSession[]>("get_pomodoro_sessions_command", { days });
+        const sessions = await invoke<PomodoroSession[]>(
+          "get_pomodoro_sessions_command",
+          { days },
+        );
         set({ pomodoroSessions: sessions });
         get().restoreActivePomodoro();
       } catch (err) {
@@ -1426,9 +1826,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const models = await invoke<Array<{ name: string; size_gb: string; status: string }>>(
-          "get_installed_ollama_models_command"
-        );
+        const models = await invoke<
+          Array<{ name: string; size_gb: string; status: string }>
+        >("get_installed_ollama_models_command");
         set({ ollamaModels: models, ollamaChecked: true });
       } catch {
         // Ollama not running — only mark checked (showing banner) after a retry.
@@ -1477,13 +1877,16 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
                 // Show error banner to user
                 get().showStatusMessage(
                   "error",
-                  `Model ${data.model} download failed: ${data.error}`
+                  `Model ${data.model} download failed: ${data.error}`,
                 );
                 // Clean up the error entry after 5 s so the card resets to "Install Model"
                 setTimeout(() => {
                   set((state) => {
                     const updated = { ...state.pullProgress };
-                    if (updated[data.model]?.done && updated[data.model]?.error) {
+                    if (
+                      updated[data.model]?.done &&
+                      updated[data.model]?.error
+                    ) {
                       delete updated[data.model];
                     }
                     return { pullProgress: updated };
@@ -1492,7 +1895,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
               } else {
                 get().sendDesktopNotification(
                   "🎉 AI Model Installed",
-                  `Model ${data.model} has been downloaded and is ready for local AI synthesis.`
+                  `Model ${data.model} has been downloaded and is ready for local AI synthesis.`,
                 );
               }
             }
@@ -1519,13 +1922,16 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         //    and show an error. This catches cases where Rust emits no event at all.
         const timeoutId = setTimeout(() => {
           const state = get();
-          if (state.pendingDownloads.has(modelName) && !state.pullProgress[modelName]) {
+          if (
+            state.pendingDownloads.has(modelName) &&
+            !state.pullProgress[modelName]
+          ) {
             const pending2 = new Set(get().pendingDownloads);
             pending2.delete(modelName);
             set({ pendingDownloads: pending2 });
             get().showStatusMessage(
               "error",
-              `Download of ${modelName} timed out — Ollama may not be running. Start Ollama and try again.`
+              `Download of ${modelName} timed out — Ollama may not be running. Start Ollama and try again.`,
             );
           }
         }, 30_000);
@@ -1541,11 +1947,13 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const pending = new Set(get().pendingDownloads);
         pending.delete(modelName);
         set({ pendingDownloads: pending });
-        get().showStatusMessage("error", `Failed to start model download: ${err?.message || err}`);
+        get().showStatusMessage(
+          "error",
+          `Failed to start model download: ${err?.message || err}`,
+        );
       }
     }
   },
-
 
   cancelOllamaModelInstall: async (modelName: string) => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
@@ -1560,7 +1968,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           return { pullProgress: updated, pendingDownloads: pending };
         });
       } catch (err: any) {
-        get().showStatusMessage("error", `Failed to cancel download: ${err?.message || err}`);
+        get().showStatusMessage(
+          "error",
+          `Failed to cancel download: ${err?.message || err}`,
+        );
       }
     }
   },
@@ -1572,7 +1983,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     try {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         const { invoke } = await import("@tauri-apps/api/core");
-        const event = await invoke<LifeEvent>("capture_life_event_command", { text });
+        const event = await invoke<LifeEvent>("capture_life_event_command", {
+          text,
+        });
         set((s) => ({ lifeEvents: [event, ...s.lifeEvents] }));
         return event;
       }
@@ -1604,7 +2017,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         await invoke("update_life_event_status_command", { id, status });
         set((s) => ({
           lifeEvents: s.lifeEvents.map((e) =>
-            e.id === id ? { ...e, status: status as LifeEvent["status"] } : e
+            e.id === id ? { ...e, status: status as LifeEvent["status"] } : e,
           ),
         }));
       } catch (err) {
@@ -1628,19 +2041,38 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   fetchActiveProjects: async () => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const projects = await invoke<ActiveProject[]>("get_active_projects_command");
+      const projects = await invoke<ActiveProject[]>(
+        "get_active_projects_command",
+      );
       set({ activeProjects: projects });
-    } catch (err) { console.error("fetchActiveProjects error:", err); }
+    } catch (err) {
+      console.error("fetchActiveProjects error:", err);
+    }
   },
 
-  addActiveProject: async (name: string, description?: string, daily_target_minutes?: number, color?: string) => {
+  addActiveProject: async (
+    name: string,
+    description?: string,
+    daily_target_minutes?: number,
+    color?: string,
+  ) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const project = await invoke<ActiveProject>("create_active_project_command", {
-        req: { name, description: description ?? null, daily_target_minutes: daily_target_minutes ?? 60, color: color ?? "#4A8FC2" }
-      });
+      const project = await invoke<ActiveProject>(
+        "create_active_project_command",
+        {
+          req: {
+            name,
+            description: description ?? null,
+            daily_target_minutes: daily_target_minutes ?? 60,
+            color: color ?? "#4A8FC2",
+          },
+        },
+      );
       set((s) => ({ activeProjects: [project, ...s.activeProjects] }));
-    } catch (err) { console.error("addActiveProject error:", err); }
+    } catch (err) {
+      console.error("addActiveProject error:", err);
+    }
   },
 
   updateActiveProject: async (id: string, updates: Partial<ActiveProject>) => {
@@ -1654,26 +2086,48 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         dailyTargetMinutes: updates.daily_target_minutes,
         color: updates.color,
       });
-      set((s) => ({ activeProjects: s.activeProjects.map((p) => p.id === id ? { ...p, ...updates } : p) }));
-    } catch (err) { console.error("updateActiveProject error:", err); }
+      set((s) => ({
+        activeProjects: s.activeProjects.map((p) =>
+          p.id === id ? { ...p, ...updates } : p,
+        ),
+      }));
+    } catch (err) {
+      console.error("updateActiveProject error:", err);
+    }
   },
 
   deleteActiveProject: async (id: string) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("delete_active_project_command", { id });
-      set((s) => ({ activeProjects: s.activeProjects.filter((p) => p.id !== id) }));
-    } catch (err) { console.error("deleteActiveProject error:", err); }
+      set((s) => ({
+        activeProjects: s.activeProjects.filter((p) => p.id !== id),
+      }));
+    } catch (err) {
+      console.error("deleteActiveProject error:", err);
+    }
   },
 
-  logProjectSession: async (projectId: string, minutes: number, notes?: string) => {
+  logProjectSession: async (
+    projectId: string,
+    minutes: number,
+    notes?: string,
+  ) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("log_project_session_command", { projectId, minutes, notes: notes ?? null });
+      await invoke("log_project_session_command", {
+        projectId,
+        minutes,
+        notes: notes ?? null,
+      });
       // Refresh projects to get updated today_minutes
-      const projects = await invoke<ActiveProject[]>("get_active_projects_command");
+      const projects = await invoke<ActiveProject[]>(
+        "get_active_projects_command",
+      );
       set({ activeProjects: projects });
-    } catch (err) { console.error("logProjectSession error:", err); }
+    } catch (err) {
+      console.error("logProjectSession error:", err);
+    }
   },
 
   fetchDailyHabits: async () => {
@@ -1681,17 +2135,21 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       const { invoke } = await import("@tauri-apps/api/core");
       const habits = await invoke<DailyHabit[]>("get_daily_habits_command");
       set({ dailyHabits: habits });
-    } catch (err) { console.error("fetchDailyHabits error:", err); }
+    } catch (err) {
+      console.error("fetchDailyHabits error:", err);
+    }
   },
 
   addDailyHabit: async (name: string, icon?: string, category?: string) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const habit = await invoke<DailyHabit>("create_daily_habit_command", {
-        req: { name, icon: icon ?? "✅", category: category ?? "general" }
+        req: { name, icon: icon ?? "✅", category: category ?? "general" },
       });
       set((s) => ({ dailyHabits: [...s.dailyHabits, habit] }));
-    } catch (err) { console.error("addDailyHabit error:", err); }
+    } catch (err) {
+      console.error("addDailyHabit error:", err);
+    }
   },
 
   deleteDailyHabit: async (id: string) => {
@@ -1699,28 +2157,43 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("delete_daily_habit_command", { id });
       set((s) => ({ dailyHabits: s.dailyHabits.filter((h) => h.id !== id) }));
-    } catch (err) { console.error("deleteDailyHabit error:", err); }
+    } catch (err) {
+      console.error("deleteDailyHabit error:", err);
+    }
   },
 
   toggleHabitComplete: async (habitId: string) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const isNowDone = await invoke<boolean>("toggle_habit_completion_command", { habitId });
+      const isNowDone = await invoke<boolean>(
+        "toggle_habit_completion_command",
+        { habitId },
+      );
       set((s) => ({
         dailyHabits: s.dailyHabits.map((h) =>
           h.id === habitId
-            ? { ...h, completed_today: isNowDone, current_streak: isNowDone ? h.current_streak + 1 : Math.max(0, h.current_streak - 1) }
-            : h
+            ? {
+                ...h,
+                completed_today: isNowDone,
+                current_streak: isNowDone
+                  ? h.current_streak + 1
+                  : Math.max(0, h.current_streak - 1),
+              }
+            : h,
         ),
       }));
-    } catch (err) { console.error("toggleHabitComplete error:", err); }
+    } catch (err) {
+      console.error("toggleHabitComplete error:", err);
+    }
   },
 
   fetchDailyIntel: async (forceRefresh = false) => {
     set({ dailyIntelLoading: true });
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const intel = await invoke<DailyIntel>("get_daily_intel_command", { forceRefresh });
+      const intel = await invoke<DailyIntel>("get_daily_intel_command", {
+        forceRefresh,
+      });
       set({ dailyIntel: intel, dailyIntelLoading: false });
     } catch (err) {
       console.error("fetchDailyIntel error:", err);
@@ -1735,7 +2208,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       const plan = await invoke<string>("generate_day_plan_command");
       set({ dayPlan: plan, dayPlanLoading: false });
       // Also refresh intel to get saved plan
-      const intel = await invoke<DailyIntel>("get_daily_intel_command", { forceRefresh: false });
+      const intel = await invoke<DailyIntel>("get_daily_intel_command", {
+        forceRefresh: false,
+      });
       set({ dailyIntel: intel });
     } catch (err) {
       console.error("generateDayPlan error:", err);
@@ -1743,11 +2218,19 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
-  generateSocialPost: async (platform: string, idea: string, format: string) => {
+  generateSocialPost: async (
+    platform: string,
+    idea: string,
+    format: string,
+  ) => {
     set({ generatedPostLoading: true });
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const post = await invoke<GeneratedPost>("generate_social_post_command", { platform, idea, format });
+      const post = await invoke<GeneratedPost>("generate_social_post_command", {
+        platform,
+        idea,
+        format,
+      });
       set({ generatedPost: post, generatedPostLoading: false });
     } catch (err) {
       console.error("generateSocialPost error:", err);
@@ -1762,32 +2245,45 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   fetchHabitReminders: async () => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const reminders = await invoke<HabitReminder[]>("get_habit_reminders_command");
+      const reminders = await invoke<HabitReminder[]>(
+        "get_habit_reminders_command",
+      );
       set({ habitReminders: reminders });
-    } catch (err) { console.error("fetchHabitReminders error:", err); }
+    } catch (err) {
+      console.error("fetchHabitReminders error:", err);
+    }
   },
 
   addHabitReminder: async (habitId: string, remindTime: string) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const reminder = await invoke<HabitReminder>("create_habit_reminder_command", {
-        req: { habit_id: habitId, remind_time: remindTime }
-      });
+      const reminder = await invoke<HabitReminder>(
+        "create_habit_reminder_command",
+        {
+          req: { habit_id: habitId, remind_time: remindTime },
+        },
+      );
       set((s) => ({
         habitReminders: [
           ...s.habitReminders.filter((r) => r.habit_id !== habitId),
           reminder,
         ],
       }));
-    } catch (err) { console.error("addHabitReminder error:", err); }
+    } catch (err) {
+      console.error("addHabitReminder error:", err);
+    }
   },
 
   deleteHabitReminder: async (id: string) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("delete_habit_reminder_command", { id });
-      set((s) => ({ habitReminders: s.habitReminders.filter((r) => r.id !== id) }));
-    } catch (err) { console.error("deleteHabitReminder error:", err); }
+      set((s) => ({
+        habitReminders: s.habitReminders.filter((r) => r.id !== id),
+      }));
+    } catch (err) {
+      console.error("deleteHabitReminder error:", err);
+    }
   },
 
   toggleHabitReminder: async (id: string, enabled: boolean) => {
@@ -1796,9 +2292,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       await invoke("toggle_habit_reminder_command", { id, enabled });
       set((s) => ({
         habitReminders: s.habitReminders.map((r) =>
-          r.id === id ? { ...r, enabled } : r
+          r.id === id ? { ...r, enabled } : r,
         ),
       }));
-    } catch (err) { console.error("toggleHabitReminder error:", err); }
+    } catch (err) {
+      console.error("toggleHabitReminder error:", err);
+    }
   },
 }));

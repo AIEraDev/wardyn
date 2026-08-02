@@ -17,7 +17,6 @@ pub mod planner;
 pub mod active_life;
 pub mod tray;
 pub mod research;
-pub mod audio;
 
 
 
@@ -34,9 +33,6 @@ use linkedin::api::RealLinkedInSummary;
 use ollama::client::InstalledModelInfo;
 
 pub struct DbState(pub Mutex<Connection>);
-
-// ─── Audio Recording State ────────────────────────────────────────────────────
-pub struct NativeAudioState(pub audio::AudioRecordingState);
 
 /// Returns current local time as "HH:MM" string for reminder matching.
 fn chrono_hhmm() -> String {
@@ -378,103 +374,6 @@ fn stop_speech_command() {
     speech::stop_speech();
 }
 
-#[tauri::command]
-async fn transcribe_audio_command(audio_bytes: Vec<u8>, mime_type: String) -> Result<String, String> {
-    speech::transcribe_audio_bytes(audio_bytes, &mime_type).await
-}
-
-/// Requests microphone permission from macOS using AVCaptureDevice.requestAccess(for: .audio).
-/// Returns "granted", "denied", or "restricted".
-/// This is the same mechanism used by the notification plugin — triggers the system prompt.
-#[tauri::command]
-async fn request_microphone_permission_command() -> Result<String, String> {
-    #[cfg(target_os = "macos")]
-    {
-        let swift_code = r#"
-import AVFoundation
-let sema = DispatchSemaphore(value: 0)
-var result = "denied"
-AVCaptureDevice.requestAccess(for: .audio) { granted in
-    result = granted ? "granted" : "denied"
-    sema.signal()
-}
-sema.wait()
-print(result)
-"#;
-
-        let output = std::process::Command::new("swift")
-            .arg("-")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                use std::io::Write;
-                if let Some(stdin) = child.stdin.as_mut() {
-                    let _ = stdin.write_all(swift_code.as_bytes());
-                }
-                child.wait_with_output()
-            })
-            .map_err(|e| format!("Failed to run Swift: {}", e))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if stdout == "granted" {
-            return Ok("granted".to_string());
-        }
-        Ok("denied".to_string())
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        Ok("granted".to_string())
-    }
-}
-
-/// Returns the label of the default hardware microphone
-/// select it by label in enumerateDevices(), avoiding virtual devices like QuickTime.
-#[tauri::command]
-async fn get_default_microphone_label_command() -> Result<String, String> {
-    #[cfg(target_os = "macos")]
-    {
-        let swift_code = r#"
-import AVFoundation
-let session = AVCaptureDeviceDiscoverySession(
-    deviceTypes: [.microphone, .builtInMicrophone],
-    mediaType: .audio,
-    position: .unspecified
-)
-if let dev = session?.devices.first(where: { $0.isConnected && !$0.isSuspended }) {
-    print(dev.localizedName)
-} else if let dev = AVCaptureDevice.default(for: .audio) {
-    print(dev.localizedName)
-} else {
-    print("")
-}
-"#;
-        let output = std::process::Command::new("swift")
-            .arg("-")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .and_then(|mut child| {
-                use std::io::Write;
-                if let Some(stdin) = child.stdin.as_mut() {
-                    let _ = stdin.write_all(swift_code.as_bytes());
-                }
-                child.wait_with_output()
-            })
-            .map_err(|e| format!("Swift error: {}", e))?;
-
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        Ok(String::new())
-    }
-}
-
 // ─── Research / Web Search Commands ──────────────────────────────────────────
 
 #[tauri::command]
@@ -485,90 +384,6 @@ async fn web_search_command(query: String) -> Result<research::SearchResponse, S
 #[tauri::command]
 async fn summarize_search_command(query: String, results: Vec<research::SearchResult>) -> Result<String, String> {
     research::summarize_results(&query, &results).await
-}
-
-// ─── Native Audio Capture Commands ───────────────────────────────────────────
-
-#[tauri::command]
-async fn start_native_transcription_command(
-    app: AppHandle,
-    state: State<'_, NativeAudioState>,
-) -> Result<(), String> {
-    let running = state.0.running.clone();
-    let transcript = state.0.transcript.clone();
-
-    if running.load(std::sync::atomic::Ordering::SeqCst) {
-        return Ok(()); // already running
-    }
-
-    // Reset transcript for new session
-    *transcript.lock().unwrap() = String::new();
-
-    let app_start = app.clone();
-    tokio::spawn(async move {
-        // Emit started immediately so UI transitions to recording mode
-        let _ = app_start.emit("transcription-status", "started");
-
-        if let Err(e) = audio::start_native_capture(app_start.clone(), running, transcript).await {
-            eprintln!("[audio] capture error: {}", e);
-            let _ = app_start.emit("transcription-status", format!("error: {}", e));
-        }
-        let _ = app_start.emit("transcription-status", "stopped");
-    });
-
-    Ok(())
-}
-
-#[tauri::command]
-fn stop_native_transcription_command(
-    state: State<'_, NativeAudioState>,
-) -> String {
-    audio::stop_native_capture(&state.0.running, &state.0.transcript)
-}
-
-/// Returns whether a Whisper model is installed in Ollama and what its name is.
-#[derive(Debug, Clone, serde::Serialize)]
-struct WhisperStatus {
-    installed: bool,
-    model_name: Option<String>,
-    ollama_running: bool,
-}
-
-#[tauri::command]
-async fn check_whisper_status_command() -> Result<WhisperStatus, String> {    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(4))
-        .build()
-        .unwrap_or_default();
-
-    // Check Ollama is reachable first
-    let ollama_running = client.get("http://localhost:11434").send().await.is_ok();
-    if !ollama_running {
-        return Ok(WhisperStatus { installed: false, model_name: None, ollama_running: false });
-    }
-
-    // Fetch installed model list
-    let resp = client
-        .get("http://localhost:11434/api/tags")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let models = body["models"].as_array().cloned().unwrap_or_default();
-
-    let whisper_model = models.iter().find_map(|m| {
-        let name = m["name"].as_str().unwrap_or("");
-        if name.to_lowercase().contains("whisper") {
-            Some(name.to_string())
-        } else {
-            None
-        }
-    });
-    Ok(WhisperStatus {
-        installed: whisper_model.is_some(),
-        model_name: whisper_model,
-        ollama_running: true,
-    })
 }
 
 #[tauri::command]
@@ -1037,7 +852,6 @@ pub fn run() {
 
             app.manage(DbState(inner_conn));
             app.manage(CancelRegistry(Mutex::new(std::collections::HashMap::new())));
-            app.manage(NativeAudioState(audio::AudioRecordingState::default()));
 
             // ── Setup tray icon ──────────────────────────────────────────────
             tray::setup_tray(app)?;
@@ -1087,7 +901,6 @@ pub fn run() {
             refresh_weekly_review_command,
             speak_text_command,
             stop_speech_command,
-            transcribe_audio_command,
             get_vault_path_command,
             set_vault_path_command,
             add_custom_feed_command,
@@ -1139,13 +952,8 @@ pub fn run() {
             toggle_habit_reminder_command,
             check_ollama_status_command,
             start_ollama_command,
-            check_whisper_status_command,
-            request_microphone_permission_command,
-            get_default_microphone_label_command,
             web_search_command,
-            summarize_search_command,
-            start_native_transcription_command,
-            stop_native_transcription_command
+            summarize_search_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

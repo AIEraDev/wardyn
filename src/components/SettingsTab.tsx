@@ -139,77 +139,11 @@ export const SettingsTab: React.FC = () => {
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [setupTarget, setSetupTarget] = useState<{ id: string; name: string } | null>(null);
 
-  // ── Whisper status ────────────────────────────────────────────────────────
-  const [whisperStatus, setWhisperStatus] = useState<{
-    checked: boolean;
-    installed: boolean;
-    modelName: string | null;
-    ollamaRunning: boolean;
-  }>({ checked: false, installed: false, modelName: null, ollamaRunning: false });
-  const [installingWhisper, setInstallingWhisper] = useState(false);
-
-  const [startingOllama, setStartingOllama] = useState(false);
-
-  const checkWhisper = async () => {
-    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const result = await invoke<{ installed: boolean; model_name: string | null; ollama_running: boolean }>(
-        'check_whisper_status_command'
-      );
-      setWhisperStatus({
-        checked: true,
-        installed: result.installed,
-        modelName: result.model_name,
-        ollamaRunning: result.ollama_running,
-      });
-
-      // If Ollama isn't running, start it automatically and re-check
-      if (!result.ollama_running) {
-        setStartingOllama(true);
-        try {
-          await invoke('start_ollama_command');
-          // Give it 3 seconds to boot up, then re-check
-          await new Promise(r => setTimeout(r, 3000));
-          const result2 = await invoke<{ installed: boolean; model_name: string | null; ollama_running: boolean }>(
-            'check_whisper_status_command'
-          );
-          setWhisperStatus({
-            checked: true,
-            installed: result2.installed,
-            modelName: result2.model_name,
-            ollamaRunning: result2.ollama_running,
-          });
-        } catch {
-          // start_ollama failed — user needs to start it manually
-        } finally {
-          setStartingOllama(false);
-        }
-      }
-    } catch {
-      setWhisperStatus({ checked: true, installed: false, modelName: null, ollamaRunning: false });
-    }
-  };
-
-  const WHISPER_MODEL_ID = 'dimavz/whisper-tiny';
-
-  const handleInstallWhisper = async () => {
-    setInstallingWhisper(true);
-    await sendDesktopNotification('📥 Installing Whisper', 'Downloading dimavz/whisper-tiny for voice capture...');
-    await installOllamaModel(WHISPER_MODEL_ID);
-    // Re-check after a short delay to pick up the new model
-    setTimeout(async () => {
-      await checkWhisper();
-      setInstallingWhisper(false);
-    }, 3000);
-  };
-
   // Auto-refresh installed models list when any download finishes
   useEffect(() => {
     const anyJustFinished = Object.values(pullProgress).some((p) => p.done && !p.error);
     if (anyJustFinished) {
       fetchModels();
-      checkWhisper();
     }
   }, [pullProgress]);
 
@@ -270,7 +204,6 @@ export const SettingsTab: React.FC = () => {
   useEffect(() => {
     checkAutoStartStatus();
     fetchModels();
-    checkWhisper();
   }, [checkAutoStartStatus]);
 
   const handleInstallModel = async (modelId: string, modelName: string) => {
@@ -547,118 +480,6 @@ export const SettingsTab: React.FC = () => {
             );
           })}
         </div>
-      </div>
-
-      {/* Voice Capture — Whisper Model Card */}
-      <div className={`p-5 rounded-xl border space-y-4 ${
-        whisperStatus.installed
-          ? 'bg-[#151A21] border-[rgba(52,211,153,0.25)]'
-          : 'bg-[rgba(239,68,68,0.03)] border-[rgba(239,68,68,0.25)]'
-      }`}>
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-lg border ${
-              whisperStatus.installed
-                ? 'bg-[rgba(52,211,153,0.12)] text-[#34D399] border-[rgba(52,211,153,0.3)]'
-                : 'bg-[rgba(239,68,68,0.1)] text-[#EF4444] border-[rgba(239,68,68,0.25)]'
-            }`}>
-              <IconVolume size={18} />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Voice Capture — Whisper STT</p>
-              <p className="text-xs text-[#9AA4B2]">
-                {!whisperStatus.checked
-                  ? 'Checking status...'
-                  : startingOllama
-                  ? 'Starting Ollama...'
-                  : !whisperStatus.ollamaRunning
-                  ? 'Ollama is not running — click Check to start it automatically'
-                  : whisperStatus.installed
-                  ? `Ready — using ${whisperStatus.modelName}`
-                  : 'Whisper model not installed — voice capture is unavailable'}
-              </p>
-            </div>
-          </div>
-
-          <div className="shrink-0 flex items-center gap-2">
-            {whisperStatus.installed ? (
-              <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-3 py-1 rounded-md border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
-                <IconCheck size={14} /> Ready
-              </span>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={checkWhisper}
-                  disabled={startingOllama}
-                  className="font-mono text-xs px-2.5 py-1.5 rounded-md bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#F0F4F8] flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                >
-                  {startingOllama
-                    ? <><IconLoader2 size={13} className="animate-spin" /> Starting Ollama...</>
-                    : <><IconRefresh size={13} /> Check</>
-                  }
-                </button>
-                {whisperStatus.ollamaRunning && (
-                  <button
-                    type="button"
-                    disabled={installingWhisper || !!pullProgress[WHISPER_MODEL_ID]}
-                    onClick={handleInstallWhisper}
-                    className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#4A8FC2] text-black font-medium hover:bg-[#5b9bd1] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-                  >
-                    {(installingWhisper || pullProgress[WHISPER_MODEL_ID]) ? (
-                      <><IconLoader2 size={13} className="animate-spin" /> Installing...</>
-                    ) : (
-                      <><IconDownload size={13} /> Install Whisper</>
-                    )}
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Whisper install progress */}
-        {pullProgress[WHISPER_MODEL_ID] && !pullProgress[WHISPER_MODEL_ID].done && (
-          <div className="space-y-1.5 pt-3 border-t border-[#242B35]">
-            <div className="flex items-center justify-between text-[11px] font-mono">
-              <span className="text-[#9AA4B2] flex items-center gap-1.5">
-                <IconLoader2 size={11} className="animate-spin" />
-                {pullProgress[WHISPER_MODEL_ID].status || 'Downloading Whisper...'}
-              </span>
-              {pullProgress[WHISPER_MODEL_ID].percent > 0 && (
-                <span className="text-[#4A8FC2] font-semibold">
-                  {pullProgress[WHISPER_MODEL_ID].percent.toFixed(1)}%
-                </span>
-              )}
-            </div>
-            <div className="w-full h-1.5 bg-[#0E1318] rounded-full overflow-hidden border border-[#242B35]">
-              <div
-                className="h-full bg-gradient-to-r from-[#4A8FC2] to-[#34D399] transition-all duration-300 rounded-full"
-                style={{ width: `${Math.max(pullProgress[WHISPER_MODEL_ID].percent, 5)}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Error */}
-        {pullProgress[WHISPER_MODEL_ID]?.done && pullProgress[WHISPER_MODEL_ID]?.error && (
-          <div className="flex items-start gap-2 pt-2 border-t border-[rgba(239,68,68,0.2)]">
-            <span className="text-[#EF4444] text-[10px] mt-0.5 shrink-0">⚠</span>
-            <p className="text-[11px] text-[#EF4444] m-0 leading-snug">{pullProgress[WHISPER_MODEL_ID].error}</p>
-          </div>
-        )}
-
-        {/* How to use note — only shown if auto-start also failed */}
-        {!whisperStatus.installed && whisperStatus.checked && !whisperStatus.ollamaRunning && !startingOllama && (
-          <p className="text-[11px] text-[#7A8492] font-mono m-0 pt-1">
-            Auto-start failed. Run <span className="text-[#F0F4F8] bg-[#0E1318] px-1.5 py-0.5 rounded">ollama serve</span> in your terminal, then click Check.
-          </p>
-        )}
-        {whisperStatus.installed && (
-          <p className="text-[11px] text-[#7A8492] m-0">
-            Voice capture is active. Click the mic button in the <strong className="text-[#9AA4B2]">Tell Wardyn</strong> panel to dictate life plans.
-          </p>
-        )}
       </div>
 
       {/* Gmail Integration Card */}

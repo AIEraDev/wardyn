@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
-  IconMicrophone, IconMicrophoneOff, IconBrain, IconX, IconCheck, IconLoader2,
+  IconBrain, IconX, IconCheck, IconLoader2,
   IconCalendarEvent, IconBook, IconRocket, IconTarget, IconPlaneDeparture,
   IconClockHour4, IconSend, IconAlertCircle
 } from "@tabler/icons-react";
@@ -33,102 +33,6 @@ function relDue(iso: string | null) {
   return `in ${diff}d`;
 }
 
-// ─── Native Audio Hook ────────────────────────────────────────────────────────
-// Drives recording via Rust/cpal — no WebView mic access, no entitlement issues.
-// Listens to "transcription-delta" Tauri events for live text updates.
-
-function useNativeTranscription(onResult: (t: string) => void) {
-  const [listening, setListening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const onResultRef = useRef(onResult);
-  useEffect(() => { onResultRef.current = onResult; }, [onResult]);
-
-  // Volume visualisation — driven by a simple animated level since we have no
-  // Web Audio access (audio stays in Rust). We fake a subtle pulse while active.
-  const [volume, setVolume] = useState(0);
-  const volumeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopVolume = () => {
-    if (volumeTimerRef.current) clearInterval(volumeTimerRef.current);
-    volumeTimerRef.current = null;
-    setVolume(0);
-  };
-
-  const startVolume = () => {
-    volumeTimerRef.current = setInterval(() => {
-      // Animate a gentle pseudo-random level so waveform bars look alive
-      setVolume(Math.round(30 + Math.random() * 50));
-    }, 120);
-  };
-
-  // Event unlistener refs
-  const unlistenDeltaRef = useRef<(() => void) | null>(null);
-  const unlistenStatusRef = useRef<(() => void) | null>(null);
-
-  const stop = useCallback(async () => {
-    stopVolume();
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("stop_native_transcription_command");
-    } catch (e) {
-      console.warn("stop error:", e);
-    }
-    setListening(false);
-  }, []);
-
-  const start = useCallback(async () => {
-    setError(null);
-    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
-      setError("Native audio requires the Tauri desktop app.");
-      return;
-    }
-
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const { listen } = await import("@tauri-apps/api/event");
-
-      // Listen for transcription text chunks
-      unlistenDeltaRef.current = await listen<string>("transcription-delta", (event) => {
-        if (event.payload) onResultRef.current(event.payload);
-      });
-
-      // Listen for status changes (started / stopped / error)
-      unlistenStatusRef.current = await listen<string>("transcription-status", (event) => {
-        const status = event.payload || "";
-        if (status === "started") {
-          setListening(true);
-          startVolume();
-        } else if (status === "stopped") {
-          setListening(false);
-          stopVolume();
-          unlistenDeltaRef.current?.();
-          unlistenStatusRef.current?.();
-        } else if (status.startsWith("error:")) {
-          setError(status.replace("error: ", ""));
-          setListening(false);
-          stopVolume();
-        }
-      });
-
-      await invoke("start_native_transcription_command");
-    } catch (err: any) {
-      setError(err?.message || "Failed to start recording.");
-      setListening(false);
-      stopVolume();
-    }
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopVolume();
-      unlistenDeltaRef.current?.();
-      unlistenStatusRef.current?.();
-    };
-  }, []);
-
-  return { listening, error, volume, start, stop, supported: true };
-}
 
 // ─── Plan Preview Card ────────────────────────────────────────────────────────
 
@@ -182,6 +86,7 @@ function PlanPreview({ event }: { event: LifeEvent }) {
 
 // ─── Main Modal Component ─────────────────────────────────────────────────────
 
+
 export function LifeCaptureModal() {
   const { captureLifeEvent } = useQueueStore();
   const [open, setOpen] = useState(false);
@@ -191,46 +96,12 @@ export function LifeCaptureModal() {
   const [step, setStep] = useState<"input" | "processing" | "preview">("input");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // ── Whisper readiness check ───────────────────────────────────────────────
-  const [whisperReady, setWhisperReady] = useState<boolean | null>(null); // null = unchecked
-
   useEffect(() => {
-    if (!open || whisperReady !== null) return;
-    const check = async () => {
-      if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
-        setWhisperReady(false);
-        return;
-      }
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const result = await invoke<{ installed: boolean; ollama_running: boolean }>("check_whisper_status_command");
-        setWhisperReady(result.installed && result.ollama_running);
-      } catch {
-        setWhisperReady(false);
-      }
-    };
-    check();
-  }, [open, whisperReady]);
-
-  const handleVoiceResult = useCallback((t: string) => setText(t), []);
-  const { listening, supported, error: micError, volume, start, stop } = useNativeTranscription(handleVoiceResult);
-
-  // When recording stops, if we have text, keep it ready for review — don't auto-submit
-  // so user can verify before generating plan
-  const handleStopRecording = useCallback(() => {
-    stop();
-  }, [stop]);
-
-  // Errors shown inline per mode (recording vs text)
-
-  // Focus textarea on open (only when not recording)
-  useEffect(() => {
-    if (open && step === "input" && !listening) {
+    if (open && step === "input") {
       setTimeout(() => textareaRef.current?.focus(), 100);
     }
-  }, [open, step, listening]);
+  }, [open, step]);
 
-  // Reset on close
   useEffect(() => {
     if (!open) {
       setTimeout(() => { setText(""); setResult(null); setError(null); setStep("input"); }, 300);
@@ -249,9 +120,6 @@ export function LifeCaptureModal() {
       setStep("input");
     }
   };
-
-  const handleClose = () => { if (listening) stop(); setOpen(false); };
-  const handleDone = () => handleClose();
 
   const examples = [
     "I have a product demo next Friday and need to prepare slides and a dry run",
@@ -291,11 +159,11 @@ export function LifeCaptureModal() {
                 </div>
                 <div>
                   <div className="text-[15px] font-bold text-[#E2E8F0]">Tell Wardyn</div>
-                  <div className="text-[11px] text-[#64748B]">Voice or type anything about your life</div>
+                  <div className="text-[11px] text-[#64748B]">Type anything about your life plans</div>
                 </div>
               </div>
               <button
-                onClick={handleClose}
+                onClick={() => setOpen(false)}
                 className="bg-transparent border-none cursor-pointer text-[#64748B] hover:text-[#94A3B8] p-1 rounded-md flex items-center justify-center transition-colors"
               >
                 <IconX size={18} />
@@ -305,158 +173,64 @@ export function LifeCaptureModal() {
             {/* Step: Input */}
             {step === "input" && (
               <>
-                {/* ── Voice recording mode — full-screen live transcription display ── */}
-                {listening ? (
-                  <div className="flex flex-col gap-4">
-                    {/* Live transcription area — read only, shows text as it arrives */}
-                    <div className="relative min-h-[120px] rounded-xl border border-[rgba(239,68,68,0.5)] bg-[rgba(239,68,68,0.04)] px-4 py-3.5">
-                      {/* Pulsing mic icon top-left */}
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-2 h-2 rounded-full bg-[#EF4444] animate-ping" />
-                        <span className="text-[10px] font-mono font-semibold text-[#EF4444] tracking-widest uppercase">Listening…</span>
-                        {/* Waveform bars */}
-                        <div className="flex items-end gap-[3px] h-4 ml-1">
-                          {[0.12, 0.20, 0.14, 0.22, 0.10, 0.18, 0.08].map((scale, i) => (
-                            <div
-                              key={i}
-                              className="w-[3px] rounded-full bg-[#EF4444] transition-all duration-75"
-                              style={{ height: `${Math.max(4, volume * scale)}px` }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Live transcript text */}
-                      {text ? (
-                        <p className="text-[14px] text-[#E2E8F0] leading-relaxed m-0 whitespace-pre-wrap">
-                          {text}
-                          {/* Blinking cursor at end */}
-                          <span className="inline-block w-[2px] h-[1em] bg-[#EF4444] ml-0.5 align-middle animate-[blink_1s_ease_infinite]" />
-                        </p>
-                      ) : (
-                        <p className="text-[13px] text-[#475569] italic m-0">
-                          Start speaking — your words will appear here in real time…
-                        </p>
-                      )}
+                <div className="relative">
+                  <textarea
+                    ref={textareaRef}
+                    value={text}
+                    onChange={e => setText(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit(); }}
+                    placeholder="I have an event next week... / I need to start studying for my exam... / Planning a trip..."
+                    rows={4}
+                    className="w-full bg-white/[0.05] border border-white/10 rounded-xl text-[#E2E8F0] text-[13px]
+                      px-3.5 py-3 resize-none font-[inherit] outline-none leading-relaxed
+                      transition-colors duration-200 box-border focus:border-white/20"
+                  />
+                  {text && (
+                    <div className="absolute bottom-2.5 right-2.5 text-[9px] font-mono text-[#475569]">
+                      ⌘↵ to submit
                     </div>
+                  )}
+                </div>
 
-                    {/* Stop button — centered, prominent */}
-                    <button
-                      type="button"
-                      onClick={handleStopRecording}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl
-                        border border-[rgba(239,68,68,0.5)] bg-[rgba(239,68,68,0.15)] text-[#EF4444]
-                        text-sm font-semibold cursor-pointer hover:bg-[rgba(239,68,68,0.25)]
-                        transition-all duration-200 shadow-[0_0_16px_rgba(239,68,68,0.2)]"
-                    >
-                      <IconMicrophoneOff size={16} className="animate-pulse" />
-                      Stop Recording
-                    </button>
-
-                    {/* Error while recording */}
-                    {micError && (
-                      <div className="flex items-center gap-2 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.25)] rounded-xl px-3.5 py-2.5">
-                        <IconAlertCircle size={15} color="#EF4444" className="shrink-0" />
-                        <span className="text-xs text-[#EF4444] font-medium">{micError}</span>
-                      </div>
-                    )}
+                {!text && (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="text-[10px] text-[#475569] uppercase tracking-[0.08em] font-semibold">Examples</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {examples.map((ex, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setText(ex)}
+                          className="bg-white/[0.04] hover:bg-[rgba(74,143,194,0.1)] border border-white/[0.08]
+                            rounded-md px-2 py-1 text-[10px] text-[#94A3B8] hover:text-[#4A8FC2]
+                            cursor-pointer text-left transition-all duration-150"
+                        >
+                          {ex.length > 55 ? ex.slice(0, 55) + "\u2026" : ex}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <>
-                    {/* ── Text input mode ── */}
-                    <div className="relative">
-                      <textarea
-                        ref={textareaRef}
-                        value={text}
-                        onChange={e => setText(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit(); }}
-                        placeholder="I have an event next week... / I need to start studying for my exam... / Planning a trip..."
-                        rows={4}
-                        className="w-full bg-white/[0.05] border border-white/10 rounded-xl text-[#E2E8F0] text-[13px]
-                          px-3.5 py-3 resize-none font-[inherit] outline-none leading-relaxed
-                          transition-colors duration-200 box-border focus:border-white/20"
-                      />
-                      {/* Show transcribed badge if text came from voice */}
-                      {text && (
-                        <div className="absolute bottom-2.5 right-2.5 text-[9px] font-mono text-[#475569]">
-                          ⌘↵ to submit
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Examples — only shown when not recording and no text yet */}
-                    {!text && (
-                      <div className="flex flex-col gap-1.5">
-                        <div className="text-[10px] text-[#475569] uppercase tracking-[0.08em] font-semibold">Examples</div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {examples.map((ex, i) => (
-                            <button
-                              key={i}
-                              onClick={() => setText(ex)}
-                              className="bg-white/[0.04] hover:bg-[rgba(74,143,194,0.1)] border border-white/[0.08]
-                                rounded-md px-2 py-1 text-[10px] text-[#94A3B8] hover:text-[#4A8FC2]
-                                cursor-pointer text-left transition-all duration-150"
-                            >
-                              {ex.length > 55 ? ex.slice(0, 55) + "…" : ex}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Error Banner */}
-                    {(error || micError) && (
-                      <div className="flex items-center gap-2 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.25)] rounded-xl px-3.5 py-2.5">
-                        <IconAlertCircle size={15} color="#EF4444" className="shrink-0" />
-                        <span className="text-xs text-[#EF4444] font-medium">{error || micError}</span>
-                      </div>
-                    )}
-
-                    {/* Actions row */}
-                    <div className="flex items-center gap-2">
-                      {/* Voice Button — gated on Whisper */}
-                      {supported && (
-                        whisperReady === false ? (
-                          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[#EF4444] text-xs shrink-0">
-                            <IconMicrophoneOff size={14} />
-                            <span className="whitespace-nowrap">Install Whisper in Settings</span>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={start}
-                            disabled={whisperReady === null}
-                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-white/10
-                              bg-white/[0.05] text-[#94A3B8] hover:text-[#E2E8F0] hover:bg-white/[0.08]
-                              text-xs font-medium cursor-pointer transition-all duration-200
-                              disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                          >
-                            {whisperReady === null ? (
-                              <IconLoader2 size={14} className="animate-spin" />
-                            ) : (
-                              <IconMicrophone size={14} />
-                            )}
-                            {whisperReady === null ? "Checking…" : "Voice"}
-                          </button>
-                        )
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={handleSubmit}
-                        disabled={!text.trim()}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border-none
-                          text-[13px] font-semibold transition-all duration-200
-                          ${text.trim()
-                            ? "bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED] text-white cursor-pointer hover:opacity-95"
-                            : "bg-white/[0.06] text-[#475569] cursor-not-allowed"}`}
-                      >
-                        <IconSend size={14} />
-                        Generate Plan&nbsp;<span className="text-[10px] opacity-70">⌘↵</span>
-                      </button>
-                    </div>
-                  </>
                 )}
+
+                {error && (
+                  <div className="flex items-center gap-2 bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.25)] rounded-xl px-3.5 py-2.5">
+                    <IconAlertCircle size={15} color="#EF4444" className="shrink-0" />
+                    <span className="text-xs text-[#EF4444] font-medium">{error}</span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={!text.trim()}
+                  className={`w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border-none
+                    text-[13px] font-semibold transition-all duration-200
+                    ${text.trim()
+                      ? "bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED] text-white cursor-pointer hover:opacity-95"
+                      : "bg-white/[0.06] text-[#475569] cursor-not-allowed"}`}
+                >
+                  <IconSend size={14} />
+                  Generate Plan&nbsp;<span className="text-[10px] opacity-70">⌘↵</span>
+                </button>
               </>
             )}
 
@@ -490,7 +264,7 @@ export function LifeCaptureModal() {
                     + Add Another
                   </button>
                   <button
-                    onClick={handleDone}
+                    onClick={() => setOpen(false)}
                     className="flex-1 px-3.5 py-2 rounded-xl bg-gradient-to-br from-[#4A8FC2] to-[#7C3AED]
                       border-none text-white cursor-pointer text-[13px] font-semibold hover:opacity-90 transition-opacity"
                   >
@@ -508,7 +282,6 @@ export function LifeCaptureModal() {
           0%, 100% { box-shadow: 0 4px 20px rgba(74,143,194,0.4); }
           50% { box-shadow: 0 4px 20px rgba(74,143,194,0.6), 0 0 0 8px rgba(74,143,194,0.1); }
         }
-        @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
       `}</style>
     </>

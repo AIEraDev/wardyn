@@ -28,6 +28,7 @@ import {
   SupportedLanguage,
   TRANSLATIONS,
   TranslationDictionary,
+  _registerUseQueueStore,
 } from "../i18n/translations";
 
 export type PostCadence = "daily" | "every_2_days" | "weekly" | "manual";
@@ -2300,3 +2301,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 }));
+
+// Register the hook with the translations module so useTranslation() can
+// subscribe to language changes without a circular ESM dependency.
+_registerUseQueueStore(useQueueStore);

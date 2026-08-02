@@ -217,18 +217,38 @@ struct OllamaStatus {
 
 #[tauri::command]
 async fn check_ollama_status_command() -> Result<OllamaStatus, String> {
-    // 1. Check if the `ollama` binary exists on PATH
-    let version_output = std::process::Command::new("ollama")
-        .arg("--version")
-        .output();
+    // 1. Check if the `ollama` binary exists.
+    //
+    // macOS .app bundles launch with a stripped PATH (/usr/bin:/bin:/usr/sbin:/sbin),
+    // so `ollama` — which installs to /usr/local/bin — is not found via a plain
+    // Command::new("ollama") lookup. We probe known install locations explicitly
+    // as a fallback.
+    let candidate_paths = [
+        // Resolve via PATH first (works in terminal / dev mode)
+        "ollama".to_string(),
+        // Homebrew / official macOS installer default
+        "/usr/local/bin/ollama".to_string(),
+        // Apple Silicon Homebrew prefix
+        "/opt/homebrew/bin/ollama".to_string(),
+        // Linux / custom installs
+        "/usr/bin/ollama".to_string(),
+        // User-local install
+        format!("{}/.local/bin/ollama", std::env::var("HOME").unwrap_or_default()),
+    ];
 
-    let (installed, version) = match version_output {
-        Ok(out) if out.status.success() => {
-            let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            (true, Some(v))
+    let mut installed = false;
+    let mut version: Option<String> = None;
+
+    for path in &candidate_paths {
+        if path.is_empty() { continue; }
+        if let Ok(out) = std::process::Command::new(path).arg("--version").output() {
+            if out.status.success() {
+                installed = true;
+                version = Some(String::from_utf8_lossy(&out.stdout).trim().to_string());
+                break;
+            }
         }
-        _ => (false, None),
-    };
+    }
 
     // 2. Check if the Ollama daemon is accepting connections
     let running = reqwest::Client::builder()
@@ -240,28 +260,43 @@ async fn check_ollama_status_command() -> Result<OllamaStatus, String> {
         .await
         .is_ok();
 
+    // If the HTTP endpoint responds, Ollama is definitely installed & running —
+    // even if we couldn't find the binary on PATH.
+    let installed = installed || running;
+
     Ok(OllamaStatus { installed, running, version })
 }
 
 #[tauri::command]
 async fn start_ollama_command() -> Result<String, String> {
-    // Spawn `ollama serve` detached so it keeps running after this process
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("ollama")
-            .arg("serve")
-            .spawn()
-            .map(|_| "Ollama started".to_string())
-            .map_err(|e| format!("Could not start Ollama: {}", e))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        std::process::Command::new("ollama")
-            .arg("serve")
-            .spawn()
-            .map(|_| "Ollama started".to_string())
-            .map_err(|e| format!("Could not start Ollama: {}", e))
-    }
+    // Probe known install locations — macOS .app bundles have a stripped PATH
+    let candidate_paths = [
+        "ollama".to_string(),
+        "/usr/local/bin/ollama".to_string(),
+        "/opt/homebrew/bin/ollama".to_string(),
+        "/usr/bin/ollama".to_string(),
+        format!("{}/.local/bin/ollama", std::env::var("HOME").unwrap_or_default()),
+    ];
+
+    let ollama_bin = candidate_paths
+        .iter()
+        .find(|p| {
+            if p.is_empty() { return false; }
+            // For bare names like "ollama", try a quick which-style check
+            if !p.contains('/') {
+                std::process::Command::new(p).arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
+            } else {
+                std::path::Path::new(p.as_str()).exists()
+            }
+        })
+        .cloned()
+        .unwrap_or_else(|| "ollama".to_string());
+
+    std::process::Command::new(&ollama_bin)
+        .arg("serve")
+        .spawn()
+        .map(|_| "Ollama started".to_string())
+        .map_err(|e| format!("Could not start Ollama (tried '{}'): {}", ollama_bin, e))
 }
 
 #[tauri::command]
@@ -793,6 +828,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::AppleScript,

@@ -17,7 +17,13 @@ import { useQueueStore } from "./store/useQueueStore";
 
 // ─── No-Model Alert Banner ───────────────────────────────────────────────────
 
-function NoModelAlert({ onGoToSettings, onDismiss }: { onGoToSettings: () => void; onDismiss: () => void }) {
+function NoModelAlert({
+  onGoToSettings,
+  onDismiss,
+}: {
+  onGoToSettings: () => void;
+  onDismiss: () => void;
+}) {
   return (
     <div
       role="alert"
@@ -35,10 +41,14 @@ function NoModelAlert({ onGoToSettings, onDismiss }: { onGoToSettings: () => voi
 
       {/* Message */}
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-bold text-[#FED7AA] mb-0.5">No AI model installed</div>
+        <div className="text-xs font-bold text-[#FED7AA] mb-0.5">
+          No AI model installed
+        </div>
         <div className="text-[11px] text-[#FDBA74] leading-snug">
-          Wardyn needs at least one local Ollama model to generate briefs, tag notes, and process plans.{" "}
-          <span className="text-[#FB923C] font-semibold">llama3.2</span> is recommended (2 GB).
+          Wardyn needs at least one local Ollama model to generate briefs, tag
+          notes, and process plans.{" "}
+          <span className="text-[#FB923C] font-semibold">llama3.2</span> is
+          recommended (2 GB).
         </div>
       </div>
 
@@ -80,28 +90,65 @@ export default function App() {
   const fetchItems = useQueueStore((state) => state.fetchItems);
   const checkGmailStatus = useQueueStore((state) => state.checkGmailStatus);
   const syncGmail = useQueueStore((state) => state.syncGmail);
-  const syncCalendarDeadlines = useQueueStore((state) => state.syncCalendarDeadlines);
-  const syncLinkedInTimeline = useQueueStore((state) => state.syncLinkedInTimeline);
-  const syncIntervalMinutes = useQueueStore((state) => state.syncIntervalMinutes);
+  const syncCalendarDeadlines = useQueueStore(
+    (state) => state.syncCalendarDeadlines,
+  );
+  const syncLinkedInTimeline = useQueueStore(
+    (state) => state.syncLinkedInTimeline,
+  );
+  const syncIntervalMinutes = useQueueStore(
+    (state) => state.syncIntervalMinutes,
+  );
   const gmailAccounts = useQueueStore((state) => state.gmailAccounts);
 
   const fetchMorningBrief = useQueueStore((state) => state.fetchMorningBrief);
-  const fetchKnowledgeItems = useQueueStore((state) => state.fetchKnowledgeItems);
+  const fetchKnowledgeItems = useQueueStore(
+    (state) => state.fetchKnowledgeItems,
+  );
   const fetchDecisions = useQueueStore((state) => state.fetchDecisions);
   const fetchWeeklyReview = useQueueStore((state) => state.fetchWeeklyReview);
   const fetchVaultPath = useQueueStore((state) => state.fetchVaultPath);
   const fetchCustomFeeds = useQueueStore((state) => state.fetchCustomFeeds);
   const fetchTasks = useQueueStore((state) => state.fetchTasks);
-  const checkPendingReminders = useQueueStore((state) => state.checkPendingReminders);
+  const checkPendingReminders = useQueueStore(
+    (state) => state.checkPendingReminders,
+  );
   const fetchLifeEvents = useQueueStore((state) => state.fetchLifeEvents);
   const checkOllamaModels = useQueueStore((state) => state.checkOllamaModels);
   const ollamaModels = useQueueStore((state) => state.ollamaModels);
   const ollamaChecked = useQueueStore((state) => state.ollamaChecked);
-  const fetchActiveProjects = useQueueStore((state) => state.fetchActiveProjects);
+  const fetchActiveProjects = useQueueStore(
+    (state) => state.fetchActiveProjects,
+  );
   const fetchDailyHabits = useQueueStore((state) => state.fetchDailyHabits);
   const fetchDailyIntel = useQueueStore((state) => state.fetchDailyIntel);
 
   const [modelAlertDismissed, setModelAlertDismissed] = useState(false);
+
+  // Silent background update check on startup (non-blocking, notifies user if available)
+  useEffect(() => {
+    const silentUpdateCheck = async () => {
+      if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+        return;
+      try {
+        // Delay 10s so it doesn't compete with boot syncs
+        await new Promise((r) => setTimeout(r, 10_000));
+        const { check } = await import("@tauri-apps/plugin-updater");
+        const update = await check();
+        if (update?.available) {
+          const sendNotification =
+            useQueueStore.getState().sendDesktopNotification;
+          await sendNotification(
+            "🆕 Wardyn Update Available",
+            `v${update.version} is ready. Open Settings → Check for Updates to install.`,
+          );
+        }
+      } catch {
+        // Silent — don't surface startup update errors to the user
+      }
+    };
+    silentUpdateCheck();
+  }, []);
 
   // 1. Startup Boot Auto-Sync & Notification Listener
   useEffect(() => {
@@ -147,7 +194,8 @@ export default function App() {
     const setupNotificationListener = async () => {
       try {
         if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-          const notificationPlugin = await import("@tauri-apps/plugin-notification");
+          const notificationPlugin =
+            await import("@tauri-apps/plugin-notification");
           if (typeof notificationPlugin.onAction === "function") {
             await notificationPlugin
               .onAction(() => {
@@ -185,10 +233,21 @@ export default function App() {
       }
     };
     let trayUnlisten: (() => void) | undefined;
-    setupTrayListener().then((fn) => { trayUnlisten = fn; });
+    setupTrayListener().then((fn) => {
+      trayUnlisten = fn;
+    });
 
-    return () => { trayUnlisten?.(); };
-  }, [fetchItems, checkGmailStatus, syncCalendarDeadlines, syncLinkedInTimeline, syncGmail, setActiveTab]);
+    return () => {
+      trayUnlisten?.();
+    };
+  }, [
+    fetchItems,
+    checkGmailStatus,
+    syncCalendarDeadlines,
+    syncLinkedInTimeline,
+    syncGmail,
+    setActiveTab,
+  ]);
 
   // 2. Background Periodic Multi-Channel Ingestion & Continuous AI Learning Interval
   useEffect(() => {
@@ -207,18 +266,29 @@ export default function App() {
     }, reminderIntervalMs);
 
     // Re-check Ollama models every 5 minutes in case user installs mid-session
-    const modelTimer = setInterval(() => {
-      checkOllamaModels();
-    }, 5 * 60 * 1000);
+    const modelTimer = setInterval(
+      () => {
+        checkOllamaModels();
+      },
+      5 * 60 * 1000,
+    );
 
     return () => {
       clearInterval(timer);
       clearInterval(reminderTimer);
       clearInterval(modelTimer);
     };
-  }, [gmailAccounts, syncIntervalMinutes, syncGmail, syncLinkedInTimeline, checkPendingReminders, checkOllamaModels]);
+  }, [
+    gmailAccounts,
+    syncIntervalMinutes,
+    syncGmail,
+    syncLinkedInTimeline,
+    checkPendingReminders,
+    checkOllamaModels,
+  ]);
 
-  const showModelAlert = ollamaChecked && ollamaModels.length === 0 && !modelAlertDismissed;
+  const showModelAlert =
+    ollamaChecked && ollamaModels.length === 0 && !modelAlertDismissed;
   const renderActiveTab = () => {
     switch (activeTab) {
       case "today":
@@ -252,7 +322,9 @@ export default function App() {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#0B0E13] relative">
       <h2 className="sr-only">
-        Wardyn desktop app: a sidebar with navigation and a main daily brief showing reply cards awaiting approval, a content brief card, and an auto-handled summary
+        Wardyn desktop app: a sidebar with navigation and a main daily brief
+        showing reply cards awaiting approval, a content brief card, and an
+        auto-handled summary
       </h2>
 
       {/* macOS Seamless Window Titlebar Drag Area */}
@@ -263,7 +335,10 @@ export default function App() {
       {/* Ollama No-Model Alert */}
       {showModelAlert && (
         <NoModelAlert
-          onGoToSettings={() => { setActiveTab("settings"); setModelAlertDismissed(true); }}
+          onGoToSettings={() => {
+            setActiveTab("settings");
+            setModelAlertDismissed(true);
+          }}
           onDismiss={() => setModelAlertDismissed(true)}
         />
       )}

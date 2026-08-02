@@ -1,95 +1,118 @@
-import React, { useEffect, useState } from 'react';
-import { IconMail, IconCpu, IconVolume, IconBell, IconClock, IconPower, IconWorld, IconDownload, IconCheck, IconRefresh, IconTrash, IconFlame, IconFolder, IconLoader2 } from '@tabler/icons-react';
-import { OllamaSetupModal } from './OllamaSetupModal';
+import React, { useEffect, useState } from "react";
+import {
+  IconMail,
+  IconCpu,
+  IconVolume,
+  IconBell,
+  IconClock,
+  IconPower,
+  IconWorld,
+  IconDownload,
+  IconCheck,
+  IconRefresh,
+  IconTrash,
+  IconFlame,
+  IconFolder,
+  IconLoader2,
+} from "@tabler/icons-react";
+import { OllamaSetupModal } from "./OllamaSetupModal";
 
-
-import { useQueueStore } from '../store/useQueueStore';
-import { SupportedLanguage } from '../i18n/translations';
+import { useQueueStore } from "../store/useQueueStore";
+import { SupportedLanguage, useTranslation } from "../i18n/translations";
 
 interface CatalogModel {
   id: string;
   name: string;
   provider: string;
   size: string;
-  tier: 'standard' | 'power';
+  tier: "standard" | "power";
   description: string;
 }
 
 const FREE_MODEL_CATALOG: CatalogModel[] = [
   // --- Frontier High-Power Models (7B – 70B) ---
   {
-    id: 'llama3:70b',
-    name: 'Llama 3 70B (Frontier)',
-    provider: 'Meta AI',
-    size: '40.0 GB',
-    tier: 'power',
-    description: 'GPT-4 level frontier performance for complex executive reasoning & writing.',
+    id: "llama3:70b",
+    name: "Llama 3 70B (Frontier)",
+    provider: "Meta AI",
+    size: "40.0 GB",
+    tier: "power",
+    description:
+      "GPT-4 level frontier performance for complex executive reasoning & writing.",
   },
   {
-    id: 'qwen2.5:32b',
-    name: 'Qwen 2.5 32B',
-    provider: 'Alibaba Cloud (Open Source)',
-    size: '19.0 GB',
-    tier: 'power',
-    description: 'Top-tier enterprise multilingual model with high-precision structured outputs.',
+    id: "qwen2.5:32b",
+    name: "Qwen 2.5 32B",
+    provider: "Alibaba Cloud (Open Source)",
+    size: "19.0 GB",
+    tier: "power",
+    description:
+      "Top-tier enterprise multilingual model with high-precision structured outputs.",
   },
   {
-    id: 'mixtral:8x7b',
-    name: 'Mixtral 8x7B MoE',
-    provider: 'Mistral AI',
-    size: '26.0 GB',
-    tier: 'power',
-    description: 'Mixture-of-Experts architecture. Ultra-fast inference with 47B capacity.',
+    id: "mixtral:8x7b",
+    name: "Mixtral 8x7B MoE",
+    provider: "Mistral AI",
+    size: "26.0 GB",
+    tier: "power",
+    description:
+      "Mixture-of-Experts architecture. Ultra-fast inference with 47B capacity.",
   },
   {
-    id: 'gemma2:27b',
-    name: 'Gemma 2 27B',
-    provider: 'Google DeepMind',
-    size: '16.0 GB',
-    tier: 'power',
-    description: "Google DeepMind's flagship open model with state-of-the-art accuracy.",
+    id: "gemma2:27b",
+    name: "Gemma 2 27B",
+    provider: "Google DeepMind",
+    size: "16.0 GB",
+    tier: "power",
+    description:
+      "Google DeepMind's flagship open model with state-of-the-art accuracy.",
   },
   {
-    id: 'deepseek-coder:33b',
-    name: 'DeepSeek Coder 33B',
-    provider: 'DeepSeek AI',
-    size: '19.0 GB',
-    tier: 'power',
-    description: 'Specialized high-capacity code synthesis, system architecture & JSON formatting.',
+    id: "deepseek-coder:33b",
+    name: "DeepSeek Coder 33B",
+    provider: "DeepSeek AI",
+    size: "19.0 GB",
+    tier: "power",
+    description:
+      "Specialized high-capacity code synthesis, system architecture & JSON formatting.",
   },
 
   // --- Compact & Balanced Models (2B – 8B) ---
   {
-    id: 'qwen2.5',
-    name: 'Qwen 2.5 7B (Recommended)',
-    provider: 'Alibaba Cloud (Open Source)',
-    size: '4.7 GB',
-    tier: 'standard',
-    description: 'Recommended default. Exceptional balance of speed, tone matching & multi-language.',
+    id: "qwen2.5",
+    name: "Qwen 2.5 7B (Recommended)",
+    provider: "Alibaba Cloud (Open Source)",
+    size: "4.7 GB",
+    tier: "standard",
+    description:
+      "Recommended default. Exceptional balance of speed, tone matching & multi-language.",
   },
   {
-    id: 'llama3',
-    name: 'Llama 3 8B',
-    provider: 'Meta AI',
-    size: '4.7 GB',
-    tier: 'standard',
-    description: 'Balanced general intelligence for executive summaries & drafts.',
+    id: "llama3",
+    name: "Llama 3 8B",
+    provider: "Meta AI",
+    size: "4.7 GB",
+    tier: "standard",
+    description:
+      "Balanced general intelligence for executive summaries & drafts.",
   },
   {
-    id: 'mistral',
-    name: 'Mistral 7B',
-    provider: 'Mistral AI',
-    size: '4.1 GB',
-    tier: 'standard',
-    description: 'Ultra-fast, concise natural language processing & high-speed triaging.',
+    id: "mistral",
+    name: "Mistral 7B",
+    provider: "Mistral AI",
+    size: "4.1 GB",
+    tier: "standard",
+    description:
+      "Ultra-fast, concise natural language processing & high-speed triaging.",
   },
   {
-    id: 'phi3',
-    name: 'Phi-3 Mini',
-    provider: 'Microsoft AI',
-    size: '2.2 GB',
-    tier: 'standard',
-    description: 'Lightweight compact model optimized for devices with low RAM.',
+    id: "phi3",
+    name: "Phi-3 Mini",
+    provider: "Microsoft AI",
+    size: "2.2 GB",
+    tier: "standard",
+    description:
+      "Lightweight compact model optimized for devices with low RAM.",
   },
 ];
 
@@ -100,7 +123,6 @@ export const SettingsTab: React.FC = () => {
     disconnectGmail,
     language,
     setLanguage,
-    t,
     notificationsEnabled,
     toggleNotifications,
     autoStartEnabled,
@@ -120,28 +142,35 @@ export const SettingsTab: React.FC = () => {
     cancelOllamaModelInstall,
   } = useQueueStore();
 
+  const t = useTranslation();
 
-  const [vaultInput, setVaultInput] = useState(vaultPath || '');
+  const [vaultInput, setVaultInput] = useState(vaultPath || "");
   const [vaultSaved, setVaultSaved] = useState(false);
 
-  const [newFeedTitle, setNewFeedTitle] = useState('');
-  const [newFeedUrl, setNewFeedUrl] = useState('');
+  const [newFeedTitle, setNewFeedTitle] = useState("");
+  const [newFeedUrl, setNewFeedUrl] = useState("");
   const [addingFeed, setAddingFeed] = useState(false);
-
 
   useEffect(() => {
     if (vaultPath !== null) setVaultInput(vaultPath);
   }, [vaultPath]);
 
   const [installedModels, setInstalledModels] = useState<string[]>([]);
-  const [uninstallingModelId, setUninstallingModelId] = useState<string | null>(null);
+  const [uninstallingModelId, setUninstallingModelId] = useState<string | null>(
+    null,
+  );
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
-  const [setupTarget, setSetupTarget] = useState<{ id: string; name: string } | null>(null);
+  const [setupTarget, setSetupTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   // Auto-refresh installed models list when any download finishes
   useEffect(() => {
-    const anyJustFinished = Object.values(pullProgress).some((p) => p.done && !p.error);
+    const anyJustFinished = Object.values(pullProgress).some(
+      (p) => p.done && !p.error,
+    );
     if (anyJustFinished) {
       fetchModels();
     }
@@ -151,19 +180,27 @@ export const SettingsTab: React.FC = () => {
 
   const fetchModels = async () => {
     setRefreshingModels(true);
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const models = await invoke<Array<{ name: string; size_gb: string }>>('get_installed_ollama_models_command');
+        const { invoke } = await import("@tauri-apps/api/core");
+        const models = await invoke<Array<{ name: string; size_gb: string }>>(
+          "get_installed_ollama_models_command",
+        );
         const names = models.map((m) => m.name.toLowerCase());
         setInstalledModels(names);
       } catch (err) {
-        console.warn('Failed to fetch installed Ollama models:', err);
+        console.warn("Failed to fetch installed Ollama models:", err);
       }
     }
     setRefreshingModels(false);
   };
   const handleCheckUpdate = async () => {
+    // Only runs inside the Tauri runtime
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+      setUpdateStatus("Updates only available in the desktop app.");
+      return;
+    }
+
     setCheckingUpdate(true);
     setUpdateStatus("Checking GitHub Releases...");
     try {
@@ -172,8 +209,16 @@ export const SettingsTab: React.FC = () => {
 
       const { check } = await import("@tauri-apps/plugin-updater");
       const update = await check();
-      if (update?.available) {
-        setUpdateStatus(`✨ New version v${update.version} available! Downloading...`);
+
+      if (!update) {
+        setUpdateStatus(`Wardyn v${currentVersion} is up to date.`);
+        return;
+      }
+
+      if (update.available) {
+        setUpdateStatus(
+          `✨ New version v${update.version} available! Downloading...`,
+        );
         let downloaded = 0;
         let total = 0;
         await update.downloadAndInstall((event) => {
@@ -187,15 +232,30 @@ export const SettingsTab: React.FC = () => {
               setUpdateStatus(`⬇️ Downloading v${update.version}... ${pct}%`);
             }
           } else if (event.event === "Finished") {
-            setUpdateStatus(`✅ Update installed! Please restart Wardyn.`);
+            setUpdateStatus(`✅ Update installed! Restarting Wardyn...`);
           }
         });
+
+        // Relaunch the app after install completes
+        const { relaunch } = await import("@tauri-apps/plugin-process");
+        await relaunch();
       } else {
         setUpdateStatus(`Wardyn v${currentVersion} is up to date.`);
       }
     } catch (err: any) {
       console.warn("Update check error:", err);
-      setUpdateStatus(`Unable to check for updates. Try again later.`);
+      const msg = err?.message || String(err);
+      if (msg.includes("404") || msg.includes("Not Found")) {
+        setUpdateStatus("No release found. Check back after the next build.");
+      } else if (msg.includes("signature") || msg.includes("verify")) {
+        setUpdateStatus(
+          "Update signature verification failed. Contact support.",
+        );
+      } else if (msg.includes("network") || msg.includes("fetch")) {
+        setUpdateStatus("Network error — check your connection and try again.");
+      } else {
+        setUpdateStatus(`Update check failed: ${msg}`);
+      }
     } finally {
       setCheckingUpdate(false);
     }
@@ -208,10 +268,12 @@ export const SettingsTab: React.FC = () => {
 
   const handleInstallModel = async (modelId: string, modelName: string) => {
     // Check Ollama status before attempting pull
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const status = await invoke<{ installed: boolean; running: boolean }>('check_ollama_status_command');
+        const { invoke } = await import("@tauri-apps/api/core");
+        const status = await invoke<{ installed: boolean; running: boolean }>(
+          "check_ollama_status_command",
+        );
 
         if (!status || !status.installed || !status.running) {
           // Open guided setup wizard
@@ -230,30 +292,33 @@ export const SettingsTab: React.FC = () => {
 
   const startModelDownload = async (modelId: string, modelName: string) => {
     await sendDesktopNotification(
-      '📥 Downloading High-Performance Local Model',
-      `Pulling ${modelName} (${modelId}) in background...`
+      "📥 Downloading High-Performance Local Model",
+      `Pulling ${modelName} (${modelId}) in background...`,
     );
     await installOllamaModel(modelId);
   };
 
   const handleCancelInstall = async (modelId: string, modelName: string) => {
     await cancelOllamaModelInstall(modelId);
-    await sendDesktopNotification('⏹️ Download Cancelled', `Cancelled download for ${modelName}.`);
+    await sendDesktopNotification(
+      "⏹️ Download Cancelled",
+      `Cancelled download for ${modelName}.`,
+    );
   };
 
   const handleUninstallModel = async (modelId: string, modelName: string) => {
     setUninstallingModelId(modelId);
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('delete_ollama_model_command', { modelName: modelId });
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("delete_ollama_model_command", { modelName: modelId });
         await fetchModels();
         await sendDesktopNotification(
-          '🗑️ Model Uninstalled',
-          `Removed ${modelName} from device storage.`
+          "🗑️ Model Uninstalled",
+          `Removed ${modelName} from device storage.`,
         );
       } catch (err) {
-        console.error('Model uninstall error:', err);
+        console.error("Model uninstall error:", err);
       }
     }
     setUninstallingModelId(null);
@@ -261,8 +326,8 @@ export const SettingsTab: React.FC = () => {
 
   const handleTestNotification = async () => {
     await sendDesktopNotification(
-      'Wardyn Notification Test',
-      'Native desktop notifications are active and working!'
+      "Wardyn Notification Test",
+      "Native desktop notifications are active and working!",
     );
   };
 
@@ -270,8 +335,12 @@ export const SettingsTab: React.FC = () => {
     <div className="flex-1 min-w-0 space-y-6">
       <div className="flex items-baseline justify-between mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">{t('settings')}</h1>
-          <p className="font-mono text-xs text-[#7A8492] mt-0.5">Language, Frontier AI Models, Autostart & Connectors</p>
+          <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">
+            {t.settings}
+          </h1>
+          <p className="font-mono text-xs text-[#7A8492] mt-0.5">
+            Language, Frontier AI Models, Autostart & Connectors
+          </p>
         </div>
       </div>
 
@@ -283,8 +352,12 @@ export const SettingsTab: React.FC = () => {
               <IconWorld size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">{t('language')}</p>
-              <p className="text-xs text-[#9AA4B2]">Interface Multi-Language Translation (i18n)</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                {t.language}
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                Interface Multi-Language Translation (i18n)
+              </p>
             </div>
           </div>
 
@@ -311,8 +384,12 @@ export const SettingsTab: React.FC = () => {
               <IconCpu size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">High-Performance Local AI Models Catalog</p>
-              <p className="text-xs text-[#9AA4B2]">From 2B compact to 70B GPT-4 class frontier open models</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                High-Performance Local AI Models Catalog
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                From 2B compact to 70B GPT-4 class frontier open models
+              </p>
             </div>
           </div>
 
@@ -321,28 +398,44 @@ export const SettingsTab: React.FC = () => {
             disabled={refreshingModels}
             className="font-mono text-xs bg-[#181E27] text-[#4A8FC2] px-2.5 py-1 rounded-md border border-[#242B35] hover:text-[#F0F4F8] flex items-center gap-1 cursor-pointer disabled:opacity-50"
           >
-            <IconRefresh size={13} className={refreshingModels ? 'animate-spin' : ''} /> {refreshingModels ? 'Refreshing...' : 'Refresh List'}
+            <IconRefresh
+              size={13}
+              className={refreshingModels ? "animate-spin" : ""}
+            />{" "}
+            {refreshingModels ? "Refreshing..." : "Refresh List"}
           </button>
         </div>
 
         <div className="space-y-3">
           {FREE_MODEL_CATALOG.map((model) => {
             // Normalise: strip :latest tag and any registry prefix for comparison
-            const normalise = (n: string) => n.replace(/:latest$/, '').split('/').pop() ?? n;
+            const normalise = (n: string) =>
+              n
+                .replace(/:latest$/, "")
+                .split("/")
+                .pop() ?? n;
             const isInstalled = installedModels.some((m) => {
               const norm = normalise(m);
-              return norm === model.id || norm.startsWith(`${model.id}:`) || m === model.id || m.startsWith(`${model.id}:`);
+              return (
+                norm === model.id ||
+                norm.startsWith(`${model.id}:`) ||
+                m === model.id ||
+                m.startsWith(`${model.id}:`)
+              );
             });
             const progress = pullProgress[model.id];
             // Derive download state entirely from the global store — NOT local component state
             // so it survives tab switches without resetting.
             const isErrored = Boolean(progress?.done && progress?.error);
-            const isDownloading = !isErrored && (pendingDownloads.has(model.id) || Boolean(progress && !progress.done));
+            const isDownloading =
+              !isErrored &&
+              (pendingDownloads.has(model.id) ||
+                Boolean(progress && !progress.done));
             const isDeleting = uninstallingModelId === model.id;
-            const isPowerTier = model.tier === 'power';
+            const isPowerTier = model.tier === "power";
 
             const formatBytes = (bytes: number) => {
-              if (!bytes) return '0 B';
+              if (!bytes) return "0 B";
               const gb = bytes / (1024 * 1024 * 1024);
               if (gb >= 0.1) return `${gb.toFixed(2)} GB`;
               const mb = bytes / (1024 * 1024);
@@ -353,19 +446,21 @@ export const SettingsTab: React.FC = () => {
               <div
                 key={model.id}
                 className={`p-3.5 rounded-lg border flex flex-col gap-2 transition-all ${
-                  isErrored && progress?.error?.includes('Corrupted partial')
-                    ? 'bg-[rgba(232,162,61,0.04)] border-[rgba(232,162,61,0.3)]'
+                  isErrored && progress?.error?.includes("Corrupted partial")
+                    ? "bg-[rgba(232,162,61,0.04)] border-[rgba(232,162,61,0.3)]"
                     : isErrored
-                      ? 'bg-[rgba(239,68,68,0.04)] border-[rgba(239,68,68,0.3)]'
+                      ? "bg-[rgba(239,68,68,0.04)] border-[rgba(239,68,68,0.3)]"
                       : isPowerTier
-                        ? 'bg-[#181E27] border-[rgba(232,162,61,0.3)] shadow-[0_0_10px_rgba(232,162,61,0.04)]'
-                        : 'bg-[#181E27] border-[#242B35]'
+                        ? "bg-[#181E27] border-[rgba(232,162,61,0.3)] shadow-[0_0_10px_rgba(232,162,61,0.04)]"
+                        : "bg-[#181E27] border-[#242B35]"
                 }`}
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold text-[#F0F4F8]">{model.name}</span>
+                      <span className="text-xs font-semibold text-[#F0F4F8]">
+                        {model.name}
+                      </span>
                       {isPowerTier && (
                         <span className="font-mono text-[10px] text-[#E8A23D] bg-[rgba(232,162,61,0.15)] px-2 py-0.5 rounded border border-[rgba(232,162,61,0.3)] flex items-center gap-1">
                           <IconFlame size={11} /> High-Power
@@ -374,9 +469,13 @@ export const SettingsTab: React.FC = () => {
                       <span className="font-mono text-[10px] text-[#7A8492] px-2 py-0.5 rounded bg-[#151A21] border border-[#242B35]">
                         {model.provider}
                       </span>
-                      <span className="font-mono text-[10px] text-[#4A8FC2]">{model.size}</span>
+                      <span className="font-mono text-[10px] text-[#4A8FC2]">
+                        {model.size}
+                      </span>
                     </div>
-                    <p className="text-xs text-[#9AA4B2] m-0">{model.description}</p>
+                    <p className="text-xs text-[#9AA4B2] m-0">
+                      {model.description}
+                    </p>
                   </div>
 
                   <div className="shrink-0 flex items-center gap-2">
@@ -388,7 +487,9 @@ export const SettingsTab: React.FC = () => {
                         <button
                           type="button"
                           disabled={isDeleting}
-                          onClick={() => handleUninstallModel(model.id, model.name)}
+                          onClick={() =>
+                            handleUninstallModel(model.id, model.name)
+                          }
                           title={`Uninstall ${model.name}`}
                           className="p-1.5 font-mono text-xs bg-[#151A21] text-[#E8A23D] hover:bg-[rgba(232,162,61,0.15)] border border-[#242B35] rounded-md transition-colors cursor-pointer disabled:opacity-50"
                         >
@@ -398,7 +499,9 @@ export const SettingsTab: React.FC = () => {
                     ) : isDownloading ? (
                       <button
                         type="button"
-                        onClick={() => handleCancelInstall(model.id, model.name)}
+                        onClick={() =>
+                          handleCancelInstall(model.id, model.name)
+                        }
                         className="font-mono text-xs bg-[rgba(239,68,68,0.15)] text-[#EF4444] border border-[rgba(239,68,68,0.3)] px-3 py-1 rounded-md font-medium hover:bg-[rgba(239,68,68,0.25)] transition-colors cursor-pointer"
                       >
                         ⏹ Cancel
@@ -417,49 +520,70 @@ export const SettingsTab: React.FC = () => {
                 </div>
 
                 {/* Error state */}
-                {isErrored && progress?.error && (() => {
-                  const isStaleBlob = progress.error.includes('Corrupted partial') || progress.error.includes('Cleaning up');
-                  return (
-                    <div className={`mt-1 pt-2 border-t flex items-start gap-2 ${
-                      isStaleBlob
-                        ? 'border-[rgba(232,162,61,0.25)]'
-                        : 'border-[rgba(239,68,68,0.2)]'
-                    }`}>
-                      <span className={`text-[10px] shrink-0 mt-0.5 ${isStaleBlob ? 'text-[#E8A23D]' : 'text-[#EF4444]'}`}>
-                        {isStaleBlob ? '🔄' : '⚠'}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-[11px] m-0 leading-snug ${isStaleBlob ? 'text-[#E8A23D]' : 'text-[#EF4444]'}`}>
-                          {isStaleBlob
-                            ? 'Stale partial download cleared. Ready to retry.'
-                            : progress.error}
-                        </p>
-                        {isStaleBlob && (
-                          <button
-                            type="button"
-                            onClick={() => handleInstallModel(model.id, model.name)}
-                            className="mt-1.5 font-mono text-[11px] px-2.5 py-1 rounded-md bg-[rgba(232,162,61,0.15)] text-[#E8A23D] border border-[rgba(232,162,61,0.3)] hover:bg-[rgba(232,162,61,0.25)] transition-colors cursor-pointer"
+                {isErrored &&
+                  progress?.error &&
+                  (() => {
+                    const isStaleBlob =
+                      progress.error.includes("Corrupted partial") ||
+                      progress.error.includes("Cleaning up");
+                    return (
+                      <div
+                        className={`mt-1 pt-2 border-t flex items-start gap-2 ${
+                          isStaleBlob
+                            ? "border-[rgba(232,162,61,0.25)]"
+                            : "border-[rgba(239,68,68,0.2)]"
+                        }`}
+                      >
+                        <span
+                          className={`text-[10px] shrink-0 mt-0.5 ${isStaleBlob ? "text-[#E8A23D]" : "text-[#EF4444]"}`}
+                        >
+                          {isStaleBlob ? "🔄" : "⚠"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={`text-[11px] m-0 leading-snug ${isStaleBlob ? "text-[#E8A23D]" : "text-[#EF4444]"}`}
                           >
-                            ↩ Retry Install
-                          </button>
-                        )}
+                            {isStaleBlob
+                              ? "Stale partial download cleared. Ready to retry."
+                              : progress.error}
+                          </p>
+                          {isStaleBlob && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleInstallModel(model.id, model.name)
+                              }
+                              className="mt-1.5 font-mono text-[11px] px-2.5 py-1 rounded-md bg-[rgba(232,162,61,0.15)] text-[#E8A23D] border border-[rgba(232,162,61,0.3)] hover:bg-[rgba(232,162,61,0.25)] transition-colors cursor-pointer"
+                            >
+                              ↩ Retry Install
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
 
                 {/* Download Progress Bar — shown for both pending (before first event) and active downloads */}
                 {isDownloading && (
                   <div className="mt-2 space-y-1.5 pt-2 border-t border-[#242B35]">
                     <div className="flex items-center justify-between text-[11px] font-mono">
                       <span className="text-[#9AA4B2] truncate max-w-[60%] flex items-center gap-1.5">
-                        <IconLoader2 size={11} className="animate-spin shrink-0" />
-                        {progress ? (progress.status || 'Downloading...') : 'Connecting to Ollama…'}
+                        <IconLoader2
+                          size={11}
+                          className="animate-spin shrink-0"
+                        />
+                        {progress
+                          ? progress.status || "Downloading..."
+                          : "Connecting to Ollama…"}
                       </span>
                       {progress && (
                         <span className="text-[#4A8FC2] font-semibold">
-                          {progress.percent > 0 ? `${progress.percent.toFixed(1)}%` : ''}{' '}
-                          {progress.total > 0 ? `(${formatBytes(progress.completed)} / ${formatBytes(progress.total)})` : ''}
+                          {progress.percent > 0
+                            ? `${progress.percent.toFixed(1)}%`
+                            : ""}{" "}
+                          {progress.total > 0
+                            ? `(${formatBytes(progress.completed)} / ${formatBytes(progress.total)})`
+                            : ""}
                         </span>
                       )}
                     </div>
@@ -490,8 +614,12 @@ export const SettingsTab: React.FC = () => {
               <IconMail size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Gmail Multi-Account Integration</p>
-              <p className="text-xs text-[#9AA4B2]">OAuth 2.0 Read & Send Connectors</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                Gmail Multi-Account Integration
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                OAuth 2.0 Read & Send Connectors
+              </p>
             </div>
           </div>
 
@@ -500,17 +628,26 @@ export const SettingsTab: React.FC = () => {
             onClick={connectGmail}
             className="text-xs font-medium text-black bg-[#4A8FC2] px-3.5 py-1.5 rounded-lg hover:bg-[#5b9bd1] transition-colors font-mono cursor-pointer"
           >
-            {gmailAccounts.length > 0 ? '+ Connect Another Gmail Account' : t('connect_gmail')}
+            {gmailAccounts.length > 0
+              ? "+ Connect Another Gmail Account"
+              : t.connect_gmail}
           </button>
         </div>
 
         {gmailAccounts.length > 0 && (
           <div className="space-y-2 pt-2 border-t border-[#242B35]">
-            <p className="font-mono text-[10px] text-[#7A8492] uppercase m-0">Active Connected Inboxes:</p>
+            <p className="font-mono text-[10px] text-[#7A8492] uppercase m-0">
+              Active Connected Inboxes:
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {gmailAccounts.map((acc) => (
-                <div key={acc} className="flex items-center justify-between bg-[#181E27] p-2.5 rounded-lg border border-[#242B35] text-xs">
-                  <span className="font-mono text-[#34D399] text-xs truncate mr-2">✓ {acc}</span>
+                <div
+                  key={acc}
+                  className="flex items-center justify-between bg-[#181E27] p-2.5 rounded-lg border border-[#242B35] text-xs"
+                >
+                  <span className="font-mono text-[#34D399] text-xs truncate mr-2">
+                    ✓ {acc}
+                  </span>
                   <button
                     type="button"
                     onClick={() => disconnectGmail(acc)}
@@ -525,7 +662,6 @@ export const SettingsTab: React.FC = () => {
         )}
       </div>
 
-
       {/* Auto-Start on System Boot / Login Card */}
       <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
         <div className="flex items-center justify-between">
@@ -534,8 +670,12 @@ export const SettingsTab: React.FC = () => {
               <IconPower size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">{t('auto_start')}</p>
-              <p className="text-xs text-[#9AA4B2]">Launch Wardyn sentinel silently when you log in</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                {t.auto_start}
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                Launch Wardyn sentinel silently when you log in
+              </p>
             </div>
           </div>
 
@@ -544,11 +684,11 @@ export const SettingsTab: React.FC = () => {
             onClick={() => toggleAutoStart(!autoStartEnabled)}
             className={`font-mono text-xs px-3 py-1 rounded-md font-medium transition-colors cursor-pointer ${
               autoStartEnabled
-                ? 'bg-[rgba(52,211,153,0.15)] text-[#34D399] border border-[rgba(52,211,153,0.3)]'
-                : 'bg-[#181E27] text-[#7A8492] border border-[#242B35]'
+                ? "bg-[rgba(52,211,153,0.15)] text-[#34D399] border border-[rgba(52,211,153,0.3)]"
+                : "bg-[#181E27] text-[#7A8492] border border-[#242B35]"
             }`}
           >
-            {autoStartEnabled ? 'Enabled' : 'Disabled'}
+            {autoStartEnabled ? "Enabled" : "Disabled"}
           </button>
         </div>
       </div>
@@ -561,8 +701,12 @@ export const SettingsTab: React.FC = () => {
               <IconBell size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">{t('desktop_notifications')}</p>
-              <p className="text-xs text-[#9AA4B2]">Notify on urgent visa requests or low confidence items</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                {t.desktop_notifications}
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                Notify on urgent visa requests or low confidence items
+              </p>
             </div>
           </div>
 
@@ -579,11 +723,11 @@ export const SettingsTab: React.FC = () => {
               onClick={() => toggleNotifications(!notificationsEnabled)}
               className={`font-mono text-xs px-3 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                 notificationsEnabled
-                  ? 'bg-[rgba(52,211,153,0.15)] text-[#34D399] border border-[rgba(52,211,153,0.3)]'
-                  : 'bg-[#181E27] text-[#7A8492] border border-[#242B35]'
+                  ? "bg-[rgba(52,211,153,0.15)] text-[#34D399] border border-[rgba(52,211,153,0.3)]"
+                  : "bg-[#181E27] text-[#7A8492] border border-[#242B35]"
               }`}
             >
-              {notificationsEnabled ? 'Enabled' : 'Disabled'}
+              {notificationsEnabled ? "Enabled" : "Disabled"}
             </button>
           </div>
         </div>
@@ -597,9 +741,12 @@ export const SettingsTab: React.FC = () => {
               <IconRefresh size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Software Auto-Updates</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                Software Auto-Updates
+              </p>
               <p className="text-xs text-[#9AA4B2]">
-                {updateStatus || 'Connected to GitHub Releases channel (AIEraDev/wardyn)'}
+                {updateStatus ||
+                  "Connected to GitHub Releases channel (AIEraDev/wardyn)"}
               </p>
             </div>
           </div>
@@ -610,8 +757,12 @@ export const SettingsTab: React.FC = () => {
             disabled={checkingUpdate}
             className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#181E27] text-[#4A8FC2] border border-[#242B35] hover:border-[#4A8FC2] transition-colors cursor-pointer flex items-center gap-2"
           >
-            {checkingUpdate ? <IconRefresh size={13} className="animate-spin" /> : <IconDownload size={13} />}
-            {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+            {checkingUpdate ? (
+              <IconRefresh size={13} className="animate-spin" />
+            ) : (
+              <IconDownload size={13} />
+            )}
+            {checkingUpdate ? "Checking..." : "Check for Updates"}
           </button>
         </div>
       </div>
@@ -624,8 +775,12 @@ export const SettingsTab: React.FC = () => {
               <IconClock size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">{t('sync_frequency')}</p>
-              <p className="text-xs text-[#9AA4B2]">Automatically check Gmail inbox in the background</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                {t.sync_frequency}
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                Automatically check Gmail inbox in the background
+              </p>
             </div>
           </div>
 
@@ -650,8 +805,13 @@ export const SettingsTab: React.FC = () => {
               <IconFolder size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Local Markdown Vault Sync (Obsidian / Logseq)</p>
-              <p className="text-xs text-[#9AA4B2]">Mirror all captures, notes, and decisions into a local directory as .md files</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                Local Markdown Vault Sync (Obsidian / Logseq)
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                Mirror all captures, notes, and decisions into a local directory
+                as .md files
+              </p>
             </div>
           </div>
           {vaultPath && (
@@ -683,11 +843,12 @@ export const SettingsTab: React.FC = () => {
             className="px-3 py-2 bg-[#4A8FC2] text-black text-xs font-semibold rounded-lg hover:bg-[#5b9bd1] transition-colors cursor-pointer flex items-center gap-1.5"
           >
             {vaultSaved ? <IconCheck size={13} /> : <IconFolder size={13} />}
-            {vaultSaved ? 'Saved!' : 'Save Path'}
+            {vaultSaved ? "Saved!" : "Save Path"}
           </button>
         </form>
         <p className="text-[10px] text-[#4A5568] font-mono">
-          Each capture and decision creates a `.md` file with clean YAML frontmatter for automatic Obsidian Graph linking.
+          Each capture and decision creates a `.md` file with clean YAML
+          frontmatter for automatic Obsidian Graph linking.
         </p>
       </div>
 
@@ -699,8 +860,13 @@ export const SettingsTab: React.FC = () => {
               <IconWorld size={18} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">Custom RSS & Atom Feed Subscriptions</p>
-              <p className="text-xs text-[#9AA4B2]">Ingest your favorite blogs, newsletters, and podcasts into your Morning Brief</p>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                Custom RSS & Atom Feed Subscriptions
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                Ingest your favorite blogs, newsletters, and podcasts into your
+                Morning Brief
+              </p>
             </div>
           </div>
           <span className="font-mono text-[10px] bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] px-2 py-1 rounded border border-[rgba(74,143,194,0.25)]">
@@ -714,8 +880,8 @@ export const SettingsTab: React.FC = () => {
             if (!newFeedTitle.trim() || !newFeedUrl.trim()) return;
             setAddingFeed(true);
             await addCustomFeed(newFeedTitle.trim(), newFeedUrl.trim());
-            setNewFeedTitle('');
-            setNewFeedUrl('');
+            setNewFeedTitle("");
+            setNewFeedUrl("");
             setAddingFeed(false);
           }}
           className="flex gap-2"
@@ -750,10 +916,17 @@ export const SettingsTab: React.FC = () => {
         {customFeeds.length > 0 && (
           <div className="space-y-1.5 pt-1">
             {customFeeds.map((feed) => (
-              <div key={feed.id} className="flex items-center justify-between p-2.5 rounded-lg bg-[#181E27] border border-[#242B35]">
+              <div
+                key={feed.id}
+                className="flex items-center justify-between p-2.5 rounded-lg bg-[#181E27] border border-[#242B35]"
+              >
                 <div className="min-w-0 pr-2">
-                  <p className="text-xs font-medium text-[#F0F4F8] truncate">{feed.title}</p>
-                  <p className="text-[10px] text-[#7A8492] font-mono truncate">{feed.url}</p>
+                  <p className="text-xs font-medium text-[#F0F4F8] truncate">
+                    {feed.title}
+                  </p>
+                  <p className="text-[10px] text-[#7A8492] font-mono truncate">
+                    {feed.url}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -769,7 +942,6 @@ export const SettingsTab: React.FC = () => {
         )}
       </div>
 
-
       {/* Tone & Corpus Preferences */}
       <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
         <div className="flex items-center gap-3">
@@ -777,12 +949,15 @@ export const SettingsTab: React.FC = () => {
             <IconVolume size={18} />
           </div>
           <div>
-            <p className="text-sm font-semibold text-[#F0F4F8]">User Writing Voice</p>
+            <p className="text-sm font-semibold text-[#F0F4F8]">
+              User Writing Voice
+            </p>
             <p className="text-xs text-[#9AA4B2]">Seeded prompt guidelines</p>
           </div>
         </div>
         <p className="text-xs text-[#9AA4B2] font-mono bg-[#181E27] p-3 rounded-lg border border-[#242B35]">
-          "Concise, professional, warm, direct, leaving space for updating later."
+          "Concise, professional, warm, direct, leaving space for updating
+          later."
         </p>
       </div>
       {/* Ollama Setup Modal */}
@@ -800,4 +975,3 @@ export const SettingsTab: React.FC = () => {
     </div>
   );
 };
-

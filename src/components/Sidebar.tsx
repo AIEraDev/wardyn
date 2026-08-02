@@ -1,17 +1,26 @@
 import React, { useEffect, useState } from "react";
 import {
-  IconShieldCheck, IconLayoutDashboard, IconMail, IconPencil,
-  IconCalendar, IconGridDots, IconSettings, IconChartBar,
-  IconBrain, IconCheckbox, IconBolt, IconSearch,
+  IconShieldCheck,
+  IconLayoutDashboard,
+  IconMail,
+  IconPencil,
+  IconCalendar,
+  IconGridDots,
+  IconSettings,
+  IconChartBar,
+  IconBrain,
+  IconCheckbox,
+  IconBolt,
+  IconSearch,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 import { TabType } from "../types/queue";
-import { TranslationDictionary } from "../i18n/translations";
+import { TranslationDictionary, useTranslation } from "../i18n/translations";
 
 export const Sidebar: React.FC = () => {
   const activeTab = useQueueStore((state) => state.activeTab);
   const setActiveTab = useQueueStore((state) => state.setActiveTab);
-  const t = useQueueStore((state) => state.t);
+  const t = useTranslation();
   const [appVersion, setAppVersion] = useState<string>("");
 
   useEffect(() => {
@@ -29,18 +38,22 @@ export const Sidebar: React.FC = () => {
     loadVersion();
   }, []);
 
-  const tabs: Array<{ id: TabType; labelKey: keyof TranslationDictionary; icon: React.ElementType }> = [
-    { id: "today",        labelKey: "today",       icon: IconLayoutDashboard },
-    { id: "active-life",  labelKey: "active_life", icon: IconBolt           },
-    { id: "messages",     labelKey: "messages",    icon: IconMail           },
-    { id: "content",      labelKey: "content",     icon: IconPencil         },
-    { id: "research",     labelKey: "research",    icon: IconSearch         },
-    { id: "analytics",    labelKey: "analytics",   icon: IconChartBar       },
-    { id: "productivity", labelKey: "productivity",icon: IconCheckbox       },
-    { id: "deadlines",    labelKey: "deadlines",   icon: IconCalendar       },
-    { id: "memory",       labelKey: "memory",      icon: IconBrain          },
-    { id: "channels",     labelKey: "channels",    icon: IconGridDots       },
-    { id: "settings",     labelKey: "settings",    icon: IconSettings       },
+  const tabs: Array<{
+    id: TabType;
+    labelKey: keyof TranslationDictionary;
+    icon: React.ElementType;
+  }> = [
+    { id: "today", labelKey: "today", icon: IconLayoutDashboard },
+    { id: "active-life", labelKey: "active_life", icon: IconBolt },
+    { id: "messages", labelKey: "messages", icon: IconMail },
+    { id: "content", labelKey: "content", icon: IconPencil },
+    { id: "research", labelKey: "research", icon: IconSearch },
+    { id: "analytics", labelKey: "analytics", icon: IconChartBar },
+    { id: "productivity", labelKey: "productivity", icon: IconCheckbox },
+    { id: "deadlines", labelKey: "deadlines", icon: IconCalendar },
+    { id: "memory", labelKey: "memory", icon: IconBrain },
+    { id: "channels", labelKey: "channels", icon: IconGridDots },
+    { id: "settings", labelKey: "settings", icon: IconSettings },
   ];
 
   return (
@@ -74,15 +87,18 @@ export const Sidebar: React.FC = () => {
               onClick={() => setActiveTab(tab.id)}
               className={`relative flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs w-full text-left cursor-pointer border-none outline-none transition-all duration-100 ${
                 isActive
-                  ? 'bg-[rgba(74,143,194,0.14)] text-[#4A8FC2] font-semibold'
-                  : 'bg-transparent text-[#9AA4B2] font-normal hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F0F4F8]'
+                  ? "bg-[rgba(74,143,194,0.14)] text-[#4A8FC2] font-semibold"
+                  : "bg-transparent text-[#9AA4B2] font-normal hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F0F4F8]"
               }`}
             >
               {isActive && (
                 <div className="absolute left-0 top-[20%] bottom-[20%] w-0.5 rounded-full bg-[#4A8FC2]" />
               )}
-              <Icon size={15} className={`shrink-0 ${isActive ? 'opacity-100' : 'opacity-70'}`} />
-              <span className="truncate">{t(tab.labelKey)}</span>
+              <Icon
+                size={15}
+                className={`shrink-0 ${isActive ? "opacity-100" : "opacity-70"}`}
+              />
+              <span className="truncate">{t[tab.labelKey]}</span>
             </button>
           );
         })}

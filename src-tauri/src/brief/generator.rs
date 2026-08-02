@@ -6,9 +6,17 @@ use crate::feeds::ingest::run_feed_ingestion;
 const OLLAMA_BASE: &str = "http://localhost:11434";
 
 pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
-    // Today's date key (WAT +01:00 — take first 10 chars of now_iso which is UTC, close enough for date boundary)
-    let now = db::now_iso();
-    let today = &now[..10];
+    // Use system local date so users in any timezone get the correct daily brief.
+    // 'date +%Y-%m-%d' reads local time; falls back to UTC if unavailable.
+    let today_owned = std::process::Command::new("date")
+        .arg("+%Y-%m-%d")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| s.len() == 10)
+        .unwrap_or_else(|| db::now_iso()[..10].to_string());
+    let today = today_owned.as_str();
 
     // Check cache first
     {

@@ -210,45 +210,6 @@ fn compute_streak_from_set(dates: Option<&std::collections::HashSet<String>>, to
     streak
 }
 
-/// Computes the current streak in days — kept for any direct callers outside get_habits.
-#[allow(dead_code)]
-fn compute_streak(conn: &Connection, habit_id: &str) -> i64 {
-    // Get all unique completed dates, most recent first
-    let dates: Vec<String> = if let Ok(mut stmt) = conn.prepare(
-        "SELECT DISTINCT completed_date FROM habit_completions WHERE habit_id = ?1 ORDER BY completed_date DESC LIMIT 60",
-    ) {
-        if let Ok(rows) = stmt.query_map(params![habit_id], |row| row.get(0)) {
-            rows.filter_map(|r| r.ok()).collect()
-        } else {
-            vec![]
-        }
-    } else {
-        vec![]
-    };
-
-    if dates.is_empty() {
-        return 0;
-    }
-
-    let today = today_date();
-    let mut streak = 0i64;
-
-    // Walk backwards day by day from today
-    for i in 0..60i64 {
-        let check_date = offset_date(&today, -i);
-        if dates.contains(&check_date) {
-            streak += 1;
-        } else if i == 0 {
-            // Today not completed yet — streak still valid from yesterday
-            continue;
-        } else {
-            break;
-        }
-    }
-
-    streak
-}
-
 /// Returns a date string offset by `days` from the given YYYY-MM-DD date.
 fn offset_date(date: &str, days: i64) -> String {
     use crate::db::iso_to_unix_secs;

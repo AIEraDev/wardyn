@@ -19,7 +19,11 @@ pub fn sync_knowledge_to_vault(
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
 
-    let date = if item.created_at.len() >= 10 { &item.created_at[..10] } else { "2026-07-31" };
+    let date = if item.created_at.len() >= 10 {
+        item.created_at[..10].to_string()
+    } else {
+        db::now_iso()[..10].to_string()
+    };
     let slug = slugify(&item.summary.as_deref().unwrap_or(&item.content));
     let filename = format!("{}-note-{}.md", date, slug);
     let file_path = dir.join(filename);
@@ -78,7 +82,11 @@ pub fn sync_decision_to_vault(
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
 
-    let date = if item.created_at.len() >= 10 { &item.created_at[..10] } else { "2026-07-31" };
+    let date = if item.created_at.len() >= 10 {
+        item.created_at[..10].to_string()
+    } else {
+        db::now_iso()[..10].to_string()
+    };
     let slug = slugify(&item.decision);
     let filename = format!("{}-decision-{}.md", date, slug);
     let file_path = dir.join(filename);

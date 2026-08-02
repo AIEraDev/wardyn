@@ -413,27 +413,6 @@ pub async fn stream_ollama_model_install(
 }
 
 
-pub async fn trigger_ollama_model_install(model_name: String) -> Result<String, String> {
-    let client = Client::new();
-    let payload = serde_json::json!({
-        "model": model_name,
-        "stream": false
-    });
-
-    let res = client.post("http://localhost:11434/api/pull")
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to send pull request to Ollama: {}", e))?;
-
-    if res.status().is_success() {
-        Ok(format!("Successfully pulled local model {}", model_name))
-    } else {
-        let err_text = res.text().await.unwrap_or_default();
-        Err(format!("Ollama model install failed: {}", err_text))
-    }
-}
-
 pub async fn delete_ollama_model(model_name: String) -> Result<String, String> {
     let client = Client::new();
     let payload = serde_json::json!({

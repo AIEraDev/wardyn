@@ -12,13 +12,6 @@ const SEED_CORPUS: &str = include_str!("corpus.txt");
 /// 3. Append recent voice edits (original → preferred) so the model learns
 ///    corrections in real time.
 /// 4. Append sender thread history for continuity.
-pub fn get_system_prompt(
-    recent_edits: &[crate::db::VoiceEdit],
-    sender_history: &[crate::models::QueueItem],
-) -> String {
-    get_system_prompt_with_corpus(recent_edits, sender_history, None)
-}
-
 pub fn get_system_prompt_with_corpus(
     recent_edits: &[crate::db::VoiceEdit],
     sender_history: &[crate::models::QueueItem],

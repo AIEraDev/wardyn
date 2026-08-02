@@ -75,7 +75,9 @@ fn extract_xml_tag(text: &str, tag: &str) -> Option<String> {
 // ─── GitHub (Search API — no auth, 60 req/hour unauthenticated) ──────────────
 
 pub async fn fetch_github_trending(client: &Client) -> Vec<FeedItem> {
-    // Search repos created in the last 3 days with high stars growth
+    // Search repos created in the last 3 days with high stars growth.
+    // Use GitHub's query syntax: space-separated qualifiers, language OR via multiple terms.
+    // Pass q= raw (not double-encoded) since the URL builder handles encoding.
     let three_days_ago = {
         use std::time::{SystemTime, UNIX_EPOCH};
         let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
@@ -83,7 +85,11 @@ pub async fn fetch_github_trending(client: &Client) -> Vec<FeedItem> {
         let (y, m, d) = crate::db::days_to_ymd(days);
         format!("{:04}-{:02}-{:02}", y, m, d)
     };
-    let query = format!("language:rust+language:python+language:go+stars:>100+created:>{}", three_days_ago);
+    // GitHub search: multiple language: filters act as OR, stars and created are AND qualifiers
+    let query = format!(
+        "language:rust language:python language:go stars:>100 created:>{}",
+        three_days_ago
+    );
     let url = format!(
         "https://api.github.com/search/repositories?q={}&sort=stars&order=desc&per_page=10",
         urlencoding::encode(&query)

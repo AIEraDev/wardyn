@@ -25,23 +25,13 @@ pub async fn generate_full_post(
     idea: &str,
     format: &str,
 ) -> Result<GeneratedPost, String> {
-    let _today = now_iso().get(0..10).unwrap_or("2026-01-01").to_string();
+    let _today = { let iso = now_iso(); iso.get(0..10).unwrap_or(&iso).to_string() };
 
-    // Get user's project names for context
-    let projects: Vec<String> = if let Ok(conn) = conn_mutex.lock() {
-        if let Ok(mut stmt) = conn.prepare(
-            "SELECT name FROM active_projects WHERE status = 'active' LIMIT 5"
-        ) {
-            if let Ok(rows) = stmt.query_map([], |row| row.get(0)) {
-                rows.filter_map(|r| r.ok()).collect()
-            } else {
-                vec![]
-            }
-        } else {
-            vec![]
-        }
+    // Get rich user context for personalized post generation
+    let user_context = if let Ok(conn) = conn_mutex.lock() {
+        crate::db::build_user_context(&conn)
     } else {
-        vec![]
+        String::new()
     };
 
     let format_guidance = match format {
@@ -62,7 +52,8 @@ pub async fn generate_full_post(
 Post idea: {idea}
 Platform: {platform}
 Format: {format}
-Active projects: {projects}
+
+{user_context}
 
 {format_guidance}
 {platform_guidance}
@@ -77,7 +68,7 @@ Return ONLY valid JSON in this exact format:
         idea = idea,
         platform = platform,
         format = format,
-        projects = projects.join(", "),
+        user_context = user_context,
         format_guidance = format_guidance,
         platform_guidance = platform_guidance
     );

@@ -180,7 +180,7 @@ async fn search_wikipedia(query: &str) -> Result<Vec<SearchResult>, String> {
 }
 
 /// Uses Ollama to synthesize a research summary from the search results.
-pub async fn summarize_results(query: &str, results: &[SearchResult]) -> Result<String, String> {
+pub async fn summarize_results(query: &str, results: &[SearchResult], conn_mutex: &std::sync::Mutex<rusqlite::Connection>) -> Result<String, String> {
     if results.is_empty() {
         return Err("No results to summarize".to_string());
     }
@@ -192,12 +192,50 @@ pub async fn summarize_results(query: &str, results: &[SearchResult]) -> Result<
         .collect::<Vec<_>>()
         .join("\n\n");
 
+    // Pull related knowledge the user has previously saved on this topic
+    let related_knowledge = {
+        if let Ok(conn) = conn_mutex.lock() {
+            let query_lower = query.to_lowercase();
+            let keywords: Vec<&str> = query_lower.split_whitespace()
+                .filter(|w| w.len() > 3)
+                .take(5)
+                .collect();
+
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT summary, tags FROM knowledge_items ORDER BY created_at DESC LIMIT 50"
+            ) {
+                if let Ok(rows) = stmt.query_map([], |row| {
+                    Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
+                }) {
+                    let matches: Vec<String> = rows.filter_map(|r| r.ok())
+                        .filter(|(summary, tags)| {
+                            let text = format!("{} {}",
+                                summary.as_deref().unwrap_or("").to_lowercase(),
+                                tags.to_lowercase()
+                            );
+                            keywords.iter().any(|kw| text.contains(kw))
+                        })
+                        .take(3)
+                        .map(|(s, _)| format!("• {}", s.unwrap_or_default()))
+                        .collect();
+                    matches
+                } else { vec![] }
+            } else { vec![] }
+        } else { vec![] }
+    };
+
+    let knowledge_note = if related_knowledge.is_empty() {
+        String::new()
+    } else {
+        format!("\n\nYou've previously saved related notes:\n{}\nConnect these to your summary where relevant.\n", related_knowledge.join("\n"))
+    };
+
     let prompt = format!(
         "You are a research assistant. Based on these search results for the query \"{}\", \
         provide a concise, factual 3-4 sentence summary of the key findings. \
         Include the most important points and note any trends or consensus. \
-        Be direct and informative.\n\nSearch results:\n{}\n\nSummary:",
-        query, context
+        Be direct and informative.{}\n\nSearch results:\n{}\n\nSummary:",
+        query, knowledge_note, context
     );
 
     let client = Client::builder()

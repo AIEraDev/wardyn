@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::db::now_iso;
 
 fn today_date() -> String {
-    now_iso().get(0..10).unwrap_or("2026-01-01").to_string()
+    { let iso = now_iso(); iso.get(0..10).unwrap_or(&iso).to_string() }
 }
 
 const OLLAMA_BASE: &str = "http://localhost:11434";
@@ -15,7 +15,7 @@ pub async fn generate_day_plan(conn_mutex: &std::sync::Mutex<Connection>) -> Res
     let today = today_date();
 
     // Gather context
-    let (projects, habits_pending, calendar_events) = {
+    let (projects, habits_pending, calendar_events, pending_tasks) = {
         if let Ok(conn) = conn_mutex.lock() {
             // Active projects with today's time
             let projs: Vec<(String, i64, i64)> = if let Ok(mut pstmt) = conn.prepare(
@@ -47,9 +47,23 @@ pub async fn generate_day_plan(conn_mutex: &std::sync::Mutex<Connection>) -> Res
                 } else { vec![] }
             } else { vec![] };
 
-            (projs, habits, cal)
+            // ── NEW: pending tasks due today or overdue ───────────────────────
+            let tasks: Vec<(String, String)> = if let Ok(mut tstmt) = conn.prepare(
+                "SELECT title, priority FROM tasks
+                 WHERE status = 'pending' AND (due_date IS NULL OR due_date <= ?)
+                 ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END LIMIT 6"
+            ) {
+                if let Ok(rows) = tstmt.query_map(
+                    [format!("{}T23:59:59Z", today)],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?.unwrap_or_else(|| "medium".into())))
+                ) {
+                    rows.filter_map(|r| r.ok()).collect()
+                } else { vec![] }
+            } else { vec![] };
+
+            (projs, habits, cal, tasks)
         } else {
-            (vec![], vec![], vec![])
+            (vec![], vec![], vec![], vec![])
         }
     };
 
@@ -57,6 +71,12 @@ pub async fn generate_day_plan(conn_mutex: &std::sync::Mutex<Connection>) -> Res
     ctx.push_str("ACTIVE PROJECTS (name | daily target mins | already done today):\n");
     for (name, target, done) in &projects {
         ctx.push_str(&format!("- {} | target: {}min | done: {}min\n", name, target, done));
+    }
+    if !pending_tasks.is_empty() {
+        ctx.push_str("\nPENDING ACTION ITEMS (overdue or due today — must be scheduled):\n");
+        for (title, priority) in &pending_tasks {
+            ctx.push_str(&format!("- [{}] {}\n", priority.to_uppercase(), title));
+        }
     }
     if !habits_pending.is_empty() {
         ctx.push_str("\nPENDING DAILY HABITS:\n");
@@ -83,7 +103,7 @@ Keep it under 15 lines total. Do NOT use markdown headers, just plain text sched
         ctx
     );
 
-    let plan = call_ollama_text(&prompt).await.unwrap_or_else(|_| generate_fallback_plan(&projects, &habits_pending));
+    let plan = call_ollama_text(&prompt).await.unwrap_or_else(|_| generate_fallback_plan(&projects, &habits_pending, &pending_tasks));
 
     // Save into daily_intel
     if let Ok(conn) = conn_mutex.lock() {
@@ -108,13 +128,29 @@ Keep it under 15 lines total. Do NOT use markdown headers, just plain text sched
     Ok(plan)
 }
 
-fn generate_fallback_plan(projects: &[(String, i64, i64)], habits: &[String]) -> String {
+fn generate_fallback_plan(projects: &[(String, i64, i64)], habits: &[String], tasks: &[(String, String)]) -> String {
     let mut plan = String::from("📅 Today's Plan\n\n");
     plan.push_str("7:00 AM – 7:30 AM: Morning routine & intentions\n");
+    if !tasks.is_empty() {
+        plan.push_str("8:00 AM – 9:00 AM: Clear action items — ");
+        let task_list: Vec<&str> = tasks.iter().take(3).map(|(t, _)| t.as_str()).collect();
+        plan.push_str(&task_list.join(", "));
+        plan.push('\n');
+    }
     for (i, (name, target, done)) in projects.iter().enumerate() {
         let remaining = (target - done).max(30);
-        let start_h = 9 + i;
-        plan.push_str(&format!("{}:00 AM – {}:30 AM: Deep work — {}\n", start_h, start_h + (remaining / 60) as usize, name));
+        // Cap at 5 project slots, each starting 2h apart from 9 AM (9, 11, 13, 15, 17)
+        let start_h = 9usize + (i * 2).min(8);
+        let end_h = start_h + (remaining / 60).max(1) as usize;
+        let period = if start_h < 12 { "AM" } else { "PM" };
+        let start_display = if start_h <= 12 { start_h } else { start_h - 12 };
+        let end_h_capped = end_h.min(22);
+        let end_period = if end_h_capped < 12 { "AM" } else { "PM" };
+        let end_display = if end_h_capped <= 12 { end_h_capped } else { end_h_capped - 12 };
+        plan.push_str(&format!(
+            "{}:00 {} – {}:00 {}: Deep work — {}\n",
+            start_display, period, end_display, end_period, name
+        ));
     }
     if !habits.is_empty() {
         plan.push_str("12:30 PM – 1:00 PM: Lunch break\n");

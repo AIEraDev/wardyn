@@ -34,14 +34,22 @@ fn add_days_to_iso(base_iso: &str, days: i64) -> Option<String> {
 }
 
 fn today_date() -> String {
-    now_iso().get(0..10).unwrap_or("2026-01-01").to_string()
+    { let iso = now_iso(); iso.get(0..10).unwrap_or(&iso).to_string() }
 }
 
-pub async fn parse_life_event(text: &str) -> Result<ParsedLifePlan, String> {
+pub async fn parse_life_event(text: &str, conn_mutex: Option<&std::sync::Mutex<rusqlite::Connection>>) -> Result<ParsedLifePlan, String> {
     let today = today_date();
+
+    // Pull rich user context so the planner can avoid conflicts with existing work
+    let user_context = conn_mutex
+        .and_then(|m| m.lock().ok())
+        .map(|conn| crate::db::build_user_context(&conn))
+        .unwrap_or_default();
+
     let prompt = format!(concat!(
         "Today is {}. Parse the following personal life input into a JSON plan.\n\n",
         "Input: \"{}\"\n\n",
+        "{}\n",
         "Return ONLY valid JSON with this exact shape:\n",
         "{{\n",
         "  \"intent\": \"<event_prep|study_plan|project_kickoff|habit_goal|deadline|travel>\",\n",
@@ -58,35 +66,49 @@ pub async fn parse_life_event(text: &str) -> Result<ParsedLifePlan, String> {
         "}}\n\n",
         "Rules: Generate 3-7 actionable tasks. Space across the timeline. ",
         "Estimate event_date from today if not given. 0=event day, -7=one week before. ",
-        "Higher priority for tasks closer to event. due_offset_days must be integers."
-    ), today, text);
+        "Higher priority for tasks closer to event. due_offset_days must be integers. ",
+        "Consider the user's existing projects and tasks above — avoid duplicating work that is already tracked."
+    ), today, text, user_context);
 
+    // Try available models in priority order (same pattern as other Ollama callers)
     let client = reqwest::Client::new();
-    let body = serde_json::json!({
-        "model": "llama3.2",
-        "prompt": prompt,
-        "stream": false,
-        "options": { "temperature": 0.3 }
-    });
+    let models = ["llama3:70b", "qwen2.5:32b", "mixtral:8x7b", "llama3.2", "llama3", "qwen2.5", "mistral", "gemma", "phi3"];
 
-    let resp = client
-        .post("http://127.0.0.1:11434/api/generate")
-        .json(&body)
-        .timeout(std::time::Duration::from_secs(60))
-        .send()
-        .await
-        .map_err(|e| format!("Ollama error: {e}"))?;
+    for model in &models {
+        let body = serde_json::json!({
+            "model": model,
+            "prompt": prompt,
+            "stream": false,
+            "options": { "temperature": 0.3 }
+        });
 
-    if !resp.status().is_success() {
-        return Err(format!("Ollama status {}", resp.status()));
+        let resp = match client
+            .post("http://127.0.0.1:11434/api/generate")
+            .json(&body)
+            .timeout(std::time::Duration::from_secs(60))
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return Err("Ollama unreachable".into()),
+        };
+
+        if resp.status().as_u16() == 404 {
+            continue; // model not installed, try next
+        }
+        if !resp.status().is_success() {
+            return Err(format!("Ollama status {}", resp.status()));
+        }
+
+        let raw: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        let rt = raw["response"].as_str().unwrap_or("").trim().to_string();
+        let js = rt.find('{').unwrap_or(0);
+        let je = rt.rfind('}').map(|i| i + 1).unwrap_or(rt.len());
+        return serde_json::from_str::<ParsedLifePlan>(&rt[js..je])
+            .map_err(|e| format!("JSON parse error: {e}\nRaw: {rt}"));
     }
 
-    let raw: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let rt = raw["response"].as_str().unwrap_or("").trim().to_string();
-    let js = rt.find('{').unwrap_or(0);
-    let je = rt.rfind('}').map(|i| i + 1).unwrap_or(rt.len());
-    serde_json::from_str::<ParsedLifePlan>(&rt[js..je])
-        .map_err(|e| format!("JSON parse error: {e}\nRaw: {rt}"))
+    Err("No Ollama model available — install a model in Settings".into())
 }
 
 pub fn create_life_plan(
@@ -117,9 +139,11 @@ pub fn create_life_plan(
                     let rdate = format!("{:04}-{:02}-{:02}T08:00:00Z", rd.0, rd.1, rd.2);
                     let msg = format!("Reminder: due tomorrow — {}", task.title);
                     let rid = new_id("rem");
+                    // Use "life:<task_id>" so the UI can distinguish from email-linked reminders
+                    let life_item_id = format!("life:{}", task_id);
                     conn.execute(
                         "INSERT INTO reminders (id,item_id,reminder_date,message,status,created_at) VALUES (?1,?2,?3,?4,'pending',?5)",
-                        rusqlite::params![rid, task_id, rdate, msg, now_iso()],
+                        rusqlite::params![rid, life_item_id, rdate, msg, now_iso()],
                     ).ok();
                 }
             }
@@ -137,9 +161,11 @@ pub fn create_life_plan(
             if let Some(rdate) = add_days_to_iso(edate, offset) {
                 let msg = tpl.replace("{}", &plan.title);
                 let rid = new_id("rem");
+                // Use "life:<event_id>" so the UI can distinguish from email-linked reminders
+                let life_item_id = format!("life:{}", event_id);
                 conn.execute(
                     "INSERT INTO reminders (id,item_id,reminder_date,message,status,created_at) VALUES (?1,?2,?3,?4,'pending',?5)",
-                    rusqlite::params![rid, event_id, rdate, msg, now_iso()],
+                    rusqlite::params![rid, life_item_id, rdate, msg, now_iso()],
                 ).ok();
             }
         }

@@ -1,8 +1,22 @@
 use reqwest::Client;
+use rusqlite::Connection;
 
 const OLLAMA_BASE: &str = "http://localhost:11434";
 
-pub async fn deep_read_url(url: &str) -> Result<String, String> {
+pub async fn deep_read_url(url: &str, conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
+    // Validate scheme — only allow public http/https to prevent SSRF against internal networks
+    let lower = url.trim().to_lowercase();
+    if !lower.starts_with("https://") && !lower.starts_with("http://") {
+        return Err("Only http/https URLs are supported for deep reading.".into());
+    }
+    // Block private/loopback ranges
+    let blocked_prefixes = ["http://localhost", "https://localhost",
+        "http://127.", "https://127.", "http://192.168.", "https://192.168.",
+        "http://10.", "https://10.", "http://172.", "https://172."];
+    if blocked_prefixes.iter().any(|p| lower.starts_with(p)) {
+        return Err("Cannot deep-read internal/private network addresses.".into());
+    }
+
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
@@ -21,9 +35,55 @@ pub async fn deep_read_url(url: &str) -> Result<String, String> {
         return Err("Unable to extract main text from web page.".into());
     }
 
+    // Pull related knowledge items the user has previously saved
+    let related_knowledge = {
+        if let Ok(conn) = conn_mutex.lock() {
+            // Extract keywords from title for matching
+            let title_lower = title.to_lowercase();
+            let keywords: Vec<&str> = title_lower.split_whitespace()
+                .filter(|w| w.len() > 4)
+                .take(5)
+                .collect();
+
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT summary, tags, url FROM knowledge_items
+                 ORDER BY created_at DESC LIMIT 50"
+            ) {
+                if let Ok(rows) = stmt.query_map([], |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                }) {
+                    rows.filter_map(|r| r.ok())
+                        .filter(|(summary, tags, _)| {
+                            let text = format!("{} {}",
+                                summary.as_deref().unwrap_or("").to_lowercase(),
+                                tags.to_lowercase()
+                            );
+                            keywords.iter().any(|kw| text.contains(kw))
+                        })
+                        .take(3)
+                        .map(|(summary, _, url)| {
+                            format!("• {} {}", summary.unwrap_or_default(),
+                                url.map(|u| format!("({})", u)).unwrap_or_default())
+                        })
+                        .collect::<Vec<_>>()
+                } else { vec![] }
+            } else { vec![] }
+        } else { vec![] }
+    };
+
+    let knowledge_section = if related_knowledge.is_empty() {
+        String::new()
+    } else {
+        format!("\nRELATED KNOWLEDGE YOU'VE PREVIOUSLY SAVED:\n{}\n", related_knowledge.join("\n"))
+    };
+
     let prompt = format!(
         r#"Analyse this web article titled "{}" and synthesize a deep executive breakdown.
-
+{}
 ARTICLE TEXT (first 3000 chars):
 {}
 
@@ -39,8 +99,9 @@ OUTPUT FORMAT (use markdown formatting with emoji headers):
 - Takeaway 3
 
 💡 ACTIONABLE SIGNAL & RELEVANCE
-(Why this matters for engineering, product, or technical strategy)"#,
+(Why this matters for engineering, product, or technical strategy — connect to any related knowledge above if present)"#,
         title,
+        knowledge_section,
         body_text.chars().take(3000).collect::<String>(),
         title
     );

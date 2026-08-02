@@ -36,17 +36,20 @@ pub async fn run_feed_ingestion(conn_mutex: &std::sync::Mutex<rusqlite::Connecti
 
     let total = all_items.len();
 
-
     // Persist to SQLite (deduplicated by id)
     {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         for item in &all_items {
             db::upsert_feed_item(&conn, item).ok();
         }
-        // Reweight feed items according to user interest profile
+        // Immediate text-match reweight so results aren't stale while semantic runs
         crate::intelligence::interest::reweight_feed_items(&conn).ok();
     }
 
+    // Kick off semantic reweighting in the background — upgrades relevance scores
+    // using Ollama embeddings if available. Non-blocking, won't delay the brief.
+    let conn_clone = conn_mutex;
+    crate::intelligence::interest::reweight_feed_items_semantic(conn_clone).await;
 
     Ok(total)
 }

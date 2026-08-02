@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::db::now_iso;
 
 fn today_date() -> String {
-    now_iso().get(0..10).unwrap_or("2026-01-01").to_string()
+    { let iso = now_iso(); iso.get(0..10).unwrap_or(&iso).to_string() }
 }
 
 const OLLAMA_BASE: &str = "http://localhost:11434";
@@ -93,29 +93,13 @@ pub async fn get_or_generate_daily_intel(
         }
     }
 
-    // Gather project names for context
-    let project_names: Vec<String> = {
+    // Gather rich user context using the shared builder
+    let user_context = {
         if let Ok(conn) = conn_mutex.lock() {
-            if let Ok(mut stmt) = conn.prepare(
-                "SELECT name FROM active_projects WHERE status = 'active' ORDER BY last_worked_at DESC LIMIT 5"
-            ) {
-                if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                    rows.filter_map(|r| r.ok()).collect()
-                } else {
-                    vec![]
-                }
-            } else {
-                vec![]
-            }
+            crate::db::build_user_context(&conn)
         } else {
-            vec![]
+            String::new()
         }
-    };
-
-    let projects_ctx = if project_names.is_empty() {
-        "No specific projects tracked yet.".to_string()
-    } else {
-        project_names.join(", ")
     };
 
     let date_info = format!(
@@ -128,27 +112,28 @@ pub async fn get_or_generate_daily_intel(
         r#"You are a personal life coach AI for a driven builder and creator.
 
 {date_info}
-Active projects: {projects}
+
+{user_context}
 
 Generate today's personal intelligence brief in EXACTLY this JSON format. No markdown, no preamble, just the JSON object:
 
 {{
   "motivation_quote": "<an inspiring quote from a real legend — tech founders, athletes, philosophers, Islamic scholars, historical figures — varied each day>",
   "quote_author": "<Full name of the author>",
-  "learning_topic": "<A specific, valuable topic to learn about today (2-5 words)>",
+  "learning_topic": "<A specific, valuable topic to learn about today — connect to the user's current interests and projects (2-5 words)>",
   "learning_summary": "<3 key points about this topic, separated by • bullet. Each point max 15 words.>",
-  "social_post_idea": "<A compelling post idea based on the user's projects and journey. Include a suggested opening hook sentence.>",
+  "social_post_idea": "<A compelling post idea based on the user's actual projects and journey. Include a suggested opening hook sentence.>",
   "social_format": "<one of: video | image_text | plain_text>",
   "social_platform": "<one of: linkedin | twitter>"
 }}
 
 Rules:
 - Quotes must be real, attributed correctly. Mix sources: Kobe Bryant, Steve Jobs, Ibn Taymiyyah, Marcus Aurelius, Elon Musk, Oprah, Naval Ravikant, Ali ibn Abi Talib, etc.
-- Learning topic should be practical and relevant to a builder/developer/entrepreneur
-- Social post should feel personal and authentic, not generic
+- Learning topic MUST connect to the user's current interests or projects shown above
+- Social post should reference specific project names or recent work — feel personal, not generic
 - Return ONLY valid JSON, nothing else"#,
         date_info = date_info,
-        projects = projects_ctx
+        user_context = user_context
     );
 
     let raw = call_ollama(&prompt).await.unwrap_or_default();

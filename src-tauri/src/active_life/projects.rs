@@ -9,7 +9,7 @@ fn new_id(prefix: &str) -> String {
 }
 
 fn today_date() -> String {
-    now_iso().get(0..10).unwrap_or("2026-01-01").to_string()
+    { let iso = now_iso(); iso.get(0..10).unwrap_or(&iso).to_string() }
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -78,13 +78,20 @@ pub fn create_project(conn: &Connection, req: &NewProject) -> Result<ActiveProje
 
 pub fn get_projects(conn: &Connection) -> Result<Vec<ActiveProject>> {
     let today = today_date();
+
+    // Single query with LEFT JOIN to get today_minutes — avoids N+1 per project
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, status, daily_target_minutes, last_worked_at, color, created_at
-         FROM active_projects
-         WHERE status != 'completed'
-         ORDER BY created_at DESC",
+        "SELECT p.id, p.name, p.description, p.status, p.daily_target_minutes,
+                p.last_worked_at, p.color, p.created_at,
+                COALESCE(SUM(t.minutes_spent), 0) as today_minutes
+         FROM active_projects p
+         LEFT JOIN project_time_logs t ON t.project_id = p.id AND t.session_date = ?1
+         WHERE p.status != 'completed'
+         GROUP BY p.id
+         ORDER BY p.created_at DESC",
     )?;
-    let rows = stmt.query_map([], |row| {
+
+    let rows = stmt.query_map(params![today], |row| {
         Ok(ActiveProject {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -94,23 +101,11 @@ pub fn get_projects(conn: &Connection) -> Result<Vec<ActiveProject>> {
             last_worked_at: row.get(5)?,
             color: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "#4A8FC2".into()),
             created_at: row.get(7)?,
-            today_minutes: 0,
+            today_minutes: row.get::<_, Option<i64>>(8)?.unwrap_or(0),
         })
     })?;
 
-    let mut projects: Vec<ActiveProject> = rows.filter_map(|r| r.ok()).collect();
-
-    // Enrich each project with today's logged minutes
-    for p in &mut projects {
-        let mins: i64 = conn.query_row(
-            "SELECT COALESCE(SUM(minutes_spent), 0) FROM project_time_logs WHERE project_id = ?1 AND session_date = ?2",
-            params![p.id, today],
-            |row| row.get(0),
-        ).unwrap_or(0);
-        p.today_minutes = mins;
-    }
-
-    Ok(projects)
+    Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
 pub fn update_project(

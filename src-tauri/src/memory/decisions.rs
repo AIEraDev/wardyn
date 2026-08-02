@@ -35,3 +35,16 @@ pub fn fetch_decisions(
     let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
     db::get_decisions(&conn, limit).map_err(|e| e.to_string())
 }
+
+pub fn update_decision_outcome(
+    conn_mutex: &std::sync::Mutex<rusqlite::Connection>,
+    id: String,
+    outcome: String,
+) -> Result<(), String> {
+    let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE decisions SET outcome = ?1 WHERE id = ?2",
+        rusqlite::params![outcome, id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}

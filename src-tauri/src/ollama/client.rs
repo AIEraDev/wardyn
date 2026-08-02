@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use std::time::Duration;
 use crate::models::QueueItem;
-use crate::ollama::prompt::get_system_prompt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClassificationResult {
@@ -44,21 +43,26 @@ async fn classify_and_draft_item_inner(
         Err(_) => Client::new(),
     };
 
-    let (recent_edits, sender_history) = if let Some(mutex) = conn_mutex {
+    let (recent_edits, sender_history, dynamic_corpus) = if let Some(mutex) = conn_mutex {
         if let Ok(conn) = mutex.lock() {
             let edits = crate::db::get_recent_voice_edits(&conn, 5).unwrap_or_default();
             let history = crate::db::get_sender_history(&conn, &item.sender, 5).unwrap_or_default();
-            (edits, history)
+            let corpus = crate::ollama::prompt::build_dynamic_corpus(&conn);
+            (edits, history, Some(corpus))
         } else {
-            (Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), None)
         }
     } else {
-        (Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), None)
     };
 
     let prompt_text = format!(
         "{}\n\nINCOMING MESSAGE TO CLASSIFY:\nSender: {}\nPreview: {}\n",
-        get_system_prompt(&recent_edits, &sender_history),
+        crate::ollama::prompt::get_system_prompt_with_corpus(
+            &recent_edits,
+            &sender_history,
+            dynamic_corpus.as_deref(),
+        ),
         item.sender,
         item.preview
     );
@@ -115,7 +119,10 @@ pub struct InstalledModelInfo {
 }
 
 pub async fn fetch_installed_ollama_models() -> Vec<InstalledModelInfo> {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
     let res = client.get("http://localhost:11434/api/tags").send().await;
 
     let mut installed = Vec::new();

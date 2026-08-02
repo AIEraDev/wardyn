@@ -6,7 +6,6 @@ use crate::db::{self, GmailCredentials};
 // No compile-time credentials — users supply their own via Settings → OAuth Credentials.
 
 // LinkedIn uses the same port as Gmail (14220) — they never run concurrently
-const REDIRECT_PORT: u16 = 14220;
 const REDIRECT_URI: &str = "http://localhost:14220/callback";
 
 pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
@@ -62,7 +61,7 @@ scope={}",
     }
 
     // 4. Wait for callback (non-blocking, 2-min timeout, off the tokio thread)
-    let (code, is_error) = tokio::task::spawn_blocking(move || -> Result<(String, bool), String> {
+    let (code, received_state, is_error) = tokio::task::spawn_blocking(move || -> Result<(String, String, bool), String> {
         let start = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs(120);
 
@@ -157,19 +156,34 @@ scope={}",
         stream.write_all(response.as_bytes()).ok();
         stream.flush().ok();
 
-        let code = if is_err {
-            "authorization_error".to_string()
-        } else {
-            parse_code_from_request(&request_line).unwrap_or_default()
-        };
+        let code_pos = request_line.find("code=");
+        let state_pos = request_line.find("state=");
+        let code = code_pos.map(|p| {
+            let part = &request_line[p + 5..];
+            let end = part.find('&').or_else(|| part.find(' ')).unwrap_or(part.len());
+            part[..end].to_string()
+        }).unwrap_or_default();
+        let received_state = state_pos.map(|p| {
+            let part = &request_line[p + 6..];
+            let end = part.find('&').or_else(|| part.find(' ')).unwrap_or(part.len());
+            part[..end].to_string()
+        }).unwrap_or_default();
 
-        Ok((code, is_err))
+        if is_err {
+            Ok(("authorization_error".to_string(), received_state, true))
+        } else {
+            Ok((code, received_state, false))
+        }
     })
     .await
     .map_err(|e| e.to_string())??;
 
     if is_error || code.is_empty() {
         return Err("LinkedIn OAuth authorization failed or returned no code.".into());
+    }
+
+    if received_state != state_token {
+        return Err("OAuth state mismatch — possible CSRF attack. Please try connecting again.".into());
     }
 
     // 5. Token exchange — uses client_secret from user's DB credentials
@@ -248,9 +262,3 @@ scope={}",
     Ok(creds.email.unwrap_or_else(|| "LinkedIn User".into()))
 }
 
-fn parse_code_from_request(request_line: &str) -> Option<String> {
-    let pos = request_line.find("code=")?;
-    let part = &request_line[pos + 5..];
-    let end = part.find('&').or_else(|| part.find(' ')).unwrap_or(part.len());
-    Some(part[..end].to_string())
-}

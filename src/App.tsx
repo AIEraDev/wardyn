@@ -122,6 +122,9 @@ export default function App() {
   );
   const fetchDailyHabits = useQueueStore((state) => state.fetchDailyHabits);
   const fetchDailyIntel = useQueueStore((state) => state.fetchDailyIntel);
+  const fetchPomodoroSessions = useQueueStore(
+    (state) => state.fetchPomodoroSessions,
+  );
 
   const [modelAlertDismissed, setModelAlertDismissed] = useState(false);
 
@@ -161,8 +164,10 @@ export default function App() {
       // AI model presence check & background download listener (must run early)
       checkOllamaModels();
       useQueueStore.getState().initOllamaProgressListener();
-      // Retry model check after 3s — Ollama may still be starting up on boot
-      setTimeout(() => checkOllamaModels(), 3000);
+      // Retry model check after 6s — Ollama may still be starting up on boot
+      setTimeout(() => checkOllamaModels(), 6000);
+      // Final retry after 15s in case Ollama was cold-started by the backend
+      setTimeout(() => checkOllamaModels(), 15000);
 
       // Auto-generate morning brief on first launch of the day (cached if already done)
       fetchMorningBrief();
@@ -174,6 +179,7 @@ export default function App() {
       fetchCustomFeeds();
       // Load productivity features
       fetchTasks();
+      fetchPomodoroSessions(1); // restores any active session from DB
       checkPendingReminders();
       fetchLifeEvents();
       // Load Active Life features

@@ -249,9 +249,21 @@ async fn get_valid_access_token(
         .map_err(|e| format!("Refresh token error: {}", e))?;
 
     if !res.status().is_success() {
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        // Parse Google's error field if present
+        let google_error = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v["error"].as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| status.to_string());
+
+        // Delete only the specific account that failed, using its exact service key
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
-        db::delete_credentials(&conn, "gmail").ok();
-        return Err("Gmail session expired and refresh failed. Please reconnect Gmail.".into());
+        db::delete_gmail_credentials(&conn, creds.email.as_deref()).ok();
+        return Err(format!(
+            "Gmail session expired and refresh failed ({}). Please reconnect Gmail.",
+            google_error
+        ));
     }
 
     let token_json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
@@ -260,7 +272,7 @@ async fn get_valid_access_token(
     let new_expires_at = now + expires_in;
 
     let updated_creds = GmailCredentials {
-        service: "gmail".into(),
+        service: creds.service.clone(), // preserve the original service key (e.g. "gmail:email@...")
         access_token: new_access_token.clone(),
         refresh_token: creds.refresh_token.clone(),
         expires_at: new_expires_at,

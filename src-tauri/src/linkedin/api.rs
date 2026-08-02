@@ -94,9 +94,9 @@ pub async fn fetch_real_linkedin_summary(conn_mutex: &std::sync::Mutex<Connectio
         }
     }
 
-    // 3. Fetch user's own UGC posts (content + engagement) as feed insights
+    // 3. Fetch user's own UGC posts with inline social metadata (no extra per-post calls)
     let ugc_url = format!(
-        "https://api.linkedin.com/v2/ugcPosts?q=authors&authors=LIST({})&count=10",
+        "https://api.linkedin.com/v2/ugcPosts?q=authors&authors=LIST({})&count=10&projection=(elements*(id,firstPublishedAt,specificContent,socialMetadata,likesSummary,commentsSummary))",
         urlencoding::encode(&person_urn)
     );
 
@@ -123,7 +123,6 @@ pub async fn fetch_real_linkedin_summary(conn_mutex: &std::sync::Mutex<Connectio
                     let created_ms = elem["firstPublishedAt"].as_u64().unwrap_or(0);
                     let created_secs = created_ms / 1000;
                     let created_at = if created_secs > 0 {
-                        // Convert epoch ms to ISO string
                         let s = created_secs % 60;
                         let m = (created_secs / 60) % 60;
                         let h = (created_secs / 3600) % 24;
@@ -134,33 +133,28 @@ pub async fn fetch_real_linkedin_summary(conn_mutex: &std::sync::Mutex<Connectio
                         crate::db::now_iso()
                     };
 
-                    // Fetch real like count for this post
-                    let likes_url = format!("https://api.linkedin.com/v2/socialActions/{}/likes?count=1", urlencoding::encode(&post_id));
-                    let like_count = if let Ok(lr) = client.get(&likes_url)
-                        .bearer_auth(&creds.access_token)
-                        .header("X-Restli-Protocol-Version", "2.0.0")
-                        .send().await
-                    {
-                        if lr.status().is_success() {
-                            let lj: serde_json::Value = lr.json().await.unwrap_or_default();
-                            lj["paging"]["total"].as_u64().unwrap_or(0)
-                        } else { 0 }
-                    } else { 0 };
+                    // ── Engagement: use socialMetadata embedded in ugcPost response.
+                    // The deprecated /v2/socialActions endpoints are replaced by reading
+                    // likesSummary and commentsSummary from the post element directly.
+                    // These are returned when the ugcPosts query includes
+                    // projection=(id,specificContent,firstPublishedAt,socialMetadata) but
+                    // LinkedIn may or may not include them depending on app permissions.
+                    // We read them if present; otherwise default to 0 — no extra API calls.
+                    let like_count = elem["socialMetadata"]["likesSummary"]["totalLikes"]
+                        .as_u64()
+                        .or_else(|| elem["likesSummary"]["totalLikes"].as_u64())
+                        .unwrap_or(0);
 
-                    // Fetch real comment count
-                    let comments_url = format!("https://api.linkedin.com/v2/socialActions/{}/comments?count=1", urlencoding::encode(&post_id));
-                    let comment_count = if let Ok(cr) = client.get(&comments_url)
-                        .bearer_auth(&creds.access_token)
-                        .header("X-Restli-Protocol-Version", "2.0.0")
-                        .send().await
-                    {
-                        if cr.status().is_success() {
-                            let cj: serde_json::Value = cr.json().await.unwrap_or_default();
-                            cj["paging"]["total"].as_u64().unwrap_or(0)
-                        } else { 0 }
-                    } else { 0 };
+                    let comment_count = elem["socialMetadata"]["commentsSummary"]["totalFirstLevelComments"]
+                        .as_u64()
+                        .or_else(|| elem["commentsSummary"]["totalFirstLevelComments"].as_u64())
+                        .unwrap_or(0);
 
-                    let engagement = format!("{} Likes • {} Comments", like_count, comment_count);
+                    let engagement = if like_count + comment_count > 0 {
+                        format!("{} Likes • {} Comments", like_count, comment_count)
+                    } else {
+                        "Engagement data requires additional LinkedIn API scope".to_string()
+                    };
 
                     // Extract media image if present
                     let image_url = elem["specificContent"]["com.linkedin.ugc.ShareContent"]["media"]
@@ -222,22 +216,30 @@ pub async fn fetch_real_linkedin_summary(conn_mutex: &std::sync::Mutex<Connectio
             name
         )
     } else {
+        let total_eng: u64 = feed_insights.iter().map(|i| {
+            let likes: u64 = i.engagement.split_whitespace().next()
+                .and_then(|n| n.parse().ok()).unwrap_or(0);
+            let comments: u64 = i.engagement.split('•').nth(1)
+                .and_then(|s| s.trim().split_whitespace().next())
+                .and_then(|n| n.parse().ok()).unwrap_or(0);
+            likes + comments
+        }).sum();
         format!(
-            "Fetched {} real LinkedIn posts for {}. Total engagement: {} likes across all posts.",
-            feed_insights.len(),
-            name,
-            feed_insights.iter().map(|i| {
-                i.engagement.split_whitespace().next()
-                    .and_then(|n| n.parse::<u64>().ok()).unwrap_or(0)
-            }).sum::<u64>()
+            "Fetched {} real LinkedIn posts for {}. Total engagement: {} reactions across all posts.",
+            feed_insights.len(), name, total_eng
         )
     };
 
     let total_posts_count = feed_insights.len();
-    let total_impressions_est: u64 = feed_insights.iter().map(|i| {
+    // Sum actual reaction counts from the engagement string (no fake multiplier)
+    let total_reactions: u64 = feed_insights.iter().map(|i| {
+        // engagement is "X Likes • Y Comments" or the fallback string
         let likes: u64 = i.engagement.split_whitespace().next()
             .and_then(|n| n.parse().ok()).unwrap_or(0);
-        likes * 8
+        let comments: u64 = i.engagement.split('•').nth(1)
+            .and_then(|s| s.trim().split_whitespace().next())
+            .and_then(|n| n.parse().ok()).unwrap_or(0);
+        likes + comments
     }).sum();
 
     Ok(RealLinkedInSummary {
@@ -247,10 +249,10 @@ pub async fn fetch_real_linkedin_summary(conn_mutex: &std::sync::Mutex<Connectio
             .unwrap_or("LinkedIn Member")
             .to_string(),
         total_posts_analyzed: total_posts_count,
-        total_impressions: if total_impressions_est >= 1000 {
-            format!("~{}K estimated", total_impressions_est / 1000)
+        total_impressions: if total_reactions >= 1000 {
+            format!("{}K total reactions", total_reactions / 1000)
         } else {
-            format!("~{} estimated", total_impressions_est)
+            format!("{} total reactions", total_reactions)
         },
         top_performing_topic: feed_insights.first()
             .map(|i| i.domain_tag.clone())

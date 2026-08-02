@@ -25,8 +25,45 @@ pub fn speak_text(text: &str) -> Result<(), String> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        Err("Native speech synthesis currently supported on macOS".into())
+        Err("Native speech synthesis currently supported on macOS only.".into())
     }
+}
+
+/// Starts a background watcher thread that waits for the speech process to finish
+/// and emits a `speech-ended` Tauri event so the frontend can reset `isPlayingAudio`.
+pub fn watch_speech_completion(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let finished = if let Ok(mut guard) = AUDIO_PROCESS.lock() {
+                match guard.as_mut() {
+                    Some(child) => {
+                        match child.try_wait() {
+                            Ok(Some(_)) => {
+                                // Process exited — clear the handle
+                                *guard = None;
+                                true
+                            }
+                            Ok(None) => false, // still running
+                            Err(_) => {
+                                *guard = None;
+                                true
+                            }
+                        }
+                    }
+                    None => return, // no process — exit watcher thread
+                }
+            } else {
+                return;
+            };
+
+            if finished {
+                use tauri::Emitter;
+                let _ = app.emit("speech-ended", ());
+                return;
+            }
+        }
+    });
 }
 
 pub fn stop_speech() {

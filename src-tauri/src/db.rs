@@ -60,27 +60,42 @@ pub fn iso_to_unix_secs(iso: &str) -> Option<i64> {
     let doy = (153 * (m - 3) + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146097 + doe - 719468;
-    Some(days * 86400 + hour * 3600 + minute * 60 + second)
+    let utc_secs = days * 86400 + hour * 3600 + minute * 60 + second;
+
+    // Parse optional timezone offset: Z, +HH:MM, -HH:MM
+    // Chars 19+ may contain timezone info
+    let tz_offset_secs: i64 = if trimmed.len() > 19 {
+        let tz = &trimmed[19..];
+        if tz.starts_with('Z') || tz.starts_with('z') {
+            0
+        } else if tz.len() >= 6 && (tz.starts_with('+') || tz.starts_with('-')) {
+            let sign: i64 = if tz.starts_with('-') { -1 } else { 1 };
+            let tz_h: i64 = tz.get(1..3).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let tz_m: i64 = tz.get(4..6).and_then(|s| s.parse().ok()).unwrap_or(0);
+            sign * (tz_h * 3600 + tz_m * 60)
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    Some(utc_secs - tz_offset_secs)
 }
 
-pub fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
-    let mut year = 1970u64;
-    loop {
-        let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
-        let days_in_year = if leap { 366 } else { 365 };
-        if days < days_in_year { break; }
-        days -= days_in_year;
-        year += 1;
-    }
-    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
-    let month_days: [u64; 12] = [31, if leap {29} else {28}, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut month = 1u64;
-    for &md in &month_days {
-        if days < md { break; }
-        days -= md;
-        month += 1;
-    }
-    (year, month, days + 1)
+pub fn days_to_ymd(days: u64) -> (u64, u64, u64) {
+    // Proleptic Gregorian calendar — direct computation, O(1)
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as u64, m, d)
 }
 
 pub fn init_db(conn: &Connection) -> Result<()> {
@@ -108,6 +123,7 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     conn.execute("ALTER TABLE queue_items ADD COLUMN message_id TEXT;", []).ok();
     conn.execute("ALTER TABLE queue_items ADD COLUMN urgency TEXT DEFAULT 'high';", []).ok();
     conn.execute("ALTER TABLE queue_items ADD COLUMN draft_generation_time_ms INTEGER;", []).ok();
+    conn.execute("ALTER TABLE queue_items ADD COLUMN draft_edit_distance INTEGER;", []).ok(); // 0=approved as-is, high=heavily rewritten
 
 
     conn.execute(
@@ -844,10 +860,14 @@ pub fn update_status_and_draft(conn: &Connection, id: &str, status: &str, draft:
 }
 
 pub fn save_credentials(conn: &Connection, creds: &GmailCredentials) -> Result<()> {
+    // Store both tokens in keychain
     if !creds.refresh_token.is_empty() && creds.refresh_token != "[KEYCHAIN_ENCLAVE]" {
         crate::security::store_secure_token(&creds.service, &creds.refresh_token).ok();
     }
-
+    let access_key = format!("{}_access", creds.service);
+    if !creds.access_token.is_empty() && creds.access_token != "[KEYCHAIN_ENCLAVE_ACCESS]" {
+        crate::security::store_secure_token(&access_key, &creds.access_token).ok();
+    }
     conn.execute(
         "INSERT INTO credentials (service, access_token, refresh_token, expires_at, email)
          VALUES (?1, ?2, ?3, ?4, ?5)
@@ -856,7 +876,7 @@ pub fn save_credentials(conn: &Connection, creds: &GmailCredentials) -> Result<(
             refresh_token=excluded.refresh_token,
             expires_at=excluded.expires_at,
             email=excluded.email",
-        params![creds.service, creds.access_token, "[KEYCHAIN_ENCLAVE]", creds.expires_at, creds.email],
+        params![creds.service, "[KEYCHAIN_ENCLAVE_ACCESS]", "[KEYCHAIN_ENCLAVE]", creds.expires_at, creds.email],
     )?;
     Ok(())
 }
@@ -866,12 +886,19 @@ pub fn get_credentials(conn: &Connection, service: &str) -> Result<Option<GmailC
     let mut rows = stmt.query(params![service])?;
     if let Some(row) = rows.next()? {
         let service_key: String = row.get(0)?;
+        let db_access: String = row.get(1)?;
         let db_refresh: String = row.get(2)?;
+        let access_key = format!("{}_access", service_key);
+        let secure_access = if db_access == "[KEYCHAIN_ENCLAVE_ACCESS]" {
+            crate::security::retrieve_secure_token(&access_key).ok().flatten().unwrap_or(db_access)
+        } else {
+            db_access
+        };
         let secure_refresh = crate::security::retrieve_secure_token(&service_key).ok().flatten().unwrap_or(db_refresh);
 
         Ok(Some(GmailCredentials {
             service: service_key,
-            access_token: row.get(1)?,
+            access_token: secure_access,
             refresh_token: secure_refresh,
             expires_at: row.get(3)?,
             email: row.get(4)?,
@@ -890,12 +917,19 @@ pub fn get_all_gmail_credentials(conn: &Connection) -> Result<Vec<GmailCredentia
     let mut stmt = conn.prepare("SELECT service, access_token, refresh_token, expires_at, email FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'")?;
     let rows = stmt.query_map([], |row| {
         let service_key: String = row.get(0)?;
+        let db_access: String = row.get(1)?;
         let db_refresh: String = row.get(2)?;
+        let access_key = format!("{}_access", service_key);
+        let secure_access = if db_access == "[KEYCHAIN_ENCLAVE_ACCESS]" {
+            crate::security::retrieve_secure_token(&access_key).ok().flatten().unwrap_or(db_access)
+        } else {
+            db_access
+        };
         let secure_refresh = crate::security::retrieve_secure_token(&service_key).ok().flatten().unwrap_or(db_refresh);
 
         Ok(GmailCredentials {
             service: service_key,
-            access_token: row.get(1)?,
+            access_token: secure_access,
             refresh_token: secure_refresh,
             expires_at: row.get(3)?,
             email: row.get(4)?,
@@ -911,6 +945,8 @@ pub fn get_all_gmail_credentials(conn: &Connection) -> Result<Vec<GmailCredentia
 
 pub fn delete_credentials(conn: &Connection, service: &str) -> Result<()> {
     crate::security::delete_secure_token(service).ok();
+    let access_key = format!("{}_access", service);
+    crate::security::delete_secure_token(&access_key).ok();
     conn.execute("DELETE FROM credentials WHERE service = ?1", params![service])?;
     Ok(())
 }
@@ -920,12 +956,16 @@ pub fn delete_gmail_credentials(conn: &Connection, email: Option<&str>) -> Resul
         Some(e) => {
             let key = format!("gmail:{}", e);
             crate::security::delete_secure_token(&key).ok();
+            let access_key = format!("{}_access", key);
+            crate::security::delete_secure_token(&access_key).ok();
             conn.execute("DELETE FROM credentials WHERE service = ?1 OR email = ?2", params![key, e])?;
         }
         None => {
             let all = get_all_gmail_credentials(conn).unwrap_or_default();
-            for c in all {
+            for c in &all {
                 crate::security::delete_secure_token(&c.service).ok();
+                let access_key = format!("{}_access", c.service);
+                crate::security::delete_secure_token(&access_key).ok();
             }
             conn.execute("DELETE FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'", [])?;
         }
@@ -1217,6 +1257,36 @@ pub fn set_draft_generation_time_ms(conn: &Connection, id: &str, ms: i64) -> Res
     Ok(())
 }
 
+/// Records how many characters the user changed from the AI draft to what was sent.
+/// 0 = approved as-is (AI nailed it), higher = more rewriting.
+/// This is a quality signal that accumulates over time to improve the voice corpus selection.
+pub fn record_draft_edit_distance(conn: &Connection, id: &str, original: &str, sent: &str) -> Result<()> {
+    // Simple edit distance approximation: character-level difference count
+    // Good enough for ranking "approved as-is" vs "completely rewritten"
+    let distance = levenshtein_approx(original, sent) as i64;
+    conn.execute(
+        "UPDATE queue_items SET draft_edit_distance = ?1 WHERE id = ?2",
+        params![distance, id],
+    )?;
+    Ok(())
+}
+
+/// Approximate character-level edit distance (fast, not full Levenshtein).
+/// Counts characters in common to estimate distance without O(n²) memory.
+fn levenshtein_approx(a: &str, b: &str) -> usize {
+    let a_len = a.chars().count();
+    let b_len = b.chars().count();
+    // Quick wins: identical or empty
+    if a == b { return 0; }
+    if a_len == 0 { return b_len; }
+    if b_len == 0 { return a_len; }
+    // Estimate: max possible distance minus matching bigrams
+    let a_lower = a.to_lowercase();
+    let b_lower = b.to_lowercase();
+    let matching: usize = a_lower.chars().zip(b_lower.chars()).filter(|(c1, c2)| c1 == c2).count();
+    (a_len.max(b_len)).saturating_sub(matching)
+}
+
 pub fn get_draft_generation_time_ms(conn: &Connection, id: &str) -> Result<Option<i64>> {
     match conn.query_row(
         "SELECT draft_generation_time_ms FROM queue_items WHERE id = ?1",
@@ -1433,3 +1503,210 @@ pub fn update_life_event_status(conn: &Connection, id: &str, status: &str) -> Re
     Ok(())
 }
 
+
+
+// ─── Shared User Context Builder ─────────────────────────────────────────────
+//
+// Single function that assembles a rich, structured snapshot of the user's
+// current state. Every AI feature should call this and inject the result into
+// its prompt rather than each feature querying the DB independently.
+//
+// Returns a formatted string block ready for direct insertion into any prompt.
+
+pub fn build_user_context(conn: &Connection) -> String {
+    let today = now_iso();
+    let today_str = &today[..10];
+
+    let mut ctx = String::new();
+    ctx.push_str("═══ USER CONTEXT ═══\n");
+
+    // ── 1. Active projects + today's focus time ───────────────────────────────
+    let projects: Vec<(String, i64, i64)> = {
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT ap.name, ap.daily_target_minutes,
+                    COALESCE(SUM(ptl.minutes_spent), 0) as today_mins
+             FROM active_projects ap
+             LEFT JOIN project_time_logs ptl ON ptl.project_id = ap.id AND ptl.session_date = ?1
+             WHERE ap.status = 'active'
+             GROUP BY ap.id
+             ORDER BY ap.last_worked_at DESC LIMIT 6",
+        ) {
+            if let Ok(rows) = stmt.query_map(params![today_str], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+            }) {
+                rows.filter_map(|r| r.ok()).collect()
+            } else { vec![] }
+        } else { vec![] }
+    };
+    if !projects.is_empty() {
+        ctx.push_str("ACTIVE PROJECTS (name | target min/day | done today):\n");
+        for (name, target, done) in &projects {
+            let pct = if *target > 0 { (done * 100) / target } else { 0 };
+            ctx.push_str(&format!("  • {} | {}min target | {}min done ({}%)\n", name, target, done, pct));
+        }
+    }
+
+    // ── 2. Habit completion status ────────────────────────────────────────────
+    let (habits_done, habits_total): (usize, usize) = {
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM daily_habits", [], |r| r.get(0)
+        ).unwrap_or(0);
+        let done: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM habit_completions WHERE completed_date = ?1",
+            params![today_str], |r| r.get(0),
+        ).unwrap_or(0);
+        (done as usize, total as usize)
+    };
+    if habits_total > 0 {
+        ctx.push_str(&format!("HABITS: {}/{} completed today\n", habits_done, habits_total));
+    }
+
+    // ── 3. Pending high-priority tasks ────────────────────────────────────────
+    let urgent_tasks: Vec<String> = {
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT title FROM tasks WHERE status = 'pending' AND priority = 'high'
+             ORDER BY due_date ASC NULLS LAST LIMIT 5",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                rows.filter_map(|r| r.ok()).collect()
+            } else { vec![] }
+        } else { vec![] }
+    };
+    if !urgent_tasks.is_empty() {
+        ctx.push_str("HIGH-PRIORITY TASKS:\n");
+        for t in &urgent_tasks {
+            ctx.push_str(&format!("  • {}\n", t));
+        }
+    }
+
+    // ── 4. Upcoming life events (next 7 days) ─────────────────────────────────
+    let upcoming_events: Vec<(String, String)> = {
+        let cutoff = {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+            let d = ((secs + 7 * 86400) / 86400) as u64;
+            let (y, m, dd) = days_to_ymd(d);
+            format!("{:04}-{:02}-{:02}", y, m, dd)
+        };
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT title, event_date FROM life_events
+             WHERE status = 'active' AND event_date IS NOT NULL
+             AND event_date >= ?1 AND event_date <= ?2
+             ORDER BY event_date ASC LIMIT 5",
+        ) {
+            if let Ok(rows) = stmt.query_map(params![today_str, cutoff], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }) {
+                rows.filter_map(|r| r.ok()).collect()
+            } else { vec![] }
+        } else { vec![] }
+    };
+    if !upcoming_events.is_empty() {
+        ctx.push_str("UPCOMING EVENTS (7 days):\n");
+        for (title, date) in &upcoming_events {
+            ctx.push_str(&format!("  • {} — {}\n", title, &date[..10.min(date.len())]));
+        }
+    }
+
+    // ── 5. Recent decisions ───────────────────────────────────────────────────
+    let recent_decisions: Vec<String> = {
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT decision, rationale FROM decisions
+             ORDER BY created_at DESC LIMIT 3",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| {
+                Ok(format!("{} ({})", row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }) {
+                rows.filter_map(|r| r.ok()).collect()
+            } else { vec![] }
+        } else { vec![] }
+    };
+    if !recent_decisions.is_empty() {
+        ctx.push_str("RECENT DECISIONS:\n");
+        for d in &recent_decisions {
+            ctx.push_str(&format!("  • {}\n", d));
+        }
+    }
+
+    // ── 6. Top interest topics (last 14 days) ─────────────────────────────────
+    let top_interests: Vec<String> = {
+        let mut tag_scores: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT tags, action FROM feed_interactions
+             WHERE datetime(created_at) >= datetime('now', '-14 days')",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }) {
+                for r in rows.flatten() {
+                    let weight = match r.1.as_str() {
+                        "saved" => 3.0, "opened" => 2.0, "dismissed" => -1.0, _ => 1.0,
+                    };
+                    let tags: Vec<String> = serde_json::from_str(&r.0).unwrap_or_default();
+                    for tag in tags {
+                        *tag_scores.entry(tag).or_insert(0.0) += weight;
+                    }
+                }
+            }
+        }
+        let mut sorted: Vec<(String, f64)> = tag_scores.into_iter()
+            .filter(|(_, w)| *w > 0.0).collect();
+        sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.iter().take(6).map(|(t, _)| t.clone()).collect()
+    };
+    if !top_interests.is_empty() {
+        ctx.push_str(&format!("CURRENT INTERESTS: {}\n", top_interests.join(", ")));
+    }
+
+    // ── 7. Recent knowledge captures ─────────────────────────────────────────
+    let knowledge_snippets: Vec<String> = {
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT summary, tags FROM knowledge_items
+             WHERE datetime(created_at) >= datetime('now', '-7 days')
+             ORDER BY created_at DESC LIMIT 4",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| {
+                let summary: Option<String> = row.get(0)?;
+                let tags_raw: Option<String> = row.get(1)?;
+                let tags: Vec<String> = serde_json::from_str(
+                    tags_raw.as_deref().unwrap_or("[]")
+                ).unwrap_or_default();
+                Ok(format!("[{}] {}", tags.join("/"), summary.unwrap_or_default()))
+            }) {
+                rows.filter_map(|r| r.ok())
+                    .filter(|s| !s.trim_start_matches('[').trim().is_empty())
+                    .collect()
+            } else { vec![] }
+        } else { vec![] }
+    };
+    if !knowledge_snippets.is_empty() {
+        ctx.push_str("RECENT LEARNING CAPTURES:\n");
+        for k in &knowledge_snippets {
+            ctx.push_str(&format!("  • {}\n", k));
+        }
+    }
+
+    // ── 8. Focus streak (consecutive days with logged time) ───────────────────
+    let focus_streak: i64 = {
+        let mut streak = 0i64;
+        for i in 0..30i64 {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+            let d = ((secs - i * 86400) / 86400) as u64;
+            let (y, m, dd) = days_to_ymd(d);
+            let check_date = format!("{:04}-{:02}-{:02}", y, m, dd);
+            let mins: i64 = conn.query_row(
+                "SELECT COALESCE(SUM(minutes_spent), 0) FROM project_time_logs WHERE session_date = ?1",
+                params![check_date], |r| r.get(0),
+            ).unwrap_or(0);
+            if mins > 0 { streak += 1; } else { break; }
+        }
+        streak
+    };
+    if focus_streak > 0 {
+        ctx.push_str(&format!("FOCUS STREAK: {} consecutive day(s) with logged work\n", focus_streak));
+    }
+
+    ctx.push_str("═══════════════════\n");
+    ctx
+}

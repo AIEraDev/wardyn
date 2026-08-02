@@ -14,7 +14,7 @@ fn new_id(prefix: &str) -> String {
 }
 
 fn today_date() -> String {
-    now_iso().get(0..10).unwrap_or("2026-01-01").to_string()
+    { let iso = now_iso(); iso.get(0..10).unwrap_or(&iso).to_string() }
 }
 
 /// Get the name of the frontmost application using osascript.

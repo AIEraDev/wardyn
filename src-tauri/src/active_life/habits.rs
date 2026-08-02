@@ -9,7 +9,7 @@ fn new_id(prefix: &str) -> String {
 }
 
 fn today_date() -> String {
-    now_iso().get(0..10).unwrap_or("2026-01-01").to_string()
+    { let iso = now_iso(); iso.get(0..10).unwrap_or(&iso).to_string() }
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -82,12 +82,19 @@ pub fn create_habit(conn: &Connection, req: &NewHabit) -> Result<DailyHabit> {
 pub fn get_habits(conn: &Connection) -> Result<Vec<DailyHabit>> {
     let today = today_date();
 
+    // Single query: join habits with today's completions and 60-day streak data
+    // This avoids N+1 queries (one per habit for completion + one per habit for streak)
     let mut stmt = conn.prepare(
-        "SELECT id, name, icon, category, sort_order, created_at
-         FROM daily_habits ORDER BY sort_order ASC, created_at ASC",
+        "SELECT h.id, h.name, h.icon, h.category, h.sort_order, h.created_at,
+                COUNT(c.id) as done_today
+         FROM daily_habits h
+         LEFT JOIN habit_completions c
+             ON c.habit_id = h.id AND c.completed_date = ?1
+         GROUP BY h.id
+         ORDER BY h.sort_order ASC, h.created_at ASC",
     )?;
 
-    let rows = stmt.query_map([], |row| {
+    let rows = stmt.query_map(params![today], |row| {
         Ok(DailyHabit {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -95,22 +102,34 @@ pub fn get_habits(conn: &Connection) -> Result<Vec<DailyHabit>> {
             category: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "general".into()),
             sort_order: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
             created_at: row.get(5)?,
-            completed_today: false,
-            current_streak: 0,
+            completed_today: row.get::<_, i64>(6)? > 0,
+            current_streak: 0, // filled below in a single batch query
         })
     })?;
 
     let mut habits: Vec<DailyHabit> = rows.filter_map(|r| r.ok()).collect();
 
-    // Enrich with completion status
+    // Batch-load streaks: fetch last 60 days of completions for all habits in one query,
+    // then compute streaks in Rust — avoids one query per habit.
+    use std::collections::{HashMap, HashSet};
+    let mut completions_by_habit: HashMap<String, HashSet<String>> = HashMap::new();
+    {
+        let mut cstmt = conn.prepare(
+            "SELECT habit_id, completed_date FROM habit_completions
+             WHERE completed_date >= date(?1, '-60 days')
+             ORDER BY completed_date DESC",
+        )?;
+        let rows = cstmt.query_map(params![today], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for r in rows.flatten() {
+            completions_by_habit.entry(r.0).or_default().insert(r.1);
+        }
+    }
+
     for h in &mut habits {
-        let done: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM habit_completions WHERE habit_id = ?1 AND completed_date = ?2",
-            params![h.id, today],
-            |row| row.get(0),
-        ).unwrap_or(0);
-        h.completed_today = done > 0;
-        h.current_streak = compute_streak(conn, &h.id);
+        let dates = completions_by_habit.get(&h.id);
+        h.current_streak = compute_streak_from_set(dates, &today);
     }
 
     Ok(habits)
@@ -171,7 +190,28 @@ pub fn get_habit_completions_range(conn: &Connection, days: i64) -> Result<Vec<H
 
 // ─── Streak Computation ───────────────────────────────────────────────────────
 
-/// Computes the current streak in days (consecutive days including today if completed).
+/// Computes streak from a pre-loaded HashSet of completed dates — O(60) with no DB queries.
+fn compute_streak_from_set(dates: Option<&std::collections::HashSet<String>>, today: &str) -> i64 {
+    let dates = match dates {
+        Some(d) if !d.is_empty() => d,
+        _ => return 0,
+    };
+    let mut streak = 0i64;
+    for i in 0..60i64 {
+        let check_date = offset_date(today, -i);
+        if dates.contains(&check_date) {
+            streak += 1;
+        } else if i == 0 {
+            continue; // today not done yet — check yesterday
+        } else {
+            break;
+        }
+    }
+    streak
+}
+
+/// Computes the current streak in days — kept for any direct callers outside get_habits.
+#[allow(dead_code)]
 fn compute_streak(conn: &Connection, habit_id: &str) -> i64 {
     // Get all unique completed dates, most recent first
     let dates: Vec<String> = if let Ok(mut stmt) = conn.prepare(

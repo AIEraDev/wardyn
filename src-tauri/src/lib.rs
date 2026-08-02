@@ -25,7 +25,7 @@ pub mod research;
 
 use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
-use tauri::{State, Manager, AppHandle, Emitter};
+use tauri::{State, Manager, AppHandle};
 use models::QueueItem;
 use db::SyncedCalendarEvent;
 use gmail::send::SendEmailRequest;
@@ -36,18 +36,20 @@ pub struct DbState(pub Mutex<Connection>);
 
 /// Returns current local time as "HH:MM" string for reminder matching.
 fn chrono_hhmm() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    // Use `date +%H:%M` which respects local timezone on macOS/Linux
+    if let Ok(output) = std::process::Command::new("date").arg("+%H:%M").output() {
+        if output.status.success() {
+            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if s.len() == 5 { return s; }
+        }
+    }
+    // Fallback: UTC
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // Offset from UTC to local: approximate via env TZ. For accuracy we use
-    // a simple modulo — sufficient for minute-level scheduling.
-    // Full local tz would require chrono crate; keeping dep-free:
     let total_mins = (secs / 60) % (24 * 60);
-    let h = total_mins / 60;
-    let m = total_mins % 60;
-    format!("{:02}:{:02}", h, m)
+    format!("{:02}:{:02}", total_mins / 60, total_mins % 60)
 }
 
 /// Fires a macOS notification using tauri-plugin-notification.
@@ -126,8 +128,8 @@ async fn sync_gmail_messages(state: State<'_, DbState>) -> Result<usize, String>
 async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Result<QueueItem, String> {
     let item = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
-        let items = db::get_all_queue_items(&conn).map_err(|e| e.to_string())?;
-        items.into_iter().find(|i| i.id == id).ok_or_else(|| "Item not found".to_string())?
+        db::get_queue_item_by_id(&conn, &id).map_err(|e| e.to_string())?
+            .ok_or_else(|| "Item not found".to_string())?
     };
 
     let outcome = ollama::client::classify_and_draft_item(&item, Some(&state.0)).await;
@@ -150,8 +152,8 @@ async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Resu
 
     db::set_draft_generation_time_ms(&conn, &id, outcome.generation_time_ms).map_err(|e| e.to_string())?;
 
-    let updated_items = db::get_all_queue_items(&conn).map_err(|e| e.to_string())?;
-    updated_items.into_iter().find(|i| i.id == id).ok_or_else(|| "Item not found".to_string())
+    db::get_queue_item_by_id(&conn, &id).map_err(|e| e.to_string())?
+        .ok_or_else(|| "Item not found after update".to_string())
 }
 
 #[tauri::command]
@@ -306,7 +308,11 @@ async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Ve
 
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
-    // Use explicit /usr/bin/open so it works inside a .app bundle (stripped PATH)
+    // Only allow http and https schemes to prevent file:// and app bundle opens
+    let lower = url.trim().to_lowercase();
+    if !lower.starts_with("https://") && !lower.starts_with("http://") {
+        return Err(format!("Blocked: only http/https URLs are allowed (got: {})", &url[..url.len().min(40)]));
+    }
     let opened = std::process::Command::new("/usr/bin/open")
         .arg(&url)
         .spawn()
@@ -376,6 +382,15 @@ fn get_decisions_command(state: State<'_, DbState>) -> Result<Vec<db::Decision>,
 }
 
 #[tauri::command]
+fn update_decision_outcome_command(
+    id: String,
+    outcome: String,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    memory::decisions::update_decision_outcome(&state.0, id, outcome)
+}
+
+#[tauri::command]
 fn record_feed_interaction_command(
     item_id: String,
     item_source: String,
@@ -395,15 +410,19 @@ async fn get_weekly_review_command(state: State<'_, DbState>) -> Result<String, 
 async fn refresh_weekly_review_command(state: State<'_, DbState>) -> Result<String, String> {
     // Clear current week's review cache then regenerate
     {
+        let week_key = intelligence::weekly::get_current_week_key();
         let conn = state.0.lock().map_err(|e| e.to_string())?;
-        conn.execute("DELETE FROM weekly_reviews", []).ok();
+        conn.execute("DELETE FROM weekly_reviews WHERE week = ?1", rusqlite::params![week_key]).ok();
     }
     intelligence::weekly::get_or_generate_weekly_review(&state.0).await
 }
 
 #[tauri::command]
-fn speak_text_command(text: String) -> Result<(), String> {
-    speech::speak_text(&text)
+fn speak_text_command(text: String, app: tauri::AppHandle) -> Result<(), String> {
+    speech::speak_text(&text)?;
+    // Start background watcher — emits "speech-ended" when macOS `say` process finishes
+    speech::watch_speech_completion(app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -419,8 +438,8 @@ async fn web_search_command(query: String) -> Result<research::SearchResponse, S
 }
 
 #[tauri::command]
-async fn summarize_search_command(query: String, results: Vec<research::SearchResult>) -> Result<String, String> {
-    research::summarize_results(&query, &results).await
+async fn summarize_search_command(query: String, results: Vec<research::SearchResult>, state: State<'_, DbState>) -> Result<String, String> {
+    research::summarize_results(&query, &results, &state.0).await
 }
 
 #[tauri::command]
@@ -450,11 +469,14 @@ struct OAuthCredentials {
 #[tauri::command]
 fn get_oauth_credentials_command(state: State<'_, DbState>) -> Result<OAuthCredentials, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let get = |key: &str| -> Option<String> {
+        db::get_app_setting(&conn, key).ok().flatten().filter(|v| !v.is_empty())
+    };
     Ok(OAuthCredentials {
-        google_client_id: db::get_app_setting(&conn, "oauth_google_client_id").ok().flatten(),
-        google_client_secret: db::get_app_setting(&conn, "oauth_google_client_secret").ok().flatten(),
-        linkedin_client_id: db::get_app_setting(&conn, "oauth_linkedin_client_id").ok().flatten(),
-        linkedin_client_secret: db::get_app_setting(&conn, "oauth_linkedin_client_secret").ok().flatten(),
+        google_client_id:      get("oauth_google_client_id"),
+        google_client_secret:  get("oauth_google_client_secret"),
+        linkedin_client_id:    get("oauth_linkedin_client_id"),
+        linkedin_client_secret: get("oauth_linkedin_client_secret"),
     })
 }
 
@@ -467,18 +489,29 @@ fn save_oauth_credentials_command(
     state: State<'_, DbState>,
 ) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(v) = &google_client_id {
-        db::set_app_setting(&conn, "oauth_google_client_id", v).map_err(|e| e.to_string())?;
-    }
-    if let Some(v) = &google_client_secret {
-        db::set_app_setting(&conn, "oauth_google_client_secret", v).map_err(|e| e.to_string())?;
-    }
-    if let Some(v) = &linkedin_client_id {
-        db::set_app_setting(&conn, "oauth_linkedin_client_id", v).map_err(|e| e.to_string())?;
-    }
-    if let Some(v) = &linkedin_client_secret {
-        db::set_app_setting(&conn, "oauth_linkedin_client_secret", v).map_err(|e| e.to_string())?;
-    }
+
+    // For each field: Some("value") → save it, Some("") → delete it, None → leave unchanged
+    let upsert = |key: &str, val: &Option<String>| -> Result<(), String> {
+        match val {
+            Some(v) if !v.trim().is_empty() => {
+                db::set_app_setting(&conn, key, v.trim()).map_err(|e| e.to_string())
+            }
+            Some(_) => {
+                // Explicit empty string — remove the setting so get_ returns None
+                conn.execute(
+                    "DELETE FROM app_settings WHERE key = ?1",
+                    rusqlite::params![key],
+                ).map(|_| ()).map_err(|e| e.to_string())
+            }
+            None => Ok(()), // field not included in request — leave DB unchanged
+        }
+    };
+
+    upsert("oauth_google_client_id",     &google_client_id)?;
+    upsert("oauth_google_client_secret", &google_client_secret)?;
+    upsert("oauth_linkedin_client_id",   &linkedin_client_id)?;
+    upsert("oauth_linkedin_client_secret", &linkedin_client_secret)?;
+
     Ok(())
 }
 
@@ -487,12 +520,16 @@ fn clear_oauth_credentials_command(service: String, state: State<'_, DbState>) -
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     match service.as_str() {
         "google" => {
-            db::set_app_setting(&conn, "oauth_google_client_id", "").map_err(|e| e.to_string())?;
-            db::set_app_setting(&conn, "oauth_google_client_secret", "").map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM app_settings WHERE key IN ('oauth_google_client_id', 'oauth_google_client_secret')",
+                [],
+            ).map_err(|e| e.to_string())?;
         }
         "linkedin" => {
-            db::set_app_setting(&conn, "oauth_linkedin_client_id", "").map_err(|e| e.to_string())?;
-            db::set_app_setting(&conn, "oauth_linkedin_client_secret", "").map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM app_settings WHERE key IN ('oauth_linkedin_client_id', 'oauth_linkedin_client_secret')",
+                [],
+            ).map_err(|e| e.to_string())?;
         }
         _ => {}
     }
@@ -523,8 +560,8 @@ fn delete_custom_feed_command(id: String, state: State<'_, DbState>) -> Result<(
 }
 
 #[tauri::command]
-async fn deep_read_url_command(url: String) -> Result<String, String> {
-    reader::deep_read_url(&url).await
+async fn deep_read_url_command(url: String, state: State<'_, DbState>) -> Result<String, String> {
+    reader::deep_read_url(&url, &state.0).await
 }
 
 // ─── Analytics Commands ──────────────────────────────────────────────────────
@@ -552,7 +589,11 @@ fn create_task_command(
     priority: Option<String>,
     state: State<'_, DbState>
 ) -> Result<db::Task, String> {
-    let id = format!("task_{}", db::now_iso().replace(':', "-").replace('.', "-"));
+    let id = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+        format!("task_{:x}", ns)
+    };
     let task = db::Task {
         id: id.clone(),
         title,
@@ -596,7 +637,11 @@ fn create_reminder_command(
     message: String,
     state: State<'_, DbState>
 ) -> Result<db::Reminder, String> {
-    let id = format!("reminder_{}", db::now_iso().replace(':', "-").replace('.', "-"));
+    let id = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+        format!("reminder_{:x}", ns)
+    };
     let reminder = db::Reminder {
         id: id.clone(),
         item_id,
@@ -653,7 +698,11 @@ fn create_task_from_item_command(
     if db::task_exists_for_source(&conn, &item_id).unwrap_or(false) {
         return Err("A task already exists for this email.".into());
     }
-    let id = format!("task_{}", db::now_iso().replace(':', "-").replace('.', "-"));
+    let id = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+        format!("task_{:x}", ns)
+    };
     let task = db::Task {
         id: id.clone(),
         title,
@@ -682,7 +731,11 @@ fn start_pomodoro_command(
     duration_minutes: i64,
     state: State<'_, DbState>
 ) -> Result<db::PomodoroSession, String> {
-    let id = format!("pomo_{}", db::now_iso().replace(':', "-").replace('.', "-"));
+    let id = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+        format!("pomo_{:x}", ns)
+    };
     let session = db::PomodoroSession {
         id: id.clone(),
         task_id,
@@ -713,7 +766,7 @@ fn get_pomodoro_sessions_command(days: i64, state: State<'_, DbState>) -> Result
 #[tauri::command]
 async fn capture_life_event_command(text: String, state: State<'_, DbState>) -> Result<db::LifeEvent, String> {
     // Try Ollama first; fallback to heuristic plan if offline
-    let plan = match planner::parse_life_event(&text).await {
+    let plan = match planner::parse_life_event(&text, Some(&state.0)).await {
         Ok(p) => p,
         Err(_) => planner::fallback_plan(&text),
     };
@@ -888,9 +941,116 @@ fn toggle_habit_reminder_command(id: String, enabled: bool, state: State<'_, DbS
     active_life::reminders::toggle_reminder(&conn, &id, enabled).map_err(|e| e.to_string())
 }
 
+// ─── AI Tone Refinement ───────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn regenerate_draft_command(
+    original_draft: String,
+    sender_name: String,
+    tone: String,
+) -> Result<String, String> {
+    let tone_instruction = match tone.as_str() {
+        "shorter"      => "Rewrite this email reply to be much shorter — 1-2 sentences max. Preserve the core message.",
+        "formal"       => "Rewrite this email reply in a formal, professional business tone. Use complete sentences and polished language.",
+        "availability" => "Rewrite this email reply to politely indicate you need to check your schedule and ask the sender to propose a few time slots.",
+        _              => "Rewrite this email reply to be clearer and more professional.",
+    };
+    let prompt = format!(
+        "{}\n\nSender: {}\nOriginal draft:\n{}\n\nReturn ONLY the rewritten reply text. No subject line, no explanation.",
+        tone_instruction, sender_name, original_draft
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
+    let models = ["qwen2.5", "llama3", "mistral", "gemma", "phi3", "llama3:70b"];
+    for model in &models {
+        let body = serde_json::json!({
+            "model": model,
+            "prompt": prompt,
+            "stream": false,
+            "options": { "temperature": 0.4 }
+        });
+        if let Ok(resp) = client.post("http://localhost:11434/api/generate").json(&body).send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(text) = json["response"].as_str() {
+                        let trimmed = text.trim().to_string();
+                        if !trimmed.is_empty() {
+                            return Ok(trimmed);
+                        }
+                    }
+                }
+            } else if resp.status().as_u16() == 404 {
+                continue; // model not installed, try next
+            }
+        }
+    }
+    Err("Ollama unavailable — no model responded for tone refinement".into())
+}
+
+// ─── AI Social Content Generation ────────────────────────────────────────────
+
+#[tauri::command]
+async fn generate_social_content_command(
+    platform: String,
+    topic: String,
+    tone: String,
+) -> Result<String, String> {
+    let platform_context = match platform.to_lowercase().as_str() {
+        "twitter" | "x" => "Twitter/X (max 280 chars, punchy, 1-2 hashtags)",
+        _ => "LinkedIn (professional, 150-300 words, 3-5 relevant hashtags)",
+    };
+
+    let tone_instruction = match tone.as_str() {
+        "punchy"     => "Write in a bold, direct, high-energy tone. Lead with a strong hook.",
+        "detailed"   => "Write in a thorough, analytical tone with concrete specifics.",
+        "thread"     => "Write as a numbered thread (1/, 2/, 3/ etc). 4-6 parts.",
+        "leadership" => "Write from an executive/builder perspective with strategic insights.",
+        "story"      => "Tell a short story arc: problem → journey → outcome/lesson.",
+        _            => "Write in a professional, authentic voice.",
+    };
+
+    let prompt = format!(
+        "You are a professional social media ghostwriter. {}\n\nPlatform: {}\nTopic: {}\n\nWrite a single, complete, ready-to-post social media post. Return ONLY the post text, no explanation, no quotes around it.",
+        tone_instruction, platform_context, topic
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
+
+    let models = ["qwen2.5", "llama3", "mistral", "gemma", "phi3", "llama3:70b"];
+    for model in &models {
+        let body = serde_json::json!({
+            "model": model,
+            "prompt": prompt,
+            "stream": false,
+            "options": { "temperature": 0.7 }
+        });
+        if let Ok(resp) = client.post("http://localhost:11434/api/generate").json(&body).send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(text) = json["response"].as_str() {
+                        let trimmed = text.trim().to_string();
+                        if !trimmed.is_empty() {
+                            return Ok(trimmed);
+                        }
+                    }
+                }
+            } else if resp.status().as_u16() == 404 {
+                continue;
+            }
+        }
+    }
+    Err("Ollama unavailable for social content generation".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok(); // Automatically load .env file
+
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -969,6 +1129,51 @@ pub fn run() {
                     }
                 });
             }
+
+            // ── Auto-start Ollama if installed but not running ───────────────
+            // Runs on a plain OS thread so it doesn't need a Tokio runtime
+            // (setup() runs before Tauri's async executor is active).
+            std::thread::spawn(|| {
+                // Small delay so the window finishes rendering first
+                std::thread::sleep(std::time::Duration::from_secs(2));
+
+                // Check if Ollama is already accepting connections (blocking)
+                let already_running = std::net::TcpStream::connect_timeout(
+                    &"127.0.0.1:11434".parse().unwrap(),
+                    std::time::Duration::from_secs(2),
+                ).is_ok();
+
+                if already_running {
+                    return;
+                }
+
+                // Not running — find the binary and start it silently
+                let home = std::env::var("HOME").unwrap_or_default();
+                let candidate_paths = [
+                    "ollama".to_string(),
+                    "/usr/local/bin/ollama".to_string(),
+                    "/opt/homebrew/bin/ollama".to_string(),
+                    "/usr/bin/ollama".to_string(),
+                    format!("{}/.local/bin/ollama", home),
+                ];
+
+                let ollama_bin = candidate_paths.iter().find(|p| {
+                    if p.is_empty() { return false; }
+                    if !p.contains('/') {
+                        std::process::Command::new(p).arg("--version").output()
+                            .map(|o| o.status.success()).unwrap_or(false)
+                    } else {
+                        std::path::Path::new(p.as_str()).exists()
+                    }
+                }).cloned();
+
+                if let Some(bin) = ollama_bin {
+                    let _ = std::process::Command::new(&bin)
+                        .arg("serve")
+                        .spawn();
+                    // If not installed, do nothing — the UI banner guides the user.
+                }
+            });
 
             Ok(())
         })
@@ -1058,7 +1263,10 @@ pub fn run() {
             check_ollama_status_command,
             start_ollama_command,
             web_search_command,
-            summarize_search_command
+            summarize_search_command,
+            regenerate_draft_command,
+            generate_social_content_command,
+            update_decision_outcome_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

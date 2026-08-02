@@ -96,7 +96,7 @@ pub fn toggle_reminder(conn: &Connection, id: &str, enabled: bool) -> Result<()>
 /// Returns all enabled reminders whose remind_time matches the given HH:MM string,
 /// filtering out habits already completed today.
 pub fn get_due_reminders(conn: &Connection, hhmm: &str) -> Vec<HabitReminder> {
-    let today = now_iso().get(0..10).unwrap_or("2026-01-01").to_string();
+    let today = { let iso = now_iso(); iso.get(0..10).unwrap_or(&iso).to_string() };
 
     if let Ok(mut stmt) = conn.prepare(
         "SELECT hr.id, hr.habit_id, dh.name, dh.icon, hr.remind_time, hr.enabled, hr.created_at

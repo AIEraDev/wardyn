@@ -59,8 +59,7 @@ const INITIAL_CHANNELS: ChannelConfig[] = [
     description:
       "Auto-sync deadline events and appointment requests automatically",
     iconName: "IconCalendar",
-    status: "connected",
-    accountLabel: "Auto-synced via Gmail OAuth",
+    status: "disconnected",
   },
   {
     id: "linkedin",
@@ -152,7 +151,7 @@ interface QueueStore {
   regenerateDraft: (
     id: string,
     tone: "shorter" | "formal" | "availability",
-  ) => void;
+  ) => Promise<void>;
   setTestOverrideRecipient: (email: string | null) => void;
 
   // Multi-Channel Actions
@@ -172,9 +171,9 @@ interface QueueStore {
   regenerateSocialPost: (
     id: string,
     tone: "punchy" | "detailed" | "thread" | "leadership" | "story",
-  ) => void;
-  createSocialPost: (platform: SocialPlatform, topic: string) => void;
-  generateCadenceLinkedInPost: () => void;
+  ) => Promise<void>;
+  createSocialPost: (platform: SocialPlatform, topic: string) => Promise<void>;
+  generateCadenceLinkedInPost: () => Promise<void>;
   remixInsightToPersonalPost: (insight: FeedInsight) => void;
   syncLinkedInTimeline: () => Promise<void>;
 
@@ -218,6 +217,7 @@ interface QueueStore {
     alternatives?: string,
   ) => Promise<void>;
   fetchDecisions: () => Promise<void>;
+  updateDecisionOutcome: (id: string, outcome: string) => Promise<void>;
 
   // Phase C: Weekly Review & Interest Learning
   weeklyReview: string | null;
@@ -313,7 +313,7 @@ interface QueueStore {
       error?: string;
     }
   >;
-  pendingDownloads: Set<string>; // models invoked but no progress event yet
+  pendingDownloads: Record<string, true>; // models invoked but no progress event yet
   _ollamaListenerInitialized: boolean;
   checkOllamaModels: () => Promise<void>;
   initOllamaProgressListener: () => Promise<void>;
@@ -414,7 +414,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   ollamaModels: [],
   ollamaChecked: false,
   pullProgress: {},
-  pendingDownloads: new Set<string>(),
+  pendingDownloads: {} as Record<string, true>,
   _ollamaListenerInitialized: false,
 
   setLanguage: (lang: SupportedLanguage) => {
@@ -703,32 +703,42 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   skipItem: async (id: string) => {
     const target = get().items.find((i) => i.id === id);
-
+    // Optimistic update
     set((state) => ({
       items: state.items.map((item) =>
         item.id === id
-          ? {
-              ...item,
-              status: "skipped",
-              updated_at: new Date().toISOString(),
-            }
+          ? { ...item, status: "skipped", updated_at: new Date().toISOString() }
           : item,
       ),
     }));
-
     if (target) {
       await get().sendDesktopNotification(
         "⏭️ Item Skipped",
         `Skipped reply card for ${target.sender}`,
       );
     }
-
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("skip_queue_item", { id });
       } catch (err) {
         console.error("Failed to persist skip to Tauri SQLite:", err);
+        // Revert optimistic update on failure
+        set((state) => ({
+          items: state.items.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  status: "pending",
+                  updated_at: new Date().toISOString(),
+                }
+              : item,
+          ),
+        }));
+        get().showStatusMessage(
+          "error",
+          "Failed to skip item — please try again.",
+        );
       }
     }
   },
@@ -743,22 +753,53 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }));
   },
 
-  regenerateDraft: (
+  regenerateDraft: async (
     id: string,
     tone: "shorter" | "formal" | "availability",
   ) => {
     const target = get().items.find((i) => i.id === id);
-    if (!target) return;
+    if (!target || !target.draft_text) return;
 
-    let newDraft = target.draft_text || "Thanks for reaching out.";
+    // Try Ollama-backed tone refinement first
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const refined = await invoke<string>("regenerate_draft_command", {
+          originalDraft: target.draft_text,
+          senderName: target.sender,
+          tone,
+        });
+        set((state) => ({
+          items: state.items.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  draft_text: refined,
+                  updated_at: new Date().toISOString(),
+                }
+              : item,
+          ),
+        }));
+        get().sendDesktopNotification(
+          `✨ Draft Refined (${tone.toUpperCase()})`,
+          `Updated reply draft for ${target.sender}`,
+        );
+        return;
+      } catch {
+        // Ollama unavailable — fall through to template fallback
+      }
+    }
+
+    // Template fallback when Ollama is offline
+    let newDraft = target.draft_text;
     if (tone === "shorter") {
       newDraft = "Thanks, received. Will follow up shortly.";
     } else if (tone === "formal") {
       newDraft =
-        "Thank you for your message. I have noted the details and will provide a formal response by Friday.";
+        "Thank you for your message. I have noted the details and will provide a formal response by end of week.";
     } else if (tone === "availability") {
       newDraft =
-        "Thanks for the invite. I am available Thursday between 2pm - 4pm WAT. Let me know if that works.";
+        "Thanks for the invite. Could you send a few time options and I'll confirm what works on my end?";
     }
 
     set((state) => ({
@@ -772,7 +813,6 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           : item,
       ),
     }));
-
     get().sendDesktopNotification(
       `✨ Draft Refined (${tone.toUpperCase()})`,
       `Updated reply draft for ${target.sender}`,
@@ -884,13 +924,41 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
-  regenerateSocialPost: (
+  regenerateSocialPost: async (
     id: string,
     tone: "punchy" | "detailed" | "thread" | "leadership" | "story",
   ) => {
     const target = get().socialPosts.find((p) => p.id === id);
     if (!target) return;
 
+    // Try Ollama-backed generation first
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const content = await invoke<string>(
+          "generate_social_content_command",
+          {
+            platform: target.platform,
+            topic: target.topic,
+            tone,
+          },
+        );
+        set((state) => ({
+          socialPosts: state.socialPosts.map((post) =>
+            post.id === id ? { ...post, content } : post,
+          ),
+        }));
+        get().sendDesktopNotification(
+          `✨ Social Brief Refined (${tone.toUpperCase()})`,
+          `Updated ${target.platform.toUpperCase()} draft content`,
+        );
+        return;
+      } catch {
+        // Ollama unavailable — fall through to template fallback
+      }
+    }
+
+    // Template fallback when Ollama is offline
     let newContent = target.content;
     if (tone === "punchy") {
       newContent = `Shipped ${target.topic}. Clean, zero-latency, and lightning fast. 🚀 #BuildInPublic #AI`;
@@ -909,39 +977,71 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         post.id === id ? { ...post, content: newContent } : post,
       ),
     }));
-
     get().sendDesktopNotification(
       `✨ Social Brief Refined (${tone.toUpperCase()})`,
       `Updated ${target.platform.toUpperCase()} draft content`,
     );
   },
 
-  createSocialPost: (platform: SocialPlatform, topic: string) => {
-    const newPost: SocialPost = {
+  createSocialPost: async (platform: SocialPlatform, topic: string) => {
+    // Generate a stub immediately so the UI shows something
+    const stub: SocialPost = {
       id: `soc-${Date.now()}`,
       platform,
       topic,
-      content:
-        platform === "linkedin"
-          ? `Excited to announce: ${topic}. Building in public and pushing the boundaries of executive chief-of-staff software. #BuildInPublic #AI`
-          : `1/ Quick breakdown on ${topic} 🧵\n\nBuilding local-first apps with Tauri & React. #BuildInPublic`,
-      hashtags: ["#BuildInPublic", "#Tech", "#AI"],
-      media_cue: "Demo screenshot / screen recording",
+      content: `Generating ${platform} post about: ${topic}…`,
+      hashtags: [],
+      media_cue: "",
       status: "pending",
       created_at: new Date().toISOString(),
     };
+    set((state) => ({ socialPosts: [stub, ...state.socialPosts] }));
+
+    // Try Ollama for real content
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const content = await invoke<string>(
+          "generate_social_content_command",
+          {
+            platform,
+            topic,
+            tone: platform === "linkedin" ? "leadership" : "punchy",
+          },
+        );
+        set((state) => ({
+          socialPosts: state.socialPosts.map((p) =>
+            p.id === stub.id ? { ...p, content } : p,
+          ),
+        }));
+        get().sendDesktopNotification(
+          `✍️ New ${platform.toUpperCase()} Brief Generated`,
+          `Created social post brief for "${topic}"`,
+        );
+        return;
+      } catch {
+        // Fall through to template
+      }
+    }
+
+    // Template fallback
+    const fallback =
+      platform === "linkedin"
+        ? `Excited to share thoughts on: ${topic}. Building in public and pushing what's possible with local-first AI. #BuildInPublic #AI`
+        : `1/ Quick breakdown on ${topic} 🧵\n\nBuilding local-first apps. #BuildInPublic`;
 
     set((state) => ({
-      socialPosts: [newPost, ...state.socialPosts],
+      socialPosts: state.socialPosts.map((p) =>
+        p.id === stub.id ? { ...p, content: fallback } : p,
+      ),
     }));
-
     get().sendDesktopNotification(
       `✍️ New ${platform.toUpperCase()} Brief Generated`,
       `Created social post brief for "${topic}"`,
     );
   },
 
-  generateCadenceLinkedInPost: () => {
+  generateCadenceLinkedInPost: async () => {
     const topics = [
       "Local-First Executive Chief-of-Staff Software Architecture",
       "AI Multilingual Triage & High-Signal Inbox Management",
@@ -950,24 +1050,54 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     ];
     const chosenTopic = topics[Math.floor(Math.random() * topics.length)];
 
-    const newPost: SocialPost = {
+    const stub: SocialPost = {
       id: `soc-cadence-${Date.now()}`,
       platform: "linkedin",
       topic: chosenTopic,
-      content: `💡 Scheduled Personal Brief: ${chosenTopic}\n\nHere is a quick breakdown of what we're building:\n\n- Zero cloud dependencies for user privacy\n- Instant local AI response generation\n- Seamless OAuth multi-channel sync\n\nHow are you optimizing your executive workflow this week? #BuildInPublic #AI #Leadership`,
+      content: `Generating post about: ${chosenTopic}…`,
       hashtags: ["#BuildInPublic", "#AI", "#Tech", "#Leadership"],
       media_cue: "System architecture diagram or clean workflow GIF",
       status: "pending",
       created_at: new Date().toISOString(),
     };
+    set((state) => ({ socialPosts: [stub, ...state.socialPosts] }));
 
+    // Try Ollama
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const content = await invoke<string>(
+          "generate_social_content_command",
+          {
+            platform: "linkedin",
+            topic: chosenTopic,
+            tone: "leadership",
+          },
+        );
+        set((state) => ({
+          socialPosts: state.socialPosts.map((p) =>
+            p.id === stub.id ? { ...p, content } : p,
+          ),
+        }));
+        get().sendDesktopNotification(
+          "🗓️ Cadence Post Draft Ready",
+          `Auto-generated LinkedIn post for: "${chosenTopic}"`,
+        );
+        return;
+      } catch {
+        // Fallback below
+      }
+    }
+
+    const fallback = `💡 ${chosenTopic}\n\nHere is a quick breakdown of what we're building:\n\n- Zero cloud dependencies for user privacy\n- Instant local AI response generation\n- Seamless OAuth multi-channel sync\n\nHow are you optimizing your workflow this week? #BuildInPublic #AI #Leadership`;
     set((state) => ({
-      socialPosts: [newPost, ...state.socialPosts],
+      socialPosts: state.socialPosts.map((p) =>
+        p.id === stub.id ? { ...p, content: fallback } : p,
+      ),
     }));
-
     get().sendDesktopNotification(
       "🗓️ Cadence Post Draft Ready",
-      `Auto-generated personal LinkedIn post brief for: "${chosenTopic}"`,
+      `Auto-generated LinkedIn post for: "${chosenTopic}"`,
     );
   },
 
@@ -1039,16 +1169,22 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           const label =
             list.length === 1 ? list[0] : `${list.length} Connected Accounts`;
           set((state) => ({
-            channels: state.channels.map((c) =>
-              c.id === "gmail"
-                ? { ...c, status: "connected", accountLabel: label }
-                : c,
-            ),
+            channels: state.channels.map((c) => {
+              if (c.id === "gmail")
+                return { ...c, status: "connected", accountLabel: label };
+              if (c.id === "calendar")
+                return {
+                  ...c,
+                  status: "connected",
+                  accountLabel: "Via Gmail OAuth",
+                };
+              return c;
+            }),
           }));
         } else {
           set((state) => ({
             channels: state.channels.map((c) =>
-              c.id === "gmail"
+              c.id === "gmail" || c.id === "calendar"
                 ? { ...c, status: "disconnected", accountLabel: undefined }
                 : c,
             ),
@@ -1211,12 +1347,23 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           e.id.startsWith("custom_"),
         );
         set({ calendarEvents: [...customEvents, ...events] });
-      } catch (err) {
-        console.error("Calendar sync error:", err);
-        get().showStatusMessage(
-          "error",
-          "Calendar sync failed. Custom events were preserved.",
-        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Calendar sync error:", msg);
+        // Surface scope/auth errors directly so the user knows what to do
+        if (
+          msg.includes("403") ||
+          msg.includes("scope") ||
+          msg.includes("401") ||
+          msg.includes("expired")
+        ) {
+          get().showStatusMessage("error", msg);
+        } else {
+          get().showStatusMessage(
+            "error",
+            "Calendar sync failed. Custom events were preserved.",
+          );
+        }
       }
     }
   },
@@ -1317,6 +1464,22 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
+  updateDecisionOutcome: async (id: string, outcome: string) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("update_decision_outcome_command", { id, outcome });
+        set((state) => ({
+          decisions: state.decisions.map((d) =>
+            d.id === id ? { ...d, outcome } : d,
+          ),
+        }));
+      } catch (err) {
+        console.error("Update decision outcome error:", err);
+      }
+    }
+  },
+
   fetchWeeklyReview: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
@@ -1367,27 +1530,37 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   speakText: async (text: string) => {
-    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      try {
-        set({ isPlayingAudio: true });
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("speak_text_command", { text });
-      } catch (err) {
-        console.error("Speech synthesis error:", err);
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+      return;
+    set({ isPlayingAudio: true });
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("speak_text_command", { text });
+      // Backend emits "speech-ended" when the macOS `say` process finishes naturally.
+      // Listen once and auto-reset isPlayingAudio.
+      const { listen } = await import("@tauri-apps/api/event");
+      const unlisten = await listen("speech-ended", () => {
         set({ isPlayingAudio: false });
-      }
+        unlisten();
+      });
+    } catch (err) {
+      console.error("Speech synthesis error:", err);
+      // Reset immediately on error — audio never started
+      set({ isPlayingAudio: false });
     }
   },
 
   stopSpeech: async () => {
-    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      try {
-        set({ isPlayingAudio: false });
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("stop_speech_command");
-      } catch (err) {
-        console.error("Stop speech error:", err);
-      }
+    // Always reset state first — optimistic, so UI responds instantly
+    set({ isPlayingAudio: false });
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+      return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("stop_speech_command");
+    } catch (err) {
+      console.error("Stop speech error:", err);
+      // State already reset above — nothing else to do
     }
   },
 
@@ -1845,10 +2018,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           const data = event.payload;
           if (data && data.model) {
             // Move from pending to active progress tracking
-            const pending = new Set(get().pendingDownloads);
-            pending.delete(data.model);
+            const { [data.model]: _removed, ...remainingPending } =
+              get().pendingDownloads;
             set((state) => ({
-              pendingDownloads: pending,
+              pendingDownloads: remainingPending,
               pullProgress: {
                 ...state.pullProgress,
                 [data.model]: {
@@ -1904,21 +2077,20 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         await get().initOllamaProgressListener();
 
         // 2. Immediately mark as pending so UI shows downloading state
-        const pending = new Set(get().pendingDownloads);
-        pending.add(modelName);
-        set({ pendingDownloads: pending });
+        set((state) => ({
+          pendingDownloads: { ...state.pendingDownloads, [modelName]: true },
+        }));
 
         // 3. Safety net: if no progress event arrives within 30 s, auto-clear pending
         //    and show an error. This catches cases where Rust emits no event at all.
         const timeoutId = setTimeout(() => {
           const state = get();
           if (
-            state.pendingDownloads.has(modelName) &&
+            modelName in state.pendingDownloads &&
             !state.pullProgress[modelName]
           ) {
-            const pending2 = new Set(get().pendingDownloads);
-            pending2.delete(modelName);
-            set({ pendingDownloads: pending2 });
+            const { [modelName]: _removed, ...rest } = get().pendingDownloads;
+            set({ pendingDownloads: rest });
             get().showStatusMessage(
               "error",
               `Download of ${modelName} timed out — Ollama may not be running. Start Ollama and try again.`,
@@ -1934,9 +2106,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         clearTimeout(timeoutId);
       } catch (err: any) {
         // invoke() threw — remove from pending immediately
-        const pending = new Set(get().pendingDownloads);
-        pending.delete(modelName);
-        set({ pendingDownloads: pending });
+        const { [modelName]: _removed, ...rest } = get().pendingDownloads;
+        set({ pendingDownloads: rest });
         get().showStatusMessage(
           "error",
           `Failed to start model download: ${err?.message || err}`,
@@ -1953,9 +2124,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         set((state) => {
           const updated = { ...state.pullProgress };
           delete updated[modelName];
-          const pending = new Set(state.pendingDownloads);
-          pending.delete(modelName);
-          return { pullProgress: updated, pendingDownloads: pending };
+          const { [modelName]: _removed, ...remainingPending } =
+            state.pendingDownloads;
+          return { pullProgress: updated, pendingDownloads: remainingPending };
         });
       } catch (err: any) {
         get().showStatusMessage(

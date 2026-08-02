@@ -191,11 +191,13 @@ export const SettingsTab: React.FC = () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
+        // Pass the trimmed value directly — empty string signals "delete this credential",
+        // null would mean "leave unchanged" which is not what a Save button should do.
         await invoke("save_oauth_credentials_command", {
-          googleClientId: googleClientId.trim() || null,
-          googleClientSecret: googleClientSecret.trim() || null,
-          linkedinClientId: linkedinClientId.trim() || null,
-          linkedinClientSecret: linkedinClientSecret.trim() || null,
+          googleClientId: googleClientId.trim(),
+          googleClientSecret: googleClientSecret.trim(),
+          linkedinClientId: linkedinClientId.trim(),
+          linkedinClientSecret: linkedinClientSecret.trim(),
         });
         setOauthSaved(true);
         setTimeout(() => setOauthSaved(false), 2500);
@@ -498,7 +500,7 @@ export const SettingsTab: React.FC = () => {
             const isErrored = Boolean(progress?.done && progress?.error);
             const isDownloading =
               !isErrored &&
-              (pendingDownloads.has(model.id) ||
+              (model.id in pendingDownloads ||
                 Boolean(progress && !progress.done));
             const isDeleting = uninstallingModelId === model.id;
             const isPowerTier = model.tier === "power";

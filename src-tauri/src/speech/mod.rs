@@ -1,9 +1,11 @@
 use std::process::{Command, Child};
-use std::sync::Mutex;
+use std::sync::{Mutex, atomic::{AtomicBool, Ordering}};
 use lazy_static::lazy_static;
 
 lazy_static! {
     static ref AUDIO_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
+    // True while the watcher thread is alive — prevents spawning duplicates
+    static ref WATCHER_RUNNING: AtomicBool = AtomicBool::new(false);
 }
 
 pub fn speak_text(text: &str) -> Result<(), String> {
@@ -31,7 +33,12 @@ pub fn speak_text(text: &str) -> Result<(), String> {
 
 /// Starts a background watcher thread that waits for the speech process to finish
 /// and emits a `speech-ended` Tauri event so the frontend can reset `isPlayingAudio`.
+/// Only one watcher runs at a time — duplicate spawns are suppressed.
 pub fn watch_speech_completion(app: tauri::AppHandle) {
+    // Swap false→true; if it was already true, a watcher is running — skip
+    if WATCHER_RUNNING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return;
+    }
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(500));
@@ -39,25 +46,19 @@ pub fn watch_speech_completion(app: tauri::AppHandle) {
                 match guard.as_mut() {
                     Some(child) => {
                         match child.try_wait() {
-                            Ok(Some(_)) => {
-                                // Process exited — clear the handle
-                                *guard = None;
-                                true
-                            }
-                            Ok(None) => false, // still running
-                            Err(_) => {
-                                *guard = None;
-                                true
-                            }
+                            Ok(Some(_)) => { *guard = None; true }
+                            Ok(None)    => false,
+                            Err(_)      => { *guard = None; true }
                         }
                     }
-                    None => return, // no process — exit watcher thread
+                    None => true, // process was stopped manually
                 }
             } else {
-                return;
+                true // lock poisoned — exit watcher
             };
 
             if finished {
+                WATCHER_RUNNING.store(false, Ordering::SeqCst);
                 use tauri::Emitter;
                 let _ = app.emit("speech-ended", ());
                 return;
@@ -72,6 +73,8 @@ pub fn stop_speech() {
             let _ = child.kill();
         }
     }
+    // Allow a new watcher to be spawned for the next speak call
+    WATCHER_RUNNING.store(false, Ordering::SeqCst);
 }
 
 fn clean_text_for_speech(input: &str) -> String {

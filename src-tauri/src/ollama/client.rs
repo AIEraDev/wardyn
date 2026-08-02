@@ -454,7 +454,21 @@ pub async fn delete_ollama_model(model_name: String) -> Result<String, String> {
     }
 }
 
-fn fallback_rule_based_classify(item: &QueueItem) -> ClassificationResult {
+/// Fast synchronous rule-based classification — used during bulk Gmail sync
+/// so emails appear in the UI immediately without waiting for Ollama.
+/// AI classification upgrades these results in parallel afterwards.
+pub fn rule_based_classify_only(sender: &str, preview: &str) -> ClassificationResult {
+    let temp = crate::models::QueueItem {
+        id: String::new(), source: String::new(), kind: String::new(),
+        sender: sender.to_string(), preview: preview.to_string(),
+        draft_text: None, status: String::new(), flagged: false,
+        confidence: 0.0, created_at: String::new(), updated_at: String::new(),
+        thread_id: None, message_id: None, urgency: None,
+    };
+    fallback_rule_based_classify(&temp)
+}
+
+fn fallback_rule_based_classify(item: &crate::models::QueueItem) -> ClassificationResult {
     let lower_sender = item.sender.to_lowercase();
     let lower_preview = item.preview.to_lowercase();
 
@@ -465,25 +479,25 @@ fn fallback_rule_based_classify(item: &QueueItem) -> ClassificationResult {
         || lower_preview.contains("global talent")
         || lower_preview.contains("deadline");
 
-    let is_uncertain = lower_preview.contains("sync regarding") 
+    let is_uncertain = lower_preview.contains("sync regarding")
         || lower_preview.contains("investor")
         || lower_preview.contains("confidential")
         || lower_preview.contains("proposal");
 
-    let confidence = if is_uncertain {
-        0.45
-    } else if is_flagged {
-        0.95
-    } else {
-        0.88
-    };
+    let confidence = if is_uncertain { 0.45 } else if is_flagged { 0.95 } else { 0.88 };
 
     let draft_text = if confidence < 0.6 {
         None
     } else if is_flagged {
-        Some(format!("Thanks for reaching out regarding {}. I have reviewed the details and will attach all required documentation by Friday.", extract_topic(&item.preview)))
+        Some(format!(
+            "Thanks for reaching out regarding {}. I have reviewed the details and will attach all required documentation by Friday.",
+            extract_topic(&item.preview)
+        ))
     } else {
-        Some(format!("Received, thanks for sending over details on {}. I will follow up with an update shortly.", extract_topic(&item.preview)))
+        Some(format!(
+            "Received, thanks for sending over details on {}. I will follow up with an update shortly.",
+            extract_topic(&item.preview)
+        ))
     };
 
     let is_low_urgency = lower_preview.contains("newsletter")
@@ -492,11 +506,9 @@ fn fallback_rule_based_classify(item: &QueueItem) -> ClassificationResult {
         || lower_preview.contains("weekly update")
         || lower_preview.contains("promotion");
 
-    let urgency = if is_low_urgency { "low".to_string() } else { "high".to_string() };
-
     ClassificationResult {
         flagged: is_flagged,
-        urgency: Some(urgency),
+        urgency: Some(if is_low_urgency { "low".to_string() } else { "high".to_string() }),
         draft_text,
         confidence,
     }

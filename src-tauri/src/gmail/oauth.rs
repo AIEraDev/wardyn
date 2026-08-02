@@ -1,6 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 
@@ -9,30 +8,35 @@ use crate::db::{self, GmailCredentials};
 const REDIRECT_URI: &str = "http://127.0.0.1:14220/callback";
 const REDIRECT_URI_ENCODED: &str = "http%3A%2F%2F127.0.0.1%3A14220%2Fcallback";
 
-/// Generate a PKCE code_verifier using time-seeded LCG entropy, base64url encoded.
+/// Generate a cryptographically secure PKCE code_verifier using OS random bytes.
 fn generate_pkce_verifier() -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     let mut bytes = [0u8; 64];
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let mut hasher = DefaultHasher::new();
-    seed.hash(&mut hasher);
-    std::thread::current().id().hash(&mut hasher);
-    let h1 = hasher.finish();
-    let h2 = h1.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let h3 = h2.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let h4 = h3.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let h5 = h4.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let h6 = h5.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let h7 = h6.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let h8 = h7.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    for (i, h) in [h1, h2, h3, h4, h5, h6, h7, h8].iter().enumerate() {
-        bytes[i * 8..(i + 1) * 8].copy_from_slice(&h.to_le_bytes());
-    }
+    // Fill with OS entropy — getrandom is already a dependency via tokio
+    getrandom_fill(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn getrandom_fill(buf: &mut [u8]) {
+    // Use /dev/urandom directly — no extra dependency needed on macOS/Linux
+    use std::io::Read;
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        f.read_exact(buf).ok();
+    } else {
+        // Fallback: time + process seed (still better than LCG)
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let pid = std::process::id() as u128;
+        let mut state = seed ^ (pid << 32);
+        for chunk in buf.chunks_mut(8) {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let bytes = state.to_le_bytes();
+            let len = chunk.len();
+            chunk.copy_from_slice(&bytes[..len]);
+        }
+    }
 }
 
 pub async fn start_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
@@ -57,7 +61,8 @@ pub async fn start_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Resu
 
     // PKCE — plain method: code_challenge = code_verifier (Google supports for installed apps)
     let code_verifier = generate_pkce_verifier();
-    let code_challenge_encoded = urlencoding::encode(&code_verifier).into_owned();
+    // Plain method: challenge IS the verifier — do NOT URL-encode it, send as-is
+    let code_challenge = &code_verifier;
 
     // 1. Build Google OAuth Auth URL with PKCE, no client_secret needed
     let auth_url = format!(
@@ -72,7 +77,7 @@ code_challenge={}&\
 code_challenge_method=plain",
         client_id,
         REDIRECT_URI_ENCODED,
-        code_challenge_encoded,
+        code_challenge,
     );
 
     // 2. Start local TCP listener

@@ -76,14 +76,28 @@ pub async fn sync_calendar_deadlines(conn_mutex: &std::sync::Mutex<Connection>) 
 
             let summary = format!("Deadline: {}", item.preview.chars().take(40).collect::<String>());
             let base = crate::db::now_iso();
+            // Use UTC+1 (WAT) for deadline time; store in RFC3339 with offset
             let start_time = format!("{}T17:00:00+01:00", &base[..10]);
             let end_time   = format!("{}T18:00:00+01:00", &base[..10]);
+            // Detect user timezone from system if possible, fall back to WAT
+            let tz = std::process::Command::new("date").arg("+%z")
+                .output().ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| s.len() >= 5)
+                .unwrap_or_else(|| "+01:00".to_string());
+            // Format as ±HH:MM
+            let tz_formatted = if tz.len() == 5 {
+                format!("{}:{}", &tz[..3], &tz[3..])
+            } else {
+                tz
+            };
 
             let payload = serde_json::json!({
                 "summary": summary,
                 "description": format!("Auto-created by Wardyn from sender: {}\nPreview: {}", item.sender, item.preview),
-                "start": { "dateTime": start_time, "timeZone": "Africa/Lagos" },
-                "end":   { "dateTime": end_time,   "timeZone": "Africa/Lagos" }
+                "start": { "dateTime": start_time, "timeZone": tz_formatted },
+                "end":   { "dateTime": end_time,   "timeZone": tz_formatted }
             });
 
             let res = client.post("https://www.googleapis.com/calendar/v3/calendars/primary/events")

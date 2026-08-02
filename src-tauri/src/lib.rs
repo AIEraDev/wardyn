@@ -1069,33 +1069,35 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir).ok();
             let db_path = app_dir.join("wardyn.db");
 
+            // Open main connection for DbState (owned directly, no Arc wrapping)
             let conn = Connection::open(&db_path).expect("failed to open sqlite db");
             db::init_db(&conn).expect("failed to initialize db schema");
-
-            let conn_arc = Arc::new(Mutex::new(conn));
+            // Enable WAL mode so background threads can read without blocking writes
+            conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;").ok();
 
             // ── Background: engagement monitor (every 30s) ───────────────────
-            active_life::engagement_monitor::start_engagement_monitor(Arc::clone(&conn_arc));
+            // Opens its own dedicated connection — no sharing with DbState
+            {
+                let bg_path = db_path.clone();
+                if let Ok(bg_conn) = Connection::open(&bg_path) {
+                    bg_conn.execute_batch("PRAGMA journal_mode=WAL;").ok();
+                    let bg_arc = Arc::new(Mutex::new(bg_conn));
+                    active_life::engagement_monitor::start_engagement_monitor(Arc::clone(&bg_arc));
+                }
+            }
 
             // ── Background: habit reminder loop (every 60s) ──────────────────
             {
-                let reminder_conn = Arc::clone(&conn_arc);
+                let bg_path = db_path.clone();
                 let app_handle = app.handle().clone();
                 std::thread::spawn(move || {
+                    let Ok(reminder_conn) = Connection::open(&bg_path) else { return; };
+                    reminder_conn.execute_batch("PRAGMA journal_mode=WAL;").ok();
                     loop {
                         std::thread::sleep(std::time::Duration::from_secs(60));
-
-                        // Get current HH:MM in local time
                         let now = chrono_hhmm();
-
-                        let due = if let Ok(conn) = reminder_conn.lock() {
-                            active_life::reminders::get_due_reminders(&conn, &now)
-                        } else {
-                            vec![]
-                        };
-
+                        let due = active_life::reminders::get_due_reminders(&reminder_conn, &now);
                         for reminder in due {
-                            // Fire a native notification for each due, not-yet-done habit
                             let title = format!("{} Time for your habit", reminder.habit_icon);
                             let body = format!("{} — tap to open Wardyn", reminder.habit_name);
                             fire_notification(&app_handle, &title, &body);
@@ -1104,15 +1106,8 @@ pub fn run() {
                 });
             }
 
-            // ── Extract inner connection for managed state ───────────────────
-            let inner_conn = Arc::try_unwrap(conn_arc)
-                .unwrap_or_else(|arc| Mutex::new({
-                    let _c = arc.lock().unwrap();
-                    let path = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("wardyn.db");
-                    Connection::open(&path).expect("failed to re-open db")
-                }));
-
-            app.manage(DbState(inner_conn));
+            // Manage DbState directly — no Arc, no try_unwrap race
+            app.manage(DbState(Mutex::new(conn)));
             app.manage(CancelRegistry(Mutex::new(std::collections::HashMap::new())));
 
             // ── Setup tray icon ──────────────────────────────────────────────

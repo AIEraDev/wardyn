@@ -230,12 +230,11 @@ pub fn get_current_week_key() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let days_since_epoch = secs / 86400;
-    // ISO week: Thursday-based. Days since epoch (1970-01-01 was a Thursday).
-    // Week number = (days_since_epoch + 3) / 7
+    // ISO week number (Thursday-based; 1970-01-01 was a Thursday = day 4)
     let iso_week = (days_since_epoch + 3) / 7;
-    // Year approximation: sufficient for cache key purposes
-    let year = 1970 + (days_since_epoch / 365);
-    let week_of_year = iso_week % 52 + 1;
+    // Correct year using days_to_ymd (O(1) Gregorian, avoids 365-day drift)
+    let (year, _, _) = crate::db::days_to_ymd(days_since_epoch);
+    let week_of_year = (iso_week % 52) + 1;
     format!("{}-W{:02}", year, week_of_year)
 }
 

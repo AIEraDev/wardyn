@@ -415,6 +415,21 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         );"
     )?;
 
+    // ─── Social Posts (persisted across sessions) ─────────────────────────────
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS social_posts (
+            id          TEXT PRIMARY KEY,
+            platform    TEXT NOT NULL,
+            topic       TEXT NOT NULL,
+            content     TEXT NOT NULL,
+            hashtags    TEXT NOT NULL DEFAULT '[]',
+            media_cue   TEXT,
+            status      TEXT NOT NULL DEFAULT 'pending',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );"
+    )?;
+
     Ok(())
 }
 
@@ -1709,4 +1724,82 @@ pub fn build_user_context(conn: &Connection) -> String {
 
     ctx.push_str("═══════════════════\n");
     ctx
+}
+
+// ─── Social Posts ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct SocialPostRecord {
+    pub id: String,
+    pub platform: String,
+    pub topic: String,
+    pub content: String,
+    pub hashtags: String, // JSON array string
+    pub media_cue: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub fn upsert_social_post(conn: &Connection, post: &SocialPostRecord) -> Result<()> {
+    conn.execute(
+        "INSERT INTO social_posts (id, platform, topic, content, hashtags, media_cue, status, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(id) DO UPDATE SET
+            content=excluded.content,
+            hashtags=excluded.hashtags,
+            media_cue=excluded.media_cue,
+            status=excluded.status,
+            updated_at=excluded.updated_at",
+        params![
+            post.id, post.platform, post.topic, post.content,
+            post.hashtags, post.media_cue, post.status,
+            post.created_at, post.updated_at
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn get_social_posts(conn: &Connection) -> Result<Vec<SocialPostRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, platform, topic, content, hashtags, media_cue, status, created_at, updated_at
+         FROM social_posts
+         WHERE status != 'skipped'
+         ORDER BY created_at DESC LIMIT 50"
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(SocialPostRecord {
+            id: row.get(0)?,
+            platform: row.get(1)?,
+            topic: row.get(2)?,
+            content: row.get(3)?,
+            hashtags: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "[]".into()),
+            media_cue: row.get(5)?,
+            status: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "pending".into()),
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+        })
+    })?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+pub fn update_social_post_status(conn: &Connection, id: &str, status: &str, content: Option<&str>) -> Result<()> {
+    let now = now_iso();
+    if let Some(c) = content {
+        conn.execute(
+            "UPDATE social_posts SET status=?1, content=?2, updated_at=?3 WHERE id=?4",
+            params![status, c, now, id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE social_posts SET status=?1, updated_at=?2 WHERE id=?3",
+            params![status, now, id],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn delete_social_post(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM social_posts WHERE id=?1", params![id])?;
+    Ok(())
 }

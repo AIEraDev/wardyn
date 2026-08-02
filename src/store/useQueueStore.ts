@@ -176,6 +176,7 @@ interface QueueStore {
   generateCadenceLinkedInPost: () => Promise<void>;
   remixInsightToPersonalPost: (insight: FeedInsight) => void;
   syncLinkedInTimeline: () => Promise<void>;
+  fetchSocialPosts: () => Promise<void>;
 
   // Gmail OAuth & Send Actions
   checkGmailStatus: () => Promise<void>;
@@ -369,6 +370,11 @@ interface QueueStore {
   addHabitReminder: (habitId: string, remindTime: string) => Promise<void>;
   deleteHabitReminder: (id: string) => Promise<void>;
   toggleHabitReminder: (id: string, enabled: boolean) => Promise<void>;
+
+  // Research search history (persists across tab switches)
+  searchHistory: string[];
+  addSearchHistory: (query: string) => void;
+  clearSearchHistory: () => void;
 }
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
@@ -834,6 +840,17 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       ),
     }));
 
+    // Persist status change to SQLite
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      import("@tauri-apps/api/core").then(({ invoke }) =>
+        invoke("update_social_post_status_command", {
+          id,
+          status: "posted",
+          content: finalContent,
+        }).catch(console.error),
+      );
+    }
+
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard) {
         await navigator.clipboard.writeText(finalContent);
@@ -874,12 +891,64 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         post.id === id ? { ...post, status: "skipped" } : post,
       ),
     }));
-
     if (target) {
       get().sendDesktopNotification(
         "⏭️ Social Brief Skipped",
         `Skipped ${target.platform.toUpperCase()} post brief for ${target.topic}`,
       );
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        import("@tauri-apps/api/core").then(({ invoke }) =>
+          invoke("update_social_post_status_command", {
+            id,
+            status: "skipped",
+            content: null,
+          }).catch(console.error),
+        );
+      }
+    }
+  },
+
+  fetchSocialPosts: async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const records = await invoke<
+          Array<{
+            id: string;
+            platform: string;
+            topic: string;
+            content: string;
+            hashtags: string;
+            media_cue: string | null;
+            status: string;
+            created_at: string;
+          }>
+        >("get_social_posts_command");
+        const posts = records.map((r) => ({
+          id: r.id,
+          platform: r.platform as "linkedin" | "twitter",
+          topic: r.topic,
+          content: r.content,
+          hashtags: (() => {
+            try {
+              return JSON.parse(r.hashtags);
+            } catch {
+              return [];
+            }
+          })(),
+          media_cue: r.media_cue ?? null,
+          status: r.status as "pending" | "posted" | "skipped",
+          created_at: r.created_at,
+        }));
+        // Merge: keep any in-memory posts not yet persisted, deduplicated by id
+        const existingIds = new Set(posts.map((p) => p.id));
+        const memOnlyPosts = get().socialPosts.filter(
+          (p) => !existingIds.has(p.id) && p.status !== "skipped",
+        );
+        set({ socialPosts: [...posts, ...memOnlyPosts] });
+      } catch (err) {
+        console.error("fetchSocialPosts error:", err);
+      }
     }
   },
 
@@ -984,7 +1053,6 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   createSocialPost: async (platform: SocialPlatform, topic: string) => {
-    // Generate a stub immediately so the UI shows something
     const stub: SocialPost = {
       id: `soc-${Date.now()}`,
       platform,
@@ -997,7 +1065,24 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     };
     set((state) => ({ socialPosts: [stub, ...state.socialPosts] }));
 
-    // Try Ollama for real content
+    // Persist stub immediately
+    const persistPost = async (post: SocialPost) => {
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("upsert_social_post_command", {
+          id: post.id,
+          platform: post.platform,
+          topic: post.topic,
+          content: post.content,
+          hashtags: JSON.stringify(post.hashtags),
+          mediaCue: post.media_cue ?? null,
+          status: post.status,
+          createdAt: post.created_at,
+        }).catch(console.error);
+      }
+    };
+    persistPost(stub);
+
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -1014,6 +1099,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             p.id === stub.id ? { ...p, content } : p,
           ),
         }));
+        persistPost({ ...stub, content });
         get().sendDesktopNotification(
           `✍️ New ${platform.toUpperCase()} Brief Generated`,
           `Created social post brief for "${topic}"`,
@@ -1024,7 +1110,6 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
     }
 
-    // Template fallback
     const fallback =
       platform === "linkedin"
         ? `Excited to share thoughts on: ${topic}. Building in public and pushing what's possible with local-first AI. #BuildInPublic #AI`
@@ -1035,6 +1120,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         p.id === stub.id ? { ...p, content: fallback } : p,
       ),
     }));
+    persistPost({ ...stub, content: fallback });
     get().sendDesktopNotification(
       `✍️ New ${platform.toUpperCase()} Brief Generated`,
       `Created social post brief for "${topic}"`,
@@ -2402,6 +2488,22 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   // ─── Habit Reminders ───────────────────────────────────────────────────────
 
   habitReminders: [],
+
+  // ─── Research History ──────────────────────────────────────────────────────
+
+  searchHistory: [],
+
+  addSearchHistory: (query: string) => {
+    if (!query.trim()) return;
+    set((state) => ({
+      searchHistory: [
+        query,
+        ...state.searchHistory.filter((q) => q !== query),
+      ].slice(0, 20), // keep last 20 unique queries
+    }));
+  },
+
+  clearSearchHistory: () => set({ searchHistory: [] }),
 
   fetchHabitReminders: async () => {
     try {

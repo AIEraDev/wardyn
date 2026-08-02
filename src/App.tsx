@@ -125,6 +125,7 @@ export default function App() {
   const fetchPomodoroSessions = useQueueStore(
     (state) => state.fetchPomodoroSessions,
   );
+  const fetchSocialPosts = useQueueStore((state) => state.fetchSocialPosts);
 
   const [modelAlertDismissed, setModelAlertDismissed] = useState(false);
 
@@ -180,6 +181,7 @@ export default function App() {
       // Load productivity features
       fetchTasks();
       fetchPomodoroSessions(1); // restores any active session from DB
+      fetchSocialPosts(); // restores persisted social posts across restarts
       checkPendingReminders();
       fetchLifeEvents();
       // Load Active Life features

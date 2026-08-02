@@ -1047,6 +1047,51 @@ async fn generate_social_content_command(
     Err("Ollama unavailable for social content generation".into())
 }
 
+// ─── Social Posts Persistence ─────────────────────────────────────────────────
+
+#[tauri::command]
+fn upsert_social_post_command(
+    id: String,
+    platform: String,
+    topic: String,
+    content: String,
+    hashtags: String,
+    media_cue: Option<String>,
+    status: String,
+    created_at: String,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let post = db::SocialPostRecord {
+        id, platform, topic, content, hashtags, media_cue, status,
+        created_at, updated_at: db::now_iso(),
+    };
+    db::upsert_social_post(&conn, &post).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_social_posts_command(state: State<'_, DbState>) -> Result<Vec<db::SocialPostRecord>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::get_social_posts(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_social_post_status_command(
+    id: String,
+    status: String,
+    content: Option<String>,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::update_social_post_status(&conn, &id, &status, content.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_social_post_command(id: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::delete_social_post(&conn, &id).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok(); // Automatically load .env file
@@ -1261,7 +1306,11 @@ pub fn run() {
             summarize_search_command,
             regenerate_draft_command,
             generate_social_content_command,
-            update_decision_outcome_command
+            update_decision_outcome_command,
+            upsert_social_post_command,
+            get_social_posts_command,
+            update_social_post_status_command,
+            delete_social_post_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

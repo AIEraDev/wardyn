@@ -7,9 +7,7 @@ fn main() {
     // In dev: sourced from the shell environment (run: source .env && cargo build, or use direnv).
     let vars = [
         "GOOGLE_CLIENT_ID",
-        "GOOGLE_CLIENT_SECRET",
         "LINKEDIN_CLIENT_ID",
-        "LINKEDIN_CLIENT_SECRET",
     ];
     for var in vars {
         let val = std::env::var(var).unwrap_or_default();

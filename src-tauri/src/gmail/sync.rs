@@ -6,7 +6,6 @@ use crate::productivity;
 
 // Baked in at compile time — see build.rs
 const COMPILED_GOOGLE_CLIENT_ID: &str = env!("GOOGLE_CLIENT_ID");
-const COMPILED_GOOGLE_CLIENT_SECRET: &str = env!("GOOGLE_CLIENT_SECRET");
 
 pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> Result<usize, String> {
     let all_creds = {
@@ -225,17 +224,13 @@ async fn get_valid_access_token(
 
     let client_id = std::env::var("GOOGLE_CLIENT_ID")
         .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string());
-    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET")
-        .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_SECRET.to_string());
 
-    let mut params = vec![
-        ("client_id", client_id.as_str()),
+    // PKCE flow — no client_secret needed for token refresh on installed apps
+    let params = vec![
+        ("client_id",     client_id.as_str()),
         ("refresh_token", creds.refresh_token.as_str()),
-        ("grant_type", "refresh_token"),
+        ("grant_type",    "refresh_token"),
     ];
-    if !client_secret.is_empty() {
-        params.push(("client_secret", client_secret.as_str()));
-    }
 
     let res = client.post("https://oauth2.googleapis.com/token")
         .form(&params)

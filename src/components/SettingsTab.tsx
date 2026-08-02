@@ -245,13 +245,24 @@ export const SettingsTab: React.FC = () => {
     } catch (err: any) {
       console.warn("Update check error:", err);
       const msg = err?.message || String(err);
-      if (msg.includes("404") || msg.includes("Not Found")) {
-        setUpdateStatus("No release found. Check back after the next build.");
+      if (
+        msg.includes("release JSON") ||
+        msg.includes("valid release") ||
+        msg.includes("404") ||
+        msg.includes("Not Found")
+      ) {
+        setUpdateStatus(
+          "No update manifest yet — the release may still be building. Try again in a few minutes.",
+        );
       } else if (msg.includes("signature") || msg.includes("verify")) {
         setUpdateStatus(
           "Update signature verification failed. Contact support.",
         );
-      } else if (msg.includes("network") || msg.includes("fetch")) {
+      } else if (
+        msg.includes("network") ||
+        msg.includes("fetch") ||
+        msg.includes("connect")
+      ) {
         setUpdateStatus("Network error — check your connection and try again.");
       } else {
         setUpdateStatus(`Update check failed: ${msg}`);

@@ -604,7 +604,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           `Authenticated profile for: ${profileName}`,
         );
       } catch (err: any) {
-        set({ error: err.toString() });
+        const msg = err?.toString() || "LinkedIn OAuth failed";
+        set({ error: msg });
+        await get().sendDesktopNotification("LinkedIn OAuth Error", msg);
       }
     }
   },

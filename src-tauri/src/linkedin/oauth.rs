@@ -3,27 +3,18 @@ use std::net::TcpListener;
 use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 
-// CLIENT_ID is a public identifier — safe to embed in the binary.
-// CLIENT_SECRET is intentionally NOT baked in at compile time.
-// LinkedIn's API requires a confidential client secret for token exchange.
-// In production this should be proxied server-side. In dev, set
-// LINKEDIN_CLIENT_SECRET in your .env file.
-const COMPILED_LINKEDIN_CLIENT_ID: &str = env!("LINKEDIN_CLIENT_ID");
+// No compile-time credentials — users supply their own via Settings → OAuth Credentials.
 
 // LinkedIn uses the same port as Gmail (14220) — they never run concurrently
 const REDIRECT_PORT: u16 = 14220;
 const REDIRECT_URI: &str = "http://localhost:14220/callback";
 
 pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
-    // Read user-supplied credentials from DB first
     let (client_id, client_secret) = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         let id = crate::db::get_app_setting(&conn, "oauth_linkedin_client_id")
             .ok().flatten().filter(|v| !v.is_empty())
-            .unwrap_or_else(|| {
-                std::env::var("LINKEDIN_CLIENT_ID")
-                    .unwrap_or_else(|_| COMPILED_LINKEDIN_CLIENT_ID.to_string())
-            });
+            .unwrap_or_else(|| std::env::var("LINKEDIN_CLIENT_ID").unwrap_or_default());
         let secret = crate::db::get_app_setting(&conn, "oauth_linkedin_client_secret")
             .ok().flatten().filter(|v| !v.is_empty())
             .unwrap_or_else(|| std::env::var("LINKEDIN_CLIENT_SECRET").unwrap_or_default());

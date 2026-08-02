@@ -4,10 +4,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rusqlite::Connection;
 use crate::db::{self, GmailCredentials};
 
-// CLIENT_ID is a public identifier — safe to embed in the binary.
-// CLIENT_SECRET is intentionally NOT used: we implement PKCE (RFC 7636)
-// so no secret is ever needed or stored in the distributed app.
-const COMPILED_GOOGLE_CLIENT_ID: &str = env!("GOOGLE_CLIENT_ID");
+// No compile-time credentials — users supply their own via Settings → OAuth Credentials.
 
 const REDIRECT_URI: &str = "http://127.0.0.1:14220/callback";
 const REDIRECT_URI_ENCODED: &str = "http%3A%2F%2F127.0.0.1%3A14220%2Fcallback";
@@ -44,11 +41,7 @@ pub async fn start_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Resu
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         let id = crate::db::get_app_setting(&conn, "oauth_google_client_id")
             .ok().flatten().filter(|v| !v.is_empty())
-            .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_ID")
-                .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string()));
-        // For Google Desktop apps the client_secret is required even with PKCE.
-        // It is NOT a true secret — Google's docs explicitly state desktop client
-        // secrets are not confidential and can be distributed in apps.
+            .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default());
         let secret = crate::db::get_app_setting(&conn, "oauth_google_client_secret")
             .ok().flatten().filter(|v| !v.is_empty())
             .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default());

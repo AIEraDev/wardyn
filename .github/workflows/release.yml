@@ -50,16 +50,15 @@ jobs:
         uses: tauri-apps/tauri-action@v0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing keys for the auto-updater — these are the only secrets needed.
+          # OAuth credentials are NOT baked into the binary. Users supply their own
+          # via Settings → OAuth Credentials (stored locally in SQLite).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
-          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
         with:
           tagName: v__VERSION__
           releaseName: "Wardyn v__VERSION__"
-          releaseBody: "Wardyn Desktop v__VERSION__"
+          releaseBody: "Wardyn Desktop v__VERSION__. Bring your own OAuth credentials via Settings → OAuth Credentials."
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true

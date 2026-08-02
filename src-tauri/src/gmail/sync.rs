@@ -4,8 +4,7 @@ use crate::models::QueueItem;
 use crate::ollama;
 use crate::productivity;
 
-// Baked in at compile time — see build.rs
-const COMPILED_GOOGLE_CLIENT_ID: &str = env!("GOOGLE_CLIENT_ID");
+// No compile-time credentials — users supply their own via Settings → OAuth Credentials.
 
 pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> Result<usize, String> {
     let all_creds = {
@@ -226,8 +225,7 @@ async fn get_valid_access_token(
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         let id = crate::db::get_app_setting(&conn, "oauth_google_client_id")
             .ok().flatten().filter(|v| !v.is_empty())
-            .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_ID")
-                .unwrap_or_else(|_| COMPILED_GOOGLE_CLIENT_ID.to_string()));
+            .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default());
         let secret = crate::db::get_app_setting(&conn, "oauth_google_client_secret")
             .ok().flatten().filter(|v| !v.is_empty())
             .unwrap_or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default());

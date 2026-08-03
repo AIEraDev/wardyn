@@ -93,6 +93,12 @@ export default function App() {
   const syncCalendarDeadlines = useQueueStore(
     (state) => state.syncCalendarDeadlines,
   );
+  const fetchCalendarEvents = useQueueStore(
+    (state) => state.fetchCalendarEvents,
+  );
+  const fetchCalendarIntelligence = useQueueStore(
+    (state) => state.fetchCalendarIntelligence,
+  );
   const syncLinkedInTimeline = useQueueStore(
     (state) => state.syncLinkedInTimeline,
   );
@@ -159,7 +165,10 @@ export default function App() {
     const initBootSentinel = async () => {
       await fetchItems();
       await checkGmailStatus();
-      await syncCalendarDeadlines();
+      // Load cached calendar events from DB instantly (no network needed)
+      await fetchCalendarEvents();
+      // Load smart intelligence decisions (fast, rule-based, no network)
+      fetchCalendarIntelligence().catch(console.error);
       await syncLinkedInTimeline();
 
       // AI model presence check & background download listener (must run early)
@@ -193,10 +202,12 @@ export default function App() {
       fetchDailyHabits();
       fetchDailyIntel();
 
-      // If Gmail is connected, run immediate boot inbox sync & triaging
+      // If Gmail is connected, run immediate boot inbox sync & triaging + calendar sync
       const currentAccounts = useQueueStore.getState().gmailAccounts;
       if (currentAccounts.length > 0) {
         await syncGmail();
+        // Calendar sync runs after Gmail so the fresh access token is ready
+        syncCalendarDeadlines().catch(console.error);
       }
     };
 
@@ -255,6 +266,7 @@ export default function App() {
   }, [
     fetchItems,
     checkGmailStatus,
+    fetchCalendarEvents,
     syncCalendarDeadlines,
     syncLinkedInTimeline,
     syncGmail,
@@ -272,6 +284,8 @@ export default function App() {
       const accounts = useQueueStore.getState().gmailAccounts;
       if (accounts.length > 0) {
         await syncGmail();
+        // Calendar sync piggybacks on the same interval — non-blocking
+        syncCalendarDeadlines().catch(console.error);
       }
       await syncLinkedInTimeline();
     }, intervalMs);
@@ -297,6 +311,7 @@ export default function App() {
     gmailAccounts,
     syncIntervalMinutes,
     syncGmail,
+    syncCalendarDeadlines,
     syncLinkedInTimeline,
     checkPendingReminders,
     checkOllamaModels,

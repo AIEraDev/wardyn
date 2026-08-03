@@ -6,6 +6,8 @@ import {
   SocialPost,
   SocialPlatform,
   ChannelConfig,
+  SyncedCalendarEvent,
+  CalendarIntent,
   LinkedInTimelineSummary,
   FeedInsight,
   KnowledgeItem,
@@ -32,15 +34,6 @@ import {
 } from "../i18n/translations";
 
 export type PostCadence = "daily" | "every_2_days" | "weekly" | "manual";
-
-export interface SyncedCalendarEvent {
-  id: string;
-  queue_item_id: string;
-  event_id: string;
-  summary: string;
-  event_date: string;
-  created_at: string;
-}
 
 const INITIAL_CHANNELS: ChannelConfig[] = [
   {
@@ -116,6 +109,7 @@ interface QueueStore {
   socialPosts: SocialPost[];
   channels: ChannelConfig[];
   calendarEvents: SyncedCalendarEvent[];
+  calendarIntelligence: CalendarIntent[];
   linkedInSummary: LinkedInTimelineSummary | null;
   linkedInAccount: string | null;
   linkedInCadence: PostCadence;
@@ -125,6 +119,10 @@ interface QueueStore {
   statusMessage: StatusMessage | null;
   gmailAccount: string | null;
   gmailAccounts: string[];
+  /** Fine-grained Gmail operation status for UI feedback */
+  gmailSyncStatus: "idle" | "connecting" | "syncing" | "error";
+  gmailSyncError: string | null;
+  lastGmailSync: string | null; // ISO timestamp of last successful sync
   testOverrideRecipient: string | null;
 
   // Preferences & i18n
@@ -183,12 +181,31 @@ interface QueueStore {
   connectGmail: () => Promise<void>;
   disconnectGmail: (email?: string) => Promise<void>;
   syncGmail: () => Promise<void>;
+  diagnoseGmailCredentials: () => Promise<string[]>;
 
   // Ollama Actions
   processItemWithOllama: (id: string) => Promise<void>;
 
   // Calendar Sync Actions
   syncCalendarDeadlines: () => Promise<void>;
+  fetchCalendarEvents: () => Promise<void>;
+  addCustomCalendarEvent: (
+    summary: string,
+    eventDate: string,
+    endTime?: string,
+    description?: string,
+    location?: string,
+    isAllDay?: boolean,
+  ) => Promise<void>;
+  deleteCustomCalendarEvent: (id: string) => Promise<void>;
+  setCalendarReminder: (
+    eventId: string,
+    eventSummary: string,
+    eventDate: string,
+    minutesBefore: number,
+  ) => Promise<void>;
+  fetchCalendarIntelligence: () => Promise<void>;
+  pushItemToCalendar: (itemId: string) => Promise<void>;
 
   // Analytics State
   analyticsWeeklyData: WeeklyAnalytics[];
@@ -388,6 +405,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   socialPosts: [],
   channels: INITIAL_CHANNELS,
   calendarEvents: [],
+  calendarIntelligence: [],
   linkedInSummary: null,
   linkedInAccount: null,
   linkedInCadence: "every_2_days",
@@ -397,6 +415,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   statusMessage: null,
   gmailAccount: null,
   gmailAccounts: [],
+  gmailSyncStatus: "idle",
+  gmailSyncError: null,
+  lastGmailSync: null,
   testOverrideRecipient: null,
 
   language: "en",
@@ -1259,6 +1280,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         if (list.length > 0) {
           const label =
             list.length === 1 ? list[0] : `${list.length} Connected Accounts`;
+          // Clear any previous sync error when accounts are confirmed healthy
+          set({ gmailSyncStatus: "idle", gmailSyncError: null });
           set((state) => ({
             channels: state.channels.map((c) => {
               if (c.id === "gmail")
@@ -1273,6 +1296,27 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
             }),
           }));
         } else {
+          // Zero valid accounts returned. Check if there are stale credential rows
+          // (tokens missing from both keychain and fallback) so we can surface a
+          // "reconnect needed" prompt instead of a generic "not connected" state.
+          try {
+            const diag = await invoke<string[]>("diagnose_gmail_credentials");
+            const hasStaleRow = diag.some(
+              (d) =>
+                !d.includes("No Gmail credentials") && d.includes("MISSING"),
+            );
+            if (hasStaleRow) {
+              const msg =
+                "Gmail session lost — tokens couldn't be retrieved. Please reconnect.";
+              set({
+                gmailSyncStatus: "error",
+                gmailSyncError: msg,
+              });
+              get().showStatusMessage("error", msg);
+            }
+          } catch {
+            // Non-fatal — diagnostic is best-effort
+          }
           set((state) => ({
             channels: state.channels.map((c) =>
               c.id === "gmail" || c.id === "calendar"
@@ -1309,39 +1353,67 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   connectGmail: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      const { invoke } = await import("@tauri-apps/api/core");
+      set({ gmailSyncStatus: "connecting", gmailSyncError: null });
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
 
-      // Validate: check user has saved Google credentials before opening browser
-      const creds = await invoke<{
-        google_client_id: string | null;
-        google_client_secret: string | null;
-      }>("get_oauth_credentials_command");
-      const clientId = creds?.google_client_id?.trim() ?? "";
-      const clientSecret = creds?.google_client_secret?.trim() ?? "";
-      if (!clientId || clientId.includes("YOUR_GOOGLE")) {
-        const msg =
-          "Google Client ID not set. Go to Settings → OAuth Credentials first.";
-        set({ error: msg });
-        await get().sendDesktopNotification("⚠️ Gmail Setup Required", msg);
-        throw new Error(msg);
-      }
-      if (!clientSecret) {
-        const msg =
-          "Google Client Secret not set. Go to Settings → OAuth Credentials first.";
-        set({ error: msg });
-        await get().sendDesktopNotification("⚠️ Gmail Setup Required", msg);
-        throw new Error(msg);
-      }
+        // Validate: check user has saved Google credentials before opening browser
+        const creds = await invoke<{
+          google_client_id: string | null;
+          google_client_secret: string | null;
+        }>("get_oauth_credentials_command");
+        const clientId = creds?.google_client_id?.trim() ?? "";
+        const clientSecret = creds?.google_client_secret?.trim() ?? "";
+        if (!clientId || clientId.includes("YOUR_GOOGLE")) {
+          const msg =
+            "Google Client ID not set. Go to Settings → OAuth Credentials first.";
+          set({ error: msg, gmailSyncStatus: "error", gmailSyncError: msg });
+          await get().sendDesktopNotification("⚠️ Gmail Setup Required", msg);
+          throw new Error(msg);
+        }
+        if (!clientSecret) {
+          const msg =
+            "Google Client Secret not set. Go to Settings → OAuth Credentials first.";
+          set({ error: msg, gmailSyncStatus: "error", gmailSyncError: msg });
+          await get().sendDesktopNotification("⚠️ Gmail Setup Required", msg);
+          throw new Error(msg);
+        }
 
-      const email = await invoke<string>("start_gmail_auth");
-      // Update channel state immediately — don't wait for sync to unblock the button
-      await get().checkGmailStatus();
-      // Kick off inbox sync in background — non-blocking
-      get().syncGmail().catch(console.error);
-      await get().sendDesktopNotification(
-        "🔒 Gmail Account Connected",
-        `Successfully authenticated: ${email}`,
-      );
+        get().showStatusMessage(
+          "info",
+          "Opening browser for Gmail authentication…",
+        );
+        const email = await invoke<string>("start_gmail_auth");
+        // Update channel state immediately — don't wait for sync to unblock the button
+        await get().checkGmailStatus();
+        set({ gmailSyncStatus: "idle" });
+        get().showStatusMessage(
+          "success",
+          `Gmail connected: ${email}. Syncing inbox…`,
+        );
+        // Kick off inbox sync in background — non-blocking
+        get()
+          .syncGmail()
+          .catch((err) => {
+            const msg =
+              err?.toString() ?? "Sync failed after connecting Gmail.";
+            set({ gmailSyncStatus: "error", gmailSyncError: msg });
+            get().showStatusMessage("error", msg);
+          });
+        await get().sendDesktopNotification(
+          "🔒 Gmail Account Connected",
+          `Successfully authenticated: ${email}`,
+        );
+      } catch (err: any) {
+        const msg =
+          err?.message ?? err?.toString() ?? "Gmail connection failed.";
+        if (!msg.includes("OAuth Credentials")) {
+          // Credential errors already set above — only set generic ones here
+          set({ gmailSyncStatus: "error", gmailSyncError: msg });
+          get().showStatusMessage("error", `Gmail connection failed: ${msg}`);
+        }
+        throw err;
+      }
     }
   },
 
@@ -1363,16 +1435,38 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
+  diagnoseGmailCredentials: async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        return await invoke<string[]>("diagnose_gmail_credentials");
+      } catch (err) {
+        console.error("diagnose_gmail_credentials failed:", err);
+        return [`Diagnostic failed: ${err}`];
+      }
+    }
+    return ["Not running in Tauri context."];
+  },
+
   syncGmail: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       // Set loading immediately so UI shows syncing state before fetchItems fires
-      set({ isLoading: true });
+      set({
+        isLoading: true,
+        gmailSyncStatus: "syncing",
+        gmailSyncError: null,
+      });
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         const newItemsCount = await invoke<number>("sync_gmail_messages");
-        await get().fetchItems();
+        // Directly fetch items to avoid isLoading race with fetchItems()
+        const items = await invoke<QueueItem[]>("get_queue_items");
+        set({ items });
         await get().syncCalendarDeadlines();
         await get().fetchTasks();
+
+        const now = new Date().toISOString();
+        set({ isLoading: false, gmailSyncStatus: "idle", lastGmailSync: now });
 
         if (newItemsCount > 0) {
           const latestItems = get().items;
@@ -1412,18 +1506,34 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
               `[Triage] ${newItemsCount} item(s) synced — no actionable emails detected.`,
             );
           }
+
+          // Show in-app status banner so user always knows what happened
+          get().showStatusMessage(
+            actionableItems.length > 0 ? "info" : "success",
+            newItemsCount === 1
+              ? `1 new email synced${actionableItems.length > 0 ? ` · ${actionableItems.length} need${actionableItems.length > 1 ? "" : "s"} reply` : " · inbox up to date"}`
+              : `${newItemsCount} new emails synced${actionableItems.length > 0 ? ` · ${actionableItems.length} need${actionableItems.length > 1 ? "" : "s"} reply` : " · inbox up to date"}`,
+          );
         }
       } catch (err: any) {
-        if (
-          err.toString().includes("revoked") ||
-          err.toString().includes("expired")
-        ) {
+        const msg = err?.toString() ?? "Gmail sync failed.";
+        if (msg.includes("revoked") || msg.includes("expired")) {
           set({ gmailAccount: null });
           // Also clear accounts so UI shows disconnected state
           await get().checkGmailStatus();
+          get().showStatusMessage(
+            "error",
+            "Gmail session expired — please reconnect your account.",
+          );
+        } else {
+          get().showStatusMessage("error", `Gmail sync failed: ${msg}`);
         }
         console.error("Sync Gmail error:", err);
-        set({ isLoading: false });
+        set({
+          isLoading: false,
+          gmailSyncStatus: "error",
+          gmailSyncError: msg,
+        });
       }
     }
   },
@@ -1452,32 +1562,178 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         const events = await invoke<SyncedCalendarEvent[]>(
           "sync_calendar_deadlines_command",
         );
-        const customEvents = get().calendarEvents.filter((e) =>
-          e.id.startsWith("custom_"),
-        );
-        set({ calendarEvents: [...customEvents, ...events] });
+        // Backend now owns all gcal/email events — custom events come back from DB too
+        set({ calendarEvents: events });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("Calendar sync error:", msg);
-        // Surface scope/auth errors directly so the user knows what to do
         if (
           msg.includes("403") ||
           msg.includes("scope") ||
           msg.includes("401") ||
-          msg.includes("expired")
+          msg.includes("expired") ||
+          msg.includes("reconnect")
         ) {
           get().showStatusMessage("error", msg);
         } else {
           get().showStatusMessage(
             "error",
-            "Calendar sync failed. Custom events were preserved.",
+            "Calendar sync failed — will retry on next sync.",
           );
         }
       }
     }
   },
 
-  fetchMorningBrief: async () => {
+  fetchCalendarEvents: async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const events = await invoke<SyncedCalendarEvent[]>(
+          "get_calendar_events_command",
+        );
+        set({ calendarEvents: events });
+      } catch (err) {
+        console.error("fetchCalendarEvents error:", err);
+      }
+    }
+  },
+
+  addCustomCalendarEvent: async (
+    summary,
+    eventDate,
+    endTime,
+    description,
+    location,
+    isAllDay = false,
+  ) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const id = `${Date.now()}`;
+        const evt = await invoke<SyncedCalendarEvent>(
+          "add_custom_calendar_event_command",
+          {
+            id,
+            summary,
+            eventDate,
+            endTime: endTime ?? null,
+            description: description ?? null,
+            location: location ?? null,
+            isAllDay,
+          },
+        );
+        set((state) => ({
+          calendarEvents: [evt, ...state.calendarEvents].sort(
+            (a, b) =>
+              new Date(a.event_date).getTime() -
+              new Date(b.event_date).getTime(),
+          ),
+        }));
+        get().showStatusMessage("success", `Event "${summary}" saved.`);
+      } catch (err: any) {
+        console.error("addCustomCalendarEvent error:", err);
+        get().showStatusMessage(
+          "error",
+          `Failed to save event: ${err?.toString()}`,
+        );
+      }
+    }
+  },
+
+  deleteCustomCalendarEvent: async (id: string) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("delete_custom_calendar_event_command", { id });
+        set((state) => ({
+          calendarEvents: state.calendarEvents.filter((e) => e.id !== id),
+        }));
+      } catch (err) {
+        console.error("deleteCustomCalendarEvent error:", err);
+        get().showStatusMessage("error", "Failed to delete event.");
+      }
+    }
+  },
+
+  setCalendarReminder: async (
+    eventId: string,
+    eventSummary: string,
+    eventDate: string,
+    minutesBefore: number,
+  ) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("set_calendar_reminder_command", {
+          eventId,
+          eventSummary,
+          eventDate,
+          minutesBefore,
+        });
+        const label =
+          minutesBefore === 0
+            ? "at event time"
+            : minutesBefore < 60
+              ? `${minutesBefore} min before`
+              : minutesBefore === 60
+                ? "1 hour before"
+                : minutesBefore === 1440
+                  ? "1 day before"
+                  : `${minutesBefore} min before`;
+        get().showStatusMessage(
+          "success",
+          `Reminder set for "${eventSummary}" — ${label}.`,
+        );
+      } catch (err: any) {
+        console.error("setCalendarReminder error:", err);
+        get().showStatusMessage(
+          "error",
+          `Failed to set reminder: ${err?.toString()}`,
+        );
+      }
+    }
+  },
+
+  fetchCalendarIntelligence: async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const data = await invoke<CalendarIntent[]>(
+          "get_calendar_intelligence_command",
+        );
+        set({ calendarIntelligence: data });
+      } catch (err) {
+        console.error("fetchCalendarIntelligence error:", err);
+      }
+    }
+  },
+
+  pushItemToCalendar: async (itemId: string) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const intent = await invoke<CalendarIntent>(
+          "push_item_to_calendar_command",
+          { itemId },
+        );
+        get().showStatusMessage(
+          "success",
+          `Added to calendar: "${intent.event_title}"`,
+        );
+        // Refresh calendar events to show the new entry
+        await get().fetchCalendarEvents();
+        // Refresh intelligence to update the panel
+        await get().fetchCalendarIntelligence();
+      } catch (err: any) {
+        console.error("pushItemToCalendar error:", err);
+        get().showStatusMessage(
+          "error",
+          `Failed to push to calendar: ${err?.toString()}`,
+        );
+      }
+    }
+  },
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         set({ morningBriefLoading: true });
@@ -2359,6 +2615,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         items: [],
         socialPosts: [],
         calendarEvents: [],
+        calendarIntelligence: [],
         knowledgeItems: [],
         decisions: [],
         lifeEvents: [],

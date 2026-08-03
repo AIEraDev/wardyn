@@ -9,6 +9,10 @@ import {
   IconSearch,
   IconAlertTriangle,
   IconSettings,
+  IconLoader2,
+  IconRefresh,
+  IconClock,
+  IconBug,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 
@@ -28,6 +32,11 @@ export const ChannelsTab: React.FC = () => {
     connectLinkedIn,
     setActiveTab,
     checkGmailStatus,
+    gmailSyncStatus,
+    gmailSyncError,
+    lastGmailSync,
+    syncGmail,
+    diagnoseGmailCredentials,
   } = useQueueStore();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -39,6 +48,10 @@ export const ChannelsTab: React.FC = () => {
   const [hasLinkedInCreds, setHasLinkedInCreds] = useState<boolean | null>(
     null,
   );
+
+  // Credential diagnostic state
+  const [diagRunning, setDiagRunning] = useState(false);
+  const [diagResults, setDiagResults] = useState<string[] | null>(null);
 
   useEffect(() => {
     const checkCreds = async () => {
@@ -124,6 +137,33 @@ export const ChannelsTab: React.FC = () => {
     } finally {
       clearTimeout(timeout);
       setConnecting(null);
+    }
+  };
+
+  // Format last sync time for display
+  const formatLastSync = (iso: string | null): string => {
+    if (!iso) return "Never";
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return new Date(iso).toLocaleDateString();
+  };
+
+  const handleDiagnose = async () => {
+    setDiagRunning(true);
+    setDiagResults(null);
+    try {
+      const results = await diagnoseGmailCredentials();
+      setDiagResults(results);
+    } catch (err: any) {
+      setDiagResults([
+        `Diagnostic failed: ${err?.toString() ?? "unknown error"}`,
+      ]);
+    } finally {
+      setDiagRunning(false);
     }
   };
 
@@ -269,6 +309,136 @@ export const ChannelsTab: React.FC = () => {
                   </div>
                 )}
 
+                {/* Gmail sync status bar */}
+                {isGmail && (
+                  <>
+                    {gmailSyncStatus === "connecting" && (
+                      <div className="flex items-center gap-2 bg-[rgba(74,143,194,0.08)] border border-[rgba(74,143,194,0.2)] rounded-lg px-3 py-2 mb-3">
+                        <IconLoader2
+                          size={12}
+                          className="text-[#4A8FC2] animate-spin shrink-0"
+                        />
+                        <p className="text-[11px] text-[#4A8FC2] m-0">
+                          Waiting for browser authentication…
+                        </p>
+                      </div>
+                    )}
+                    {gmailSyncStatus === "syncing" && (
+                      <div className="flex items-center gap-2 bg-[rgba(74,143,194,0.08)] border border-[rgba(74,143,194,0.2)] rounded-lg px-3 py-2 mb-3">
+                        <IconLoader2
+                          size={12}
+                          className="text-[#4A8FC2] animate-spin shrink-0"
+                        />
+                        <p className="text-[11px] text-[#4A8FC2] m-0">
+                          Syncing inbox &amp; triaging with AI…
+                        </p>
+                      </div>
+                    )}
+                    {gmailSyncStatus === "error" && gmailSyncError && (
+                      <div className="space-y-1.5 mb-3">
+                        <div className="flex items-start gap-2 bg-[rgba(239,68,68,0.07)] border border-[rgba(239,68,68,0.2)] rounded-lg px-3 py-2">
+                          <IconAlertTriangle
+                            size={12}
+                            className="text-[#EF4444] mt-0.5 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] text-[#EF4444] m-0 leading-snug break-words">
+                              {gmailSyncError}
+                            </p>
+                            {/* Reconnect shortcut for session-lost errors */}
+                            {(gmailSyncError.includes("session lost") ||
+                              gmailSyncError.includes("reconnect") ||
+                              gmailSyncError.includes("expired")) &&
+                              gmailAccounts.length === 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConnect("gmail")}
+                                  disabled={gmailSyncStatus === "connecting"}
+                                  className="mt-1.5 font-mono text-[10px] text-[#4A8FC2] hover:underline cursor-pointer bg-transparent border-0 p-0 disabled:opacity-50"
+                                >
+                                  → Re-authenticate Gmail
+                                </button>
+                              )}
+                          </div>
+                        </div>
+                        {/* Diagnose button — shown on any error */}
+                        <button
+                          type="button"
+                          onClick={handleDiagnose}
+                          disabled={diagRunning}
+                          className="w-full py-1 text-[10px] font-mono text-[#4A5568] hover:text-[#7A8492] flex items-center justify-center gap-1.5 cursor-pointer bg-transparent border-0 disabled:opacity-50"
+                        >
+                          {diagRunning ? (
+                            <IconLoader2 size={10} className="animate-spin" />
+                          ) : (
+                            <IconBug size={10} />
+                          )}
+                          {diagRunning
+                            ? "Running diagnostic…"
+                            : "Run credential diagnostic"}
+                        </button>
+                      </div>
+                    )}
+                    {/* Diagnostic results panel */}
+                    {diagResults && (
+                      <div className="mb-3 bg-[#0D1117] border border-[#242B35] rounded-lg p-2.5 space-y-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-mono text-[9px] text-[#4A5568] uppercase tracking-wider">
+                            Credential Diagnostic
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setDiagResults(null)}
+                            className="font-mono text-[9px] text-[#4A5568] hover:text-[#7A8492] cursor-pointer bg-transparent border-0 p-0"
+                          >
+                            dismiss
+                          </button>
+                        </div>
+                        {diagResults.map((line, i) => {
+                          const isMissing = line.includes("MISSING");
+                          const isOk = line.includes("✓ present") && !isMissing;
+                          return (
+                            <p
+                              key={i}
+                              className={`font-mono text-[10px] m-0 leading-relaxed break-all ${
+                                isMissing
+                                  ? "text-[#EF4444]"
+                                  : isOk
+                                    ? "text-[#34D399]"
+                                    : "text-[#7A8492]"
+                              }`}
+                            >
+                              {line}
+                            </p>
+                          );
+                        })}
+                        {diagResults.some((l) => l.includes("MISSING")) && (
+                          <p className="font-mono text-[10px] text-[#E8A23D] mt-1.5 m-0 border-t border-[#1A1F27] pt-1.5">
+                            → Tokens missing from storage. Click "Connect Gmail
+                            OAuth" to re-authenticate.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {gmailSyncStatus === "idle" && gmailAccounts.length > 0 && (
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#4A5568]">
+                          <IconClock size={11} />
+                          Last sync: {formatLastSync(lastGmailSync)}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => syncGmail()}
+                          disabled={gmailSyncStatus !== "idle"}
+                          className="font-mono text-[10px] text-[#4A8FC2] hover:text-[#5b9bd1] flex items-center gap-1 disabled:opacity-50 cursor-pointer bg-transparent border-0 p-0"
+                        >
+                          <IconRefresh size={11} /> Sync now
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+
                 {/* LinkedIn account label */}
                 {isLinkedIn && channel.accountLabel && (
                   <p className="font-mono text-[11px] text-[#4A8FC2] mb-3 truncate">
@@ -324,10 +494,25 @@ export const ChannelsTab: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleConnect("gmail")}
-                    disabled={isConnecting}
+                    disabled={
+                      isConnecting ||
+                      gmailSyncStatus === "connecting" ||
+                      gmailSyncStatus === "syncing"
+                    }
                     className="w-full py-1.5 text-xs font-medium text-[#4A8FC2] bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.3)] rounded-lg hover:bg-[rgba(74,143,194,0.2)] transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-mono disabled:opacity-50"
                   >
-                    {isConnecting ? (
+                    {gmailSyncStatus === "connecting" ? (
+                      <>
+                        <IconLoader2 size={14} className="animate-spin" />{" "}
+                        Authenticating in browser…
+                      </>
+                    ) : gmailSyncStatus === "syncing" &&
+                      gmailAccounts.length > 0 ? (
+                      <>
+                        <IconLoader2 size={14} className="animate-spin" />{" "}
+                        Syncing inbox…
+                      </>
+                    ) : isConnecting ? (
                       <span className="animate-pulse">Opening browser...</span>
                     ) : (
                       <>

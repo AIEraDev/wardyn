@@ -13,6 +13,8 @@ import {
   IconBookmark,
   IconCircleCheck,
   IconLoader2,
+  IconAlertTriangle,
+  IconClock,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 import { ReplyCard } from "./ReplyCard";
@@ -249,6 +251,9 @@ export const MessagesTab: React.FC = () => {
     isLoading,
     checkGmailStatus,
     connectGmail,
+    gmailSyncStatus,
+    gmailSyncError,
+    lastGmailSync,
   } = useQueueStore();
   const gmailItems = items.filter((i) => i.source === "gmail");
 
@@ -383,16 +388,39 @@ export const MessagesTab: React.FC = () => {
           {gmailAccounts.length > 0 && (
             <button
               onClick={syncGmail}
-              disabled={isLoading}
+              disabled={
+                isLoading ||
+                gmailSyncStatus === "syncing" ||
+                gmailSyncStatus === "connecting"
+              }
               className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#151A21] hover:bg-[#181E27] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
             >
               <IconRefresh
                 size={13}
-                className={isLoading ? "animate-spin" : ""}
+                className={
+                  isLoading || gmailSyncStatus === "syncing"
+                    ? "animate-spin"
+                    : ""
+                }
               />
-              Sync
+              {gmailSyncStatus === "syncing" ? "Syncing…" : "Sync"}
             </button>
           )}
+          {/* Last sync timestamp */}
+          {gmailAccounts.length > 0 &&
+            gmailSyncStatus === "idle" &&
+            lastGmailSync && (
+              <span className="font-mono text-[10px] text-[#4A5568] flex items-center gap-1 whitespace-nowrap">
+                <IconClock size={10} />
+                {(() => {
+                  const diff = Date.now() - new Date(lastGmailSync).getTime();
+                  const mins = Math.floor(diff / 60000);
+                  if (mins < 1) return "Just synced";
+                  if (mins < 60) return `Synced ${mins}m ago`;
+                  return `Synced ${Math.floor(mins / 60)}h ago`;
+                })()}
+              </span>
+            )}
           <span
             className={`font-mono text-xs font-semibold px-2.5 py-1 rounded-md border whitespace-nowrap ${
               replyPending > 0
@@ -412,6 +440,27 @@ export const MessagesTab: React.FC = () => {
 
       {gmailAccounts.length > 0 && (
         <div className="space-y-3">
+          {/* ── Sync error inline banner ── */}
+          {gmailSyncStatus === "error" && gmailSyncError && (
+            <div className="flex items-start gap-2 bg-[rgba(239,68,68,0.07)] border border-[rgba(239,68,68,0.2)] rounded-lg px-3 py-2">
+              <IconAlertTriangle
+                size={13}
+                className="text-[#EF4444] mt-0.5 shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-[#EF4444] m-0 leading-snug break-words">
+                  {gmailSyncError}
+                </p>
+                <button
+                  onClick={syncGmail}
+                  className="mt-1 font-mono text-[10px] text-[#4A8FC2] hover:underline cursor-pointer bg-transparent border-0 p-0"
+                >
+                  Retry sync →
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── Three-tier view toggle ── */}
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center bg-[#151A21] p-1 rounded-lg border border-[#242B35] gap-0.5">
@@ -517,7 +566,22 @@ export const MessagesTab: React.FC = () => {
       )}
 
       {/* ── Content area ── */}
-      {isLoading ? (
+      {gmailSyncStatus === "connecting" ? (
+        <div className="p-6 bg-[#151A21] border border-[rgba(74,143,194,0.25)] rounded-xl flex items-center gap-3">
+          <IconLoader2
+            size={16}
+            className="text-[#4A8FC2] animate-spin shrink-0"
+          />
+          <div>
+            <p className="text-xs font-semibold text-[#F0F4F8] m-0">
+              Waiting for Gmail authentication…
+            </p>
+            <p className="text-[11px] text-[#7A8492] mt-0.5 m-0">
+              Complete the sign-in in the browser window that opened.
+            </p>
+          </div>
+        </div>
+      ) : isLoading || gmailSyncStatus === "syncing" ? (
         <div className="p-6 bg-[#151A21] border border-[#242B35] rounded-xl flex items-center gap-3">
           <IconLoader2
             size={16}
@@ -528,8 +592,29 @@ export const MessagesTab: React.FC = () => {
               Syncing inbox…
             </p>
             <p className="text-[11px] text-[#7A8492] mt-0.5 m-0">
-              Triaging messages with AI, this takes a few seconds.
+              Fetching emails and triaging with AI — this takes a few seconds.
             </p>
+          </div>
+        </div>
+      ) : gmailSyncStatus === "error" && gmailAccounts.length === 0 ? (
+        <div className="p-6 bg-[#151A21] border border-[rgba(239,68,68,0.25)] rounded-xl flex items-start gap-3">
+          <IconAlertTriangle
+            size={16}
+            className="text-[#EF4444] shrink-0 mt-0.5"
+          />
+          <div>
+            <p className="text-xs font-semibold text-[#F0F4F8] m-0">
+              Gmail sync failed
+            </p>
+            <p className="text-[11px] text-[#7A8492] mt-0.5 m-0 break-words">
+              {gmailSyncError ?? "An error occurred during sync."}
+            </p>
+            <button
+              onClick={syncGmail}
+              className="mt-2 font-mono text-[11px] text-[#4A8FC2] hover:underline cursor-pointer bg-transparent border-0 p-0"
+            >
+              Retry sync →
+            </button>
           </div>
         </div>
       ) : gmailAccounts.length === 0 ? (

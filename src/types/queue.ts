@@ -51,6 +51,22 @@ export interface ChannelConfig {
   apiKey?: string;
 }
 
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+
+export interface SyncedCalendarEvent {
+  id: string;
+  queue_item_id: string;
+  event_id: string;
+  summary: string;
+  event_date: string; // RFC3339 start datetime
+  end_time: string | null; // RFC3339 end datetime
+  description: string | null;
+  location: string | null;
+  is_all_day: boolean;
+  source: "gcal" | "custom" | "email";
+  created_at: string;
+}
+
 export interface QueueItem {
   id: string;
   source: QueueItemSource;
@@ -181,6 +197,22 @@ export interface Reminder {
   status: "pending" | "triggered";
   created_at: string;
   triggered_at: string | null;
+  /** "none" | "daily" | "every_2_days" | "weekly" | "weekdays" */
+  recurrence_rule: string;
+}
+
+// ─── Calendar Intelligence ────────────────────────────────────────────────────
+
+export interface CalendarIntent {
+  item_id: string;
+  sender: string;
+  preview: string;
+  should_add_to_calendar: boolean;
+  event_title: string;
+  event_date: string | null;
+  recurrence_rule: string;
+  reminder_lead_minutes: number;
+  reason: string;
 }
 
 export interface PomodoroSession {

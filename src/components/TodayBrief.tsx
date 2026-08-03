@@ -41,6 +41,9 @@ export const TodayBrief: React.FC = () => {
     language,
     ollamaModels,
     ollamaChecked,
+    dailyHabits,
+    toggleHabitComplete,
+    fetchDailyHabits,
   } = useQueueStore();
 
   const localeMap: Record<string, string> = {
@@ -84,6 +87,12 @@ export const TodayBrief: React.FC = () => {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [checkGmailStatus, syncCalendarDeadlines]);
+
+  // Refresh habits on mount so TodayBrief always has latest
+  useEffect(() => { fetchDailyHabits(); }, [fetchDailyHabits]);
+
+  const todayDoneCount = dailyHabits.filter((h) => h.completed_today).length;
+  const totalHabits = dailyHabits.length;
 
   // Only surface emails that genuinely need a reply — suppress automated noise
   const pendingItems = items.filter(
@@ -215,6 +224,44 @@ export const TodayBrief: React.FC = () => {
         )}
       </div>
 
+      {/* ── Today's Habits (mini widget) ── */}
+      {totalHabits > 0 && (
+        <div className="rounded-xl border border-[rgba(52,211,153,0.2)] bg-[#0E1318] overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-[rgba(52,211,153,0.12)] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[#F0F4F8]">Today's Habits</span>
+              <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.12)] text-[#34D399] border border-[rgba(52,211,153,0.25)]">
+                {todayDoneCount}/{totalHabits}
+              </span>
+            </div>
+            {todayDoneCount === totalHabits && totalHabits > 0 && (
+              <span className="text-[10px] text-[#34D399] font-semibold">🔥 All done!</span>
+            )}
+          </div>
+          <div className="px-4 py-2.5 flex flex-wrap gap-2">
+            {dailyHabits.map((habit) => {
+              const done = habit.completed_today;
+              return (
+                <button
+                  key={habit.id}
+                  type="button"
+                  onClick={() => toggleHabitComplete(habit.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
+                    done
+                      ? "bg-[rgba(52,211,153,0.12)] border-[rgba(52,211,153,0.35)] text-[#34D399]"
+                      : "bg-[#151A21] border-[#242B35] text-[#9AA4B2] hover:border-[#384352] hover:text-[#F0F4F8]"
+                  }`}
+                >
+                  <span>{habit.icon}</span>
+                  <span className={done ? "line-through opacity-60" : ""}>{habit.name}</span>
+                  {done && <IconCheck size={11} className="text-[#34D399]" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Morning Intelligence Brief ── */}
       <div className="rounded-xl border border-[rgba(74,143,194,0.25)] bg-gradient-to-br from-[#0E1420] to-[#141B24] overflow-hidden">
         <div className="px-4 py-3 border-b border-[rgba(74,143,194,0.15)] flex items-center justify-between">
@@ -296,7 +343,8 @@ export const TodayBrief: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Weekly Executive Review ── */}
+      {/* ── Weekly Executive Review (Sunday only when empty, always if content exists) ── */}
+      {(new Date().getDay() === 0 || weeklyReview || weeklyReviewLoading) && (
       <div className="rounded-xl border border-[rgba(155,89,182,0.25)] bg-gradient-to-br from-[#121019] to-[#1C1628] overflow-hidden">
         <div className="px-4 py-3 border-b border-[rgba(155,89,182,0.15)] flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -348,6 +396,7 @@ export const TodayBrief: React.FC = () => {
           )}
         </div>
       </div>
+      )}
 
       {/* ── Onboarding (no Gmail) ── */}
       {gmailAccounts.length === 0 && (
@@ -532,7 +581,10 @@ export const TodayBrief: React.FC = () => {
       {/* ── Footer ── */}
       <div className="flex items-center gap-2 font-mono text-xs text-[#7A8492] pt-1">
         <IconCheck size={14} className="text-[#34D399] shrink-0" />
-        <span>{calendarEvents.length} visa deadlines synced to calendar</span>
+        <span>{calendarEvents.length > 0
+          ? `${calendarEvents.length} calendar event${calendarEvents.length !== 1 ? "s" : ""} synced`
+          : "No calendar events synced yet"
+        }</span>
       </div>
     </div>
   );

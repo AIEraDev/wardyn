@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   IconMail,
   IconInbox,
@@ -268,16 +268,38 @@ export const MessagesTab: React.FC = () => {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [checkGmailStatus]);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("reply");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem("wardyn.messagesViewMode") as ViewMode | null;
+      return (saved && ["reply", "digest", "all"].includes(saved)) ? saved : "reply";
+    } catch { return "reply"; }
+  });
+  const setViewModeAndPersist = (mode: ViewMode) => {
+    setViewMode(mode);
+    try { localStorage.setItem("wardyn.messagesViewMode", mode); } catch {}
+  };
   const [activeFilter, setActiveFilter] = useState<CategoryKey>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedQuery(val), 250);
+  };
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
   // ── Pools ─────────────────────────────────────────────────────────────────
   const replyItems = gmailItems.filter(
     (i) =>
       i.needs_reply &&
       i.triage_status !== "suppressed" &&
-      i.triage_status !== "informational",
+      i.triage_status !== "informational" &&
+      // UX-12: exclude sent/skipped from the reply queue so the list only shows actionable items
+      i.status !== "sent" &&
+      i.status !== "skipped" &&
+      i.status !== "approved" &&
+      i.status !== "edited",
   );
   const infoItems = gmailItems.filter(
     (i) =>
@@ -302,8 +324,8 @@ export const MessagesTab: React.FC = () => {
     const cat = extractCategory(item.preview);
     if (activeFilter !== "all" && cat !== activeFilter) return false;
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    if (debouncedQuery.trim()) {
+      const q = debouncedQuery.toLowerCase();
       const senderName = parseSenderName(item.sender).toLowerCase();
       const senderEmail = parseSenderEmail(item.sender).toLowerCase();
       if (
@@ -467,7 +489,7 @@ export const MessagesTab: React.FC = () => {
               {VIEW_TABS.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setViewMode(tab.id)}
+                  onClick={() => setViewModeAndPersist(tab.id)}
                   className={`font-mono text-[11px] px-3 py-1 rounded-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
                     viewMode === tab.id
                       ? tab.activeClass + " font-semibold"
@@ -557,7 +579,7 @@ export const MessagesTab: React.FC = () => {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               placeholder="Search by sender, subject, or content…"
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#151A21] text-[#F0F4F8] rounded-md border border-[#242B35] focus:outline-none focus:border-[#4A8FC2] font-mono"
             />
@@ -655,7 +677,7 @@ export const MessagesTab: React.FC = () => {
                   {infoItems.length} informational message
                   {infoItems.length > 1 ? "s" : ""} in your digest →{" "}
                   <button
-                    onClick={() => setViewMode("digest")}
+                    onClick={() => setViewModeAndPersist("digest")}
                     className="text-[#34D399] hover:underline cursor-pointer bg-transparent border-0 p-0"
                   >
                     View Digest

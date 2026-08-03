@@ -255,6 +255,8 @@ export const ResearchTab: React.FC = () => {
     searchHistory,
     addSearchHistory,
     clearSearchHistory,
+    savedResultUrls,
+    toggleSavedResult,
   } = useQueueStore();
 
   const [query, setQuery] = useState("");
@@ -265,8 +267,6 @@ export const ResearchTab: React.FC = () => {
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summarySaved, setSummarySaved] = useState(false);
-
-  const [savedResults, setSavedResults] = useState<Set<string>>(new Set());
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -332,7 +332,7 @@ export const ResearchTab: React.FC = () => {
   const handleSaveResult = async (result: SearchResult) => {
     const content = `${result.title}\n${result.snippet}`;
     await saveKnowledgeItem(content, result.url);
-    setSavedResults((prev) => new Set([...prev, result.url]));
+    toggleSavedResult(result.url);
   };
 
   const handleSaveSummary = async () => {
@@ -586,7 +586,7 @@ export const ResearchTab: React.FC = () => {
                 key={i}
                 result={r}
                 onSave={handleSaveResult}
-                saved={savedResults.has(r.url)}
+                saved={savedResultUrls.includes(r.url)}
               />
             ))
           )}

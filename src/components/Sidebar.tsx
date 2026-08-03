@@ -22,8 +22,33 @@ export const Sidebar: React.FC = () => {
   const setActiveTab = useQueueStore((state) => state.setActiveTab);
   const ollamaModels = useQueueStore((state) => state.ollamaModels);
   const ollamaChecked = useQueueStore((state) => state.ollamaChecked);
+  const items = useQueueStore((state) => state.items);
+  const tasks = useQueueStore((state) => state.tasks);
+  const calendarEvents = useQueueStore((state) => state.calendarEvents);
   const t = useTranslation();
   const [appVersion, setAppVersion] = useState<string>("");
+
+  // Derive badge counts from live store state
+  const badges: Partial<Record<TabType, number>> = {
+    messages: items.filter(
+      (i) =>
+        i.needs_reply &&
+        i.status === "pending" &&
+        i.triage_status !== "suppressed",
+    ).length,
+    productivity: tasks.filter(
+      (t) =>
+        t.status === "pending" &&
+        t.due_date != null &&
+        new Date(t.due_date).getTime() < Date.now(),
+    ).length,
+    deadlines: calendarEvents.filter((e) => {
+      const days = Math.floor(
+        (new Date(e.event_date).getTime() - Date.now()) / 86400000,
+      );
+      return days >= 0 && days <= 1;
+    }).length,
+  };
 
   useEffect(() => {
     const loadVersion = async () => {
@@ -100,7 +125,12 @@ export const Sidebar: React.FC = () => {
                 size={15}
                 className={`shrink-0 ${isActive ? "opacity-100" : "opacity-70"}`}
               />
-              <span className="truncate">{t[tab.labelKey]}</span>
+              <span className="truncate flex-1">{t[tab.labelKey]}</span>
+              {(badges[tab.id] ?? 0) > 0 && (
+                <span className="ml-auto font-mono text-[9px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center bg-[rgba(245,158,11,0.2)] text-[#F59E0B] border border-[rgba(245,158,11,0.3)] shrink-0">
+                  {(badges[tab.id] ?? 0) > 99 ? "99+" : badges[tab.id]}
+                </span>
+              )}
             </button>
           );
         })}

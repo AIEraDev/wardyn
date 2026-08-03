@@ -64,7 +64,9 @@ function formatEndTime(end: string | null, isAllDay: boolean): string | null {
 function daysUntil(iso: string): number {
   const now = Date.now();
   const then = new Date(iso).getTime();
-  return Math.ceil((then - now) / 86400000);
+  // Math.floor: events that ended 3h ago give -0.125 → -1 (correctly "Past")
+  // Math.ceil was incorrectly rounding -0.125 → 0 ("Today") causing red urgency.
+  return Math.floor((then - now) / 86400000);
 }
 
 function urgencyColor(days: number): {

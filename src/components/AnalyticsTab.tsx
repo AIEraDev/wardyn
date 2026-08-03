@@ -462,7 +462,7 @@ export const AnalyticsTab: React.FC = () => {
       '',
       `## Email Triage`,
       `- Total synced: ${totalEmailsTriaged}`,
-      `- Estimated hours saved: ${totalHoursSaved.toFixed(1)}h`,
+      `- Estimated hours saved: ${totalHoursSaved.toFixed(1)}h (est. 6 min/email)`,
       `- Approval rate: ${approvalRate}%`,
       '',
       `## Response Analytics (30 days)`,
@@ -474,7 +474,7 @@ export const AnalyticsTab: React.FC = () => {
       ...categoryResponseTimes.map(({ category, avg_time_seconds }) => `- ${category}: ${formatResponseTime(avg_time_seconds)}`),
       '',
       `## LinkedIn`,
-      `- Estimated impressions: ${totalImpressions.toLocaleString()}`,
+      `- Estimated impressions: ${totalImpressions.toLocaleString()} (est.)`,
       `- Posts published: ${totalPosts}`,
     ];
     const text = lines.join('\n');
@@ -493,6 +493,48 @@ export const AnalyticsTab: React.FC = () => {
     }
   };
 
+  // AN-5: JSON data export — raw structured analytics data as a downloadable file
+  const handleExportJson = () => {
+    const payload = {
+      exported_at: new Date().toISOString(),
+      email_triage: {
+        total_synced: totalEmailsTriaged,
+        estimated_hours_saved_note: "Derived: 6 min per email",
+        hours_saved_estimate: totalHoursSaved,
+        approval_rate_pct: approvalRate,
+        sent_count: sentCount,
+        skip_count: skipCount,
+      },
+      response_analytics: {
+        period_days: 30,
+        replies_tracked: respondedEntries.length,
+        avg_response_seconds: parseFloat(avgResponseSeconds.toFixed(1)),
+        avg_draft_generation_ms: parseFloat(avgDraftMs.toFixed(1)),
+        category_breakdown: categoryResponseTimes,
+        raw: responseAnalytics,
+      },
+      linkedin: {
+        estimated_impressions_note: "Derived from engagement signals",
+        estimated_impressions: totalImpressions,
+        posts_published: totalPosts,
+        approval_rate_pct: publishRate,
+      },
+      weekly_chart_data: data,
+    };
+    try {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `wardyn_analytics_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showStatusMessage("success", "Analytics JSON exported.");
+    } catch {
+      showStatusMessage("error", "JSON export failed.");
+    }
+  };
+
   return (
     <div className="flex-1 min-w-0 space-y-6">
       {/* Header */}
@@ -501,7 +543,7 @@ export const AnalyticsTab: React.FC = () => {
           <h1 className="text-xl font-semibold text-[#F0F4F8] m-0">Executive Analytics</h1>
           <p className="font-mono text-xs text-[#7A8492] mt-0.5">Weekly performance dashboard · Real-time Metrics</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={handleExportSummary}
@@ -509,8 +551,15 @@ export const AnalyticsTab: React.FC = () => {
           >
             <IconDownload size={11} /> Export Summary
           </button>
+          <button
+            type="button"
+            onClick={handleExportJson}
+            className="font-mono text-[10px] px-2.5 py-1 rounded-full text-[#34D399] bg-[rgba(52,211,153,0.08)] border border-[rgba(52,211,153,0.25)] flex items-center gap-1.5 hover:bg-[rgba(52,211,153,0.15)] transition-colors cursor-pointer"
+          >
+            <IconDownload size={11} /> Export JSON
+          </button>
           <span className="font-mono text-[10px] px-2.5 py-1 rounded-full text-[#9AA4B2] bg-[rgba(154,164,178,0.1)] border border-[rgba(154,164,178,0.25)] flex items-center gap-1.5">
-            <IconTrendingUp size={11} /> Mixed metrics · some estimated
+            <IconTrendingUp size={11} /> Some metrics estimated
           </span>
         </div>
       </div>

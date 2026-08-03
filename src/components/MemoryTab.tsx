@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   IconBrain,
   IconBookmark,
@@ -10,18 +10,25 @@ import {
   IconLoader2,
   IconBook,
   IconPencil,
+  IconSearch,
+  IconX,
 } from "@tabler/icons-react";
 
 import { useQueueStore } from "../store/useQueueStore";
 import type { KnowledgeItem, Decision } from "../types/queue";
 import { BriefRenderer } from "./BriefRenderer";
 
-// ─── Tag pill parser ─────────────────────────────────────────────────────────
+// ─── Tag pill parser (MEM-2: robust — handles JSON array OR comma-separated plain string) ─────
 function parseTags(tagsJson: string): string[] {
+  if (!tagsJson) return [];
   try {
-    return JSON.parse(tagsJson) || [];
-  } catch {
+    const parsed = JSON.parse(tagsJson);
+    if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    if (typeof parsed === "string") return parsed.split(",").map((t) => t.trim()).filter(Boolean);
     return [];
+  } catch {
+    // Not JSON — treat as plain comma-separated string
+    return tagsJson.split(",").map((t) => t.trim()).filter(Boolean);
   }
 }
 
@@ -294,6 +301,10 @@ export const MemoryTab: React.FC = () => {
   const [alternativesText, setAlternativesText] = useState("");
   const [decisionSaving, setDecisionSaving] = useState(false);
 
+  // Memory search + filter state (MEM-3)
+  const [memorySearch, setMemorySearch] = useState("");
+  const [memoryTypeFilter, setMemoryTypeFilter] = useState<"all" | "knowledge" | "decision">("all");
+
   const captureBytes = new TextEncoder().encode(captureText).length;
   const captureOverLimit = captureBytes > 50 * 1024;
   const captureNearLimit = captureBytes > 40 * 1024;
@@ -386,7 +397,7 @@ export const MemoryTab: React.FC = () => {
   };
 
   // Merge & sort all items by date for unified timeline
-  const timeline = [
+  const timeline = useMemo(() => [
     ...knowledgeItems.map((k) => ({
       type: "knowledge" as const,
       data: k,
@@ -397,7 +408,37 @@ export const MemoryTab: React.FC = () => {
       data: d,
       date: d.created_at,
     })),
-  ].sort((a, b) => b.date.localeCompare(a.date));
+  ].sort((a, b) => b.date.localeCompare(a.date)), [knowledgeItems, decisions]);
+
+  // Filtered timeline (MEM-3)
+  const filteredTimeline = useMemo(() => {
+    let result = timeline;
+    if (memoryTypeFilter !== "all") {
+      result = result.filter((e) => e.type === memoryTypeFilter);
+    }
+    if (memorySearch.trim()) {
+      const q = memorySearch.toLowerCase();
+      result = result.filter((e) => {
+        if (e.type === "knowledge") {
+          const k = e.data as KnowledgeItem;
+          return (
+            k.content?.toLowerCase().includes(q) ||
+            k.summary?.toLowerCase().includes(q) ||
+            k.url?.toLowerCase().includes(q) ||
+            parseTags(k.tags || "").some((t) => t.toLowerCase().includes(q))
+          );
+        } else {
+          const d = e.data as Decision;
+          return (
+            d.decision?.toLowerCase().includes(q) ||
+            d.rationale?.toLowerCase().includes(q) ||
+            d.alternatives?.toLowerCase().includes(q)
+          );
+        }
+      });
+    }
+    return result;
+  }, [timeline, memorySearch, memoryTypeFilter]);
 
   return (
     <div className="flex-1 min-w-0">
@@ -623,22 +664,71 @@ export const MemoryTab: React.FC = () => {
         )}
       </div>
 
+      {/* ── Memory Search + Filter (MEM-3) ── */}
+      {timeline.length > 0 && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <div className="relative flex-1 min-w-[180px]">
+            <IconSearch size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#4A5568] pointer-events-none" />
+            <input
+              value={memorySearch}
+              onChange={(e) => setMemorySearch(e.target.value)}
+              placeholder="Search memory…"
+              className="w-full pl-8 pr-8 py-1.5 text-xs bg-[#0E1318] border border-[#1D2535] rounded-lg text-[#F0F4F8] placeholder-[#4A5568] outline-none focus:border-[#4A8FC2] transition-colors"
+            />
+            {memorySearch && (
+              <button
+                type="button"
+                onClick={() => setMemorySearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[#4A5568] hover:text-[#F0F4F8] cursor-pointer"
+              >
+                <IconX size={12} />
+              </button>
+            )}
+          </div>
+          {(["all", "knowledge", "decision"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setMemoryTypeFilter(f)}
+              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors cursor-pointer capitalize ${
+                memoryTypeFilter === f
+                  ? "bg-[rgba(74,143,194,0.15)] border-[rgba(74,143,194,0.4)] text-[#4A8FC2]"
+                  : "bg-transparent border-[#1D2535] text-[#7A8492] hover:text-[#F0F4F8]"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Unified Timeline ── */}
       <p className="text-xs font-semibold text-[#9AA4B2] uppercase tracking-wider mb-3 flex items-center gap-1.5">
         <IconChevronRight size={12} />
         Memory Timeline
+        {memorySearch && (
+          <span className="font-normal normal-case text-[#4A5568] ml-1">
+            — {filteredTimeline.length} result{filteredTimeline.length !== 1 ? "s" : ""}
+          </span>
+        )}
       </p>
 
-      {timeline.length === 0 ? (
+      {filteredTimeline.length === 0 ? (
         <div className="p-8 text-center bg-[#0E1318] border border-[#1D2535] rounded-xl space-y-2">
-          <p className="text-[#7A8492] text-sm">Your memory is empty.</p>
-          <p className="text-[#4A5568] text-xs">
-            Capture a URL, drop a thought, or log a decision above.
-          </p>
+          {memorySearch || memoryTypeFilter !== "all" ? (
+            <p className="text-[#7A8492] text-sm">No results match your filter.</p>
+          ) : (
+            <>
+              <p className="text-[#7A8492] text-sm">Your memory is empty.</p>
+              <p className="text-[#4A5568] text-xs">
+                Capture a URL, drop a thought, or log a decision above.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
-          {timeline.map((entry) =>
+          {filteredTimeline.map((entry) =>
             entry.type === "knowledge" ? (
               <KnowledgeCard
                 key={entry.data.id}

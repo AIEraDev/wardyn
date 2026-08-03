@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   IconBolt,
   IconPlus,
@@ -485,6 +485,31 @@ export const ActiveLifeTab: React.FC = () => {
   >(null);
   const [reminderTime, setReminderTime] = useState("08:00");
 
+  // Live session tick — increments every second when any project is active
+  const [sessionTick, setSessionTick] = useState(0);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const hasActive = activeProjects.some((p) => p.status !== "paused");
+    if (hasActive && !tickRef.current) {
+      tickRef.current = setInterval(() => setSessionTick((t) => t + 1), 1000);
+    } else if (!hasActive && tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+    return () => {
+      if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+    };
+  }, [activeProjects]);
+
+  // Format seconds into HH:MM:SS or MM:SS
+  const formatElapsed = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
+
   const [completions, setCompletions] = useState<
     Array<{ habit_id: string; completed_date: string }>
   >([]);
@@ -706,17 +731,24 @@ export const ActiveLifeTab: React.FC = () => {
                         <span className="text-sm font-bold text-[#F0F4F8]">
                           {p.name}
                         </span>
-                        {p.today_minutes > 0 && (
+                        {p.status !== "paused" ? (
+                          <span
+                            className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full font-mono"
+                            style={{ color: p.color, background: `${p.color}22` }}
+                          >
+                            {/* pulsing dot */}
+                            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: p.color }} />
+                            {/* live tick: adds sessionTick seconds to today_minutes for display */}
+                            {formatElapsed(p.today_minutes * 60 + (sessionTick % 3600))}
+                          </span>
+                        ) : p.today_minutes > 0 ? (
                           <span
                             className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full font-mono"
-                            style={{
-                              color: p.color,
-                              background: `${p.color}22`,
-                            }}
+                            style={{ color: p.color, background: `${p.color}22` }}
                           >
-                            {p.status === "paused" ? "PAUSED" : "ACTIVE"}
+                            PAUSED
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       {p.description && (
                         <p className="m-0 mt-0.5 text-[11px] text-[#7A8492]">

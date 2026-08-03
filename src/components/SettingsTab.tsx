@@ -444,6 +444,7 @@ export const SettingsTab: React.FC = () => {
     installOllamaModel,
     cancelOllamaModelInstall,
     checkGmailStatus,
+    showStatusMessage,
   } = useQueueStore();
 
   const t = useTranslation();
@@ -451,7 +452,7 @@ export const SettingsTab: React.FC = () => {
   const [vaultInput, setVaultInput] = useState(vaultPath || "");
   const [vaultSaved, setVaultSaved] = useState(false);
 
-  // ── OAuth Credentials (user-provided, stored locally) ──
+  // ── OAuth Credentials ── write-only: we never read back raw values from backend
   const [googleClientId, setGoogleClientId] = useState("");
   const [googleClientSecret, setGoogleClientSecret] = useState("");
   const [linkedinClientId, setLinkedinClientId] = useState("");
@@ -460,31 +461,58 @@ export const SettingsTab: React.FC = () => {
   const [showGoogleSecret, setShowGoogleSecret] = useState(false);
   const [showLinkedinSecret, setShowLinkedinSecret] = useState(false);
 
+  // Presence flags — returned by backend instead of raw values (SET-1 / CH-4)
+  const [credStatus, setCredStatus] = useState({
+    hasGoogleClientId: false,
+    hasGoogleClientSecret: false,
+    hasLinkedinClientId: false,
+    hasLinkedinClientSecret: false,
+    hasLinkedinToken: false,
+  });
+
+  const [disconnectingLinkedIn, setDisconnectingLinkedIn] = useState(false);
+
   useEffect(() => {
     const loadOAuthCreds = async () => {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         try {
           const { invoke } = await import("@tauri-apps/api/core");
-          const creds = await invoke<{
-            google_client_id: string | null;
-            google_client_secret: string | null;
-            linkedin_client_id: string | null;
-            linkedin_client_secret: string | null;
+          const status = await invoke<{
+            has_google_client_id: boolean;
+            has_google_client_secret: boolean;
+            has_linkedin_client_id: boolean;
+            has_linkedin_client_secret: boolean;
+            has_linkedin_token: boolean;
           }>("get_oauth_credentials_command");
-          if (creds.google_client_id) setGoogleClientId(creds.google_client_id);
-          if (creds.google_client_secret)
-            setGoogleClientSecret(creds.google_client_secret);
-          if (creds.linkedin_client_id)
-            setLinkedinClientId(creds.linkedin_client_id);
-          if (creds.linkedin_client_secret)
-            setLinkedinClientSecret(creds.linkedin_client_secret);
+          setCredStatus({
+            hasGoogleClientId: status.has_google_client_id,
+            hasGoogleClientSecret: status.has_google_client_secret,
+            hasLinkedinClientId: status.has_linkedin_client_id,
+            hasLinkedinClientSecret: status.has_linkedin_client_secret,
+            hasLinkedinToken: status.has_linkedin_token,
+          });
         } catch (e) {
-          console.warn("Failed to load OAuth credentials:", e);
+          console.warn("Failed to load OAuth credential status:", e);
         }
       }
     };
     loadOAuthCreds();
   }, []);
+
+  const handleDisconnectLinkedIn = async () => {
+    if (!confirm("Disconnect LinkedIn? This will revoke your access token.")) return;
+    setDisconnectingLinkedIn(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("disconnect_linkedin_command");
+      setCredStatus((s) => ({ ...s, hasLinkedinToken: false }));
+      showStatusMessage("success", "LinkedIn disconnected and token revoked.");
+    } catch (e) {
+      showStatusMessage("error", "Failed to disconnect LinkedIn.");
+    } finally {
+      setDisconnectingLinkedIn(false);
+    }
+  };
 
   const handleSaveOAuthCreds = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -509,7 +537,20 @@ export const SettingsTab: React.FC = () => {
 
   const [newFeedTitle, setNewFeedTitle] = useState("");
   const [newFeedUrl, setNewFeedUrl] = useState("");
+  const [feedUrlError, setFeedUrlError] = useState("");
   const [addingFeed, setAddingFeed] = useState(false);
+
+  const validateFeedUrl = (url: string): string => {
+    if (!url.trim()) return "";
+    try {
+      const parsed = new URL(url.trim());
+      if (!parsed.protocol.startsWith("http")) return "URL must start with https:// or http://";
+      if (!parsed.hostname.includes(".")) return "URL must have a valid domain (e.g. example.com)";
+      return "";
+    } catch {
+      return "Invalid URL — use format: https://example.com/feed.xml";
+    }
+  };
 
   useEffect(() => {
     if (vaultPath !== null) setVaultInput(vaultPath);
@@ -1227,9 +1268,14 @@ export const SettingsTab: React.FC = () => {
         <form onSubmit={handleSaveOAuthCreds} className="space-y-3">
           {/* Google */}
           <div className="space-y-1.5">
-            <p className="font-mono text-[10px] text-[#7A8492] uppercase">
-              Google OAuth App
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[10px] text-[#7A8492] uppercase">Google OAuth App</p>
+              {credStatus.hasGoogleClientId && credStatus.hasGoogleClientSecret && (
+                <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.1)] text-[#34D399] border border-[rgba(52,211,153,0.25)]">
+                  ✓ Configured
+                </span>
+              )}
+            </div>
             <div className="text-[10px] text-[#5D6A7A] font-mono mb-1">
               Create a project → OAuth 2.0 Client ID → Desktop app type → add{" "}
               <span className="text-[#4A8FC2]">http://127.0.0.1:14220</span> as
@@ -1239,68 +1285,75 @@ export const SettingsTab: React.FC = () => {
               type="text"
               value={googleClientId}
               onChange={(e) => setGoogleClientId(e.target.value)}
-              placeholder="your-client-id.apps.googleusercontent.com"
-              className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+              placeholder={credStatus.hasGoogleClientId ? "✓ Stored — enter new value to replace" : "your-client-id.apps.googleusercontent.com"}
+              className={`w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border focus:outline-none focus:border-[#4A8FC2] ${credStatus.hasGoogleClientId && !googleClientId ? "border-[rgba(52,211,153,0.3)] placeholder-[#34D399]" : "border-[#242B35]"}`}
             />
             <div className="relative">
               <input
                 type={showGoogleSecret ? "text" : "password"}
                 value={googleClientSecret}
                 onChange={(e) => setGoogleClientSecret(e.target.value)}
-                placeholder="Google Client Secret"
-                className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 pr-9 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+                placeholder={credStatus.hasGoogleClientSecret ? "✓ Stored — enter new value to replace" : "Google Client Secret"}
+                className={`w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 pr-9 rounded-lg border focus:outline-none focus:border-[#4A8FC2] ${credStatus.hasGoogleClientSecret && !googleClientSecret ? "border-[rgba(52,211,153,0.3)] placeholder-[#34D399]" : "border-[#242B35]"}`}
               />
               <button
                 type="button"
                 onClick={() => setShowGoogleSecret((v) => !v)}
                 className="absolute right-2.5 top-2 text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
               >
-                {showGoogleSecret ? (
-                  <IconEyeOff size={14} />
-                ) : (
-                  <IconEye size={14} />
-                )}
+                {showGoogleSecret ? <IconEyeOff size={14} /> : <IconEye size={14} />}
               </button>
             </div>
           </div>
 
           {/* LinkedIn */}
           <div className="space-y-1.5">
-            <p className="font-mono text-[10px] text-[#7A8492] uppercase">
-              LinkedIn OAuth App
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[10px] text-[#7A8492] uppercase">LinkedIn OAuth App</p>
+              <div className="flex items-center gap-2">
+                {credStatus.hasLinkedinToken && (
+                  <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.1)] text-[#34D399] border border-[rgba(52,211,153,0.25)]">
+                    ✓ Connected
+                  </span>
+                )}
+                {credStatus.hasLinkedinToken && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectLinkedIn}
+                    disabled={disconnectingLinkedIn}
+                    className="font-mono text-[9px] px-2 py-0.5 rounded bg-[rgba(239,68,68,0.1)] text-[#EF4444] border border-[rgba(239,68,68,0.25)] hover:bg-[rgba(239,68,68,0.2)] transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {disconnectingLinkedIn ? "Revoking…" : "Disconnect"}
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="text-[10px] text-[#5D6A7A] font-mono mb-1">
               Create app → Products: Sign In with LinkedIn → add{" "}
-              <span className="text-[#4A8FC2]">
-                http://localhost:14220/callback
-              </span>{" "}
+              <span className="text-[#4A8FC2]">http://localhost:14220/callback</span>{" "}
               as redirect URI (same port as Google)
             </div>
             <input
               type="text"
               value={linkedinClientId}
               onChange={(e) => setLinkedinClientId(e.target.value)}
-              placeholder="LinkedIn Client ID"
-              className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+              placeholder={credStatus.hasLinkedinClientId ? "✓ Stored — enter new value to replace" : "LinkedIn Client ID"}
+              className={`w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border focus:outline-none focus:border-[#4A8FC2] ${credStatus.hasLinkedinClientId && !linkedinClientId ? "border-[rgba(52,211,153,0.3)] placeholder-[#34D399]" : "border-[#242B35]"}`}
             />
             <div className="relative">
               <input
                 type={showLinkedinSecret ? "text" : "password"}
                 value={linkedinClientSecret}
                 onChange={(e) => setLinkedinClientSecret(e.target.value)}
-                placeholder="LinkedIn Client Secret"
-                className="w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 pr-9 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+                placeholder={credStatus.hasLinkedinClientSecret ? "✓ Stored — enter new value to replace" : "LinkedIn Client Secret"}
+                className={`w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 pr-9 rounded-lg border focus:outline-none focus:border-[#4A8FC2] ${credStatus.hasLinkedinClientSecret && !linkedinClientSecret ? "border-[rgba(52,211,153,0.3)] placeholder-[#34D399]" : "border-[#242B35]"}`}
               />
               <button
                 type="button"
                 onClick={() => setShowLinkedinSecret((v) => !v)}
                 className="absolute right-2.5 top-2 text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
               >
-                {showLinkedinSecret ? (
-                  <IconEyeOff size={14} />
-                ) : (
-                  <IconEye size={14} />
-                )}
+                {showLinkedinSecret ? <IconEyeOff size={14} /> : <IconEye size={14} />}
               </button>
             </div>
           </div>
@@ -1395,14 +1448,17 @@ export const SettingsTab: React.FC = () => {
         <form
           onSubmit={async (e) => {
             e.preventDefault();
+            const urlErr = validateFeedUrl(newFeedUrl);
+            if (urlErr) { setFeedUrlError(urlErr); return; }
             if (!newFeedTitle.trim() || !newFeedUrl.trim()) return;
+            setFeedUrlError("");
             setAddingFeed(true);
             await addCustomFeed(newFeedTitle.trim(), newFeedUrl.trim());
             setNewFeedTitle("");
             setNewFeedUrl("");
             setAddingFeed(false);
           }}
-          className="flex gap-2"
+          className="relative flex gap-2 items-start pb-5"
         >
           <input
             id="custom-feed-title-input"
@@ -1417,11 +1473,20 @@ export const SettingsTab: React.FC = () => {
             id="custom-feed-url-input"
             type="url"
             value={newFeedUrl}
-            onChange={(e) => setNewFeedUrl(e.target.value)}
+            onChange={(e) => {
+              setNewFeedUrl(e.target.value);
+              if (feedUrlError) setFeedUrlError(validateFeedUrl(e.target.value));
+            }}
+            onBlur={(e) => setFeedUrlError(validateFeedUrl(e.target.value))}
             placeholder="Feed URL (https://paulgraham.com/rss.html)"
-            className="flex-1 bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
+            className={`flex-1 bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border focus:outline-none transition-colors ${
+              feedUrlError ? "border-red-500/60 focus:border-red-500" : "border-[#242B35] focus:border-[#4A8FC2]"
+            }`}
             required
           />
+          {feedUrlError && (
+            <p className="absolute top-full left-0 mt-1 text-[10px] text-red-400 font-mono">{feedUrlError}</p>
+          )}
           <button
             type="submit"
             disabled={addingFeed}

@@ -8,6 +8,30 @@ use crate::db::{self, GmailCredentials};
 const REDIRECT_URI: &str = "http://127.0.0.1:14220/callback";
 const REDIRECT_URI_ENCODED: &str = "http%3A%2F%2F127.0.0.1%3A14220%2Fcallback";
 
+/// Kill any process currently holding port 14220 so a fresh OAuth flow
+/// can always bind cleanly — even if the user cancelled a previous attempt.
+fn free_port_14220() {
+    // lsof -ti tcp:14220 returns the PID of whatever holds the port.
+    // If nothing holds it, lsof exits non-zero and we get no output — harmless.
+    if let Ok(out) = std::process::Command::new("lsof")
+        .args(["-ti", "tcp:14220"])
+        .output()
+    {
+        let pids = String::from_utf8_lossy(&out.stdout);
+        for pid_str in pids.split_whitespace() {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                // SIGTERM first — clean shutdown. If it doesn't die within ~100ms
+                // the next bind attempt will still succeed because SO_REUSEADDR.
+                let _ = std::process::Command::new("kill")
+                    .args(["-TERM", &pid.to_string()])
+                    .output();
+            }
+        }
+        // Brief pause so the OS recycles the port before we try to bind
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+}
+
 /// Generate a cryptographically secure PKCE code_verifier using OS random bytes.
 fn generate_pkce_verifier() -> String {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -80,9 +104,12 @@ code_challenge_method=plain",
         code_challenge,
     );
 
-    // 2. Start local TCP listener
+    // 2. Start local TCP listener — kill any stale process on port 14220 first
+    // This handles: user cancelled a previous flow, clicked Connect twice, etc.
+    free_port_14220();
+
     let listener = TcpListener::bind("127.0.0.1:14220")
-        .map_err(|e| format!("Failed to bind OAuth callback port 14220: {}", e))?;
+        .map_err(|e| format!("Failed to bind OAuth callback port 14220: {}. Try again in a few seconds.", e))?;
     listener.set_nonblocking(true).ok();
 
     // 3. Open system browser — explicit path works inside .app bundle

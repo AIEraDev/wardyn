@@ -8,6 +8,23 @@ use crate::db::{self, GmailCredentials};
 // LinkedIn uses the same port as Gmail (14220) — they never run concurrently
 const REDIRECT_URI: &str = "http://localhost:14220/callback";
 
+/// Kill any process holding port 14220 before binding — same helper as Gmail OAuth.
+fn free_port_14220() {
+    if let Ok(out) = std::process::Command::new("lsof")
+        .args(["-ti", "tcp:14220"])
+        .output()
+    {
+        for pid_str in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                let _ = std::process::Command::new("kill")
+                    .args(["-TERM", &pid.to_string()])
+                    .output();
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+}
+
 pub async fn start_linkedin_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Result<String, String> {
     let (client_id, client_secret) = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
@@ -45,10 +62,11 @@ scope={}",
         client_id, redirect_encoded, state_token, scope_encoded
     );
 
-    // 2. Bind callback listener — try both localhost variants on 14220
+    // 2. Bind callback listener — kill any stale process first
+    free_port_14220();
     let listener = TcpListener::bind("127.0.0.1:14220")
         .or_else(|_| TcpListener::bind("0.0.0.0:14220"))
-        .map_err(|e| format!("Failed to bind LinkedIn OAuth port 14220: {}", e))?;
+        .map_err(|e| format!("Failed to bind LinkedIn OAuth port 14220: {}. Try again in a few seconds.", e))?;
     listener.set_nonblocking(true).ok();
 
     // 3. Open browser — explicit /usr/bin/open works inside .app bundle

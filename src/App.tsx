@@ -170,6 +170,10 @@ export default function App() {
       // Final retry after 15s in case Ollama was cold-started by the backend
       setTimeout(() => checkOllamaModels(), 15000);
 
+      // Re-check Gmail status after 2s — on packaged .app the IPC bridge
+      // may not be fully ready on the very first call at cold boot
+      setTimeout(() => checkGmailStatus(), 2000);
+
       // Auto-generate morning brief on first launch of the day (cached if already done)
       fetchMorningBrief();
       // Load personal memory & vault settings
@@ -263,7 +267,10 @@ export default function App() {
     const reminderIntervalMs = 60 * 1000;
 
     const timer = setInterval(async () => {
-      if (gmailAccounts.length > 0) {
+      // Always re-check status first — ensures we don't miss a mid-session connect
+      await checkGmailStatus();
+      const accounts = useQueueStore.getState().gmailAccounts;
+      if (accounts.length > 0) {
         await syncGmail();
       }
       await syncLinkedInTimeline();

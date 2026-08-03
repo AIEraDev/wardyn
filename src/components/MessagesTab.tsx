@@ -12,6 +12,7 @@ import {
   IconChevronUp,
   IconBookmark,
   IconCircleCheck,
+  IconLoader2,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 import { ReplyCard } from "./ReplyCard";
@@ -241,8 +242,26 @@ type ViewMode = "reply" | "digest" | "all";
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export const MessagesTab: React.FC = () => {
-  const { items, gmailAccounts, syncGmail, isLoading } = useQueueStore();
+  const {
+    items,
+    gmailAccounts,
+    syncGmail,
+    isLoading,
+    checkGmailStatus,
+    connectGmail,
+  } = useQueueStore();
   const gmailItems = items.filter((i) => i.source === "gmail");
+
+  // Re-check Gmail status on mount and on visibility change so the
+  // connected/disconnected state is always current when switching tabs
+  React.useEffect(() => {
+    checkGmailStatus();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") checkGmailStatus();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [checkGmailStatus]);
 
   const [viewMode, setViewMode] = useState<ViewMode>("reply");
   const [activeFilter, setActiveFilter] = useState<CategoryKey>("all");
@@ -499,23 +518,40 @@ export const MessagesTab: React.FC = () => {
 
       {/* ── Content area ── */}
       {isLoading ? (
-        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl">
-          <p className="text-xs text-[#7A8492] m-0 font-mono">
-            Syncing and triaging…
-          </p>
+        <div className="p-6 bg-[#151A21] border border-[#242B35] rounded-xl flex items-center gap-3">
+          <IconLoader2
+            size={16}
+            className="text-[#4A8FC2] animate-spin shrink-0"
+          />
+          <div>
+            <p className="text-xs font-semibold text-[#F0F4F8] m-0">
+              Syncing inbox…
+            </p>
+            <p className="text-[11px] text-[#7A8492] mt-0.5 m-0">
+              Triaging messages with AI, this takes a few seconds.
+            </p>
+          </div>
         </div>
       ) : gmailAccounts.length === 0 ? (
-        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-2">
+        <div className="p-8 bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-3 text-center">
           <div className="w-10 h-10 rounded-full bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.25)] flex items-center justify-center text-[#4A8FC2]">
             <IconMail size={20} />
           </div>
-          <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">
-            Gmail Not Connected
-          </h4>
-          <p className="text-xs text-[#7A8492] max-w-xs m-0 leading-relaxed">
-            Connect your Gmail account on the Today tab or Settings to begin
-            smart triage.
-          </p>
+          <div>
+            <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">
+              Gmail Not Connected
+            </h4>
+            <p className="text-xs text-[#7A8492] max-w-xs m-0 mt-1 leading-relaxed">
+              Connect your Gmail account to start smart triage — AI will sort
+              what needs your reply from everything else.
+            </p>
+          </div>
+          <button
+            onClick={connectGmail}
+            className="font-mono text-xs px-3.5 py-1.5 rounded-md bg-[#4A8FC2] text-black font-semibold hover:bg-[#5b9bd1] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <IconMail size={13} /> Connect Gmail
+          </button>
         </div>
       ) : sortedItems.length === 0 && !searchQuery ? (
         /* ── Empty states per view mode ── */

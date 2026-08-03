@@ -1361,6 +1361,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   syncGmail: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      // Set loading immediately so UI shows syncing state before fetchItems fires
+      set({ isLoading: true });
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         const newItemsCount = await invoke<number>("sync_gmail_messages");
@@ -1413,8 +1415,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           err.toString().includes("expired")
         ) {
           set({ gmailAccount: null });
+          // Also clear accounts so UI shows disconnected state
+          await get().checkGmailStatus();
         }
         console.error("Sync Gmail error:", err);
+        set({ isLoading: false });
       }
     }
   },

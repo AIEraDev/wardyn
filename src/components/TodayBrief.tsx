@@ -5,7 +5,6 @@ import {
   IconRefresh,
   IconPlugConnected,
   IconShieldCheck,
-  IconInbox,
   IconSparkles,
   IconBrain,
   IconLoader2,
@@ -65,9 +64,25 @@ export const TodayBrief: React.FC = () => {
   const [scratchEmail, setScratchEmail] = useState("");
 
   useEffect(() => {
-    checkGmailStatus();
-    syncCalendarDeadlines();
-    useQueueStore.getState().fetchTasks();
+    // Initial check — small delay to ensure Tauri IPC is ready on .app launch
+    const initialCheck = setTimeout(() => {
+      checkGmailStatus();
+      syncCalendarDeadlines();
+      useQueueStore.getState().fetchTasks();
+    }, 300);
+
+    // Re-check whenever the window regains visibility (user opens from tray)
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        checkGmailStatus();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearTimeout(initialCheck);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [checkGmailStatus, syncCalendarDeadlines]);
 
   // Only surface emails that genuinely need a reply — suppress automated noise
@@ -86,6 +101,8 @@ export const TodayBrief: React.FC = () => {
       (i.triage_status === "informational" ||
         (!i.needs_reply && i.triage_status === "active")),
   );
+  // All gmail messages for context counts
+  const gmailItems = items.filter((i) => i.source === "gmail");
   // Full pending count for the badge context
   const totalPending = items.filter((i) => i.status === "pending").length;
   const reviewCount = pendingItems.length;
@@ -362,31 +379,48 @@ export const TodayBrief: React.FC = () => {
         <div className="flex-1 h-px bg-[#242B35]" />
       </div>
 
-      {isLoading ? (
-        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl">
-          <p className="text-xs text-[#7A8492] m-0">Loading triaged items…</p>
-        </div>
-      ) : pendingItems.length === 0 ? (
-        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-2">
-          <div className="w-10 h-10 rounded-full bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.25)] flex items-center justify-center text-[#34D399]">
-            <IconInbox size={20} />
+      {/* State 1: Gmail not connected — skip the queue entirely */}
+      {gmailAccounts.length ===
+      0 ? null /* State 2: Syncing in progress */ : isLoading ? (
+        <div className="p-6 bg-[#151A21] border border-[#242B35] rounded-xl flex items-center gap-3">
+          <IconLoader2
+            size={16}
+            className="text-[#4A8FC2] animate-spin shrink-0"
+          />
+          <div>
+            <p className="text-xs font-semibold text-[#F0F4F8] m-0">
+              Syncing your inbox…
+            </p>
+            <p className="text-[11px] text-[#7A8492] mt-0.5 m-0">
+              Triaging messages with AI — this takes a few seconds.
+            </p>
           </div>
-          <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">
-            All caught up!
-          </h4>
-          <p className="text-xs text-[#7A8492] max-w-xs m-0">
-            No pending items awaiting approval.
-          </p>
-          {gmailAccounts.length > 0 && (
-            <button
-              onClick={syncGmail}
-              className="mt-1 font-mono text-xs px-3 py-1.5 rounded-md bg-[#181E27] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] hover:bg-[rgba(74,143,194,0.16)] transition-colors inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-            >
-              <IconRefresh size={13} /> Check New Messages
-            </button>
-          )}
+        </div>
+      ) : /* State 3: Connected, synced, nothing needs reply */
+      pendingItems.length === 0 ? (
+        <div className="p-6 bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-2 text-center">
+          <div className="w-9 h-9 rounded-full bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.2)] flex items-center justify-center text-[#34D399]">
+            <IconCheck size={16} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[#F0F4F8] m-0">
+              Inbox clear
+            </p>
+            <p className="text-[11px] text-[#7A8492] mt-0.5 m-0">
+              {gmailItems.length > 0
+                ? `${gmailItems.length} message${gmailItems.length > 1 ? "s" : ""} synced — none need your reply right now.`
+                : "No messages synced yet."}
+            </p>
+          </div>
+          <button
+            onClick={syncGmail}
+            className="mt-1 font-mono text-xs px-3 py-1.5 rounded-md bg-[#181E27] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] hover:bg-[rgba(74,143,194,0.1)] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <IconRefresh size={12} /> Check for New Mail
+          </button>
         </div>
       ) : (
+        /* State 4: Connected, has pending items */
         <div className="space-y-3">
           {pendingItems.map((item) => (
             <ReplyCard key={item.id} item={item} />

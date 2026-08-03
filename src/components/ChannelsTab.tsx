@@ -27,6 +27,7 @@ export const ChannelsTab: React.FC = () => {
     gmailAccounts,
     connectLinkedIn,
     setActiveTab,
+    checkGmailStatus,
   } = useQueueStore();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -65,7 +66,9 @@ export const ChannelsTab: React.FC = () => {
       }
     };
     checkCreds();
-  }, []);
+    // Always refresh Gmail connection state on mount
+    checkGmailStatus();
+  }, [checkGmailStatus]);
 
   const handleConnect = async (channelId: string) => {
     setErrors((e) => ({ ...e, [channelId]: "" }));

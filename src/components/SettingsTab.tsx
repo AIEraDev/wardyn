@@ -443,6 +443,7 @@ export const SettingsTab: React.FC = () => {
     pendingDownloads,
     installOllamaModel,
     cancelOllamaModelInstall,
+    checkGmailStatus,
   } = useQueueStore();
 
   const t = useTranslation();
@@ -633,8 +634,9 @@ export const SettingsTab: React.FC = () => {
 
   useEffect(() => {
     checkAutoStartStatus();
+    checkGmailStatus();
     fetchModels();
-  }, [checkAutoStartStatus]);
+  }, [checkAutoStartStatus, checkGmailStatus]);
 
   const handleInstallModel = async (modelId: string, modelName: string) => {
     // Check Ollama status before attempting pull

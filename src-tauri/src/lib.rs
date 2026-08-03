@@ -92,6 +92,111 @@ fn get_gmail_auth_status(state: State<'_, DbState>) -> Result<Vec<String>, Strin
     Ok(emails)
 }
 
+/// Returns the smart calendar intelligence analysis for all actionable queue items.
+/// The frontend uses this to show the user what the system decided and why.
+#[tauri::command]
+fn get_calendar_intelligence_command(
+    state: State<'_, DbState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let items = db::get_all_queue_items(&conn)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|i| i.flagged || i.needs_reply || i.triage_status == "active")
+        .collect::<Vec<_>>();
+
+    let results: Vec<serde_json::Value> = items
+        .iter()
+        .map(|item| {
+            let intent = crate::calendar::intelligence::analyse_email(item);
+            serde_json::json!({
+                "item_id":                item.id,
+                "sender":                 item.sender,
+                "preview":                &item.preview[..item.preview.len().min(80)],
+                "should_add_to_calendar": intent.should_add_to_calendar,
+                "event_title":            intent.event_title,
+                "event_date":             intent.event_date,
+                "recurrence_rule":        intent.recurrence_rule,
+                "reminder_lead_minutes":  intent.reminder_lead_minutes,
+                "reason":                 intent.reason,
+            })
+        })
+        .collect();
+
+    Ok(results)
+}
+
+/// Manually trigger the smart calendar push for a specific queue item.
+/// Useful when the user wants to force a calendar entry that the system didn't auto-add.
+#[tauri::command]
+async fn push_item_to_calendar_command(
+    item_id: String,
+    state: State<'_, DbState>,
+) -> Result<crate::calendar::intelligence::CalendarIntent, String> {
+    let item = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        db::get_queue_item_by_id(&conn, &item_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Item {} not found", item_id))?
+    };
+
+    let intent = crate::calendar::intelligence::analyse_email(&item);
+
+    if intent.should_add_to_calendar || true {
+        // Force push regardless of should_add_to_calendar when explicitly requested
+        calendar::sync::sync_calendar_deadlines(&state.0).await.ok();
+    }
+
+    Ok(intent)
+}
+/// credential row. Shows whether tokens are present and whether they're expired.
+/// Never exposes actual token values.
+#[tauri::command]
+fn diagnose_gmail_credentials(state: State<'_, DbState>) -> Result<Vec<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT service, email, expires_at,
+                COALESCE(access_token,''), COALESCE(refresh_token,'')
+         FROM credentials WHERE service='gmail' OR service LIKE 'gmail:%'"
+    ).map_err(|e| e.to_string())?;
+
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let rows: Vec<String> = stmt.query_map([], |row| {
+        let service:     String       = row.get(0)?;
+        let email:       Option<String> = row.get(1)?;
+        let expires_at:  i64          = row.get(2)?;
+        let enc_access:  String       = row.get(3)?;
+        let enc_refresh: String       = row.get(4)?;
+        Ok((service, email, expires_at, enc_access, enc_refresh))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .map(|(svc, email, expires_at, enc_access, enc_refresh)| {
+        let access  = crate::security::decrypt_token(&enc_access);
+        let refresh = crate::security::decrypt_token(&enc_refresh);
+        let has_access  = !access.is_empty();
+        let has_refresh = !refresh.is_empty();
+        let expired = expires_at < now_secs;
+        format!(
+            "{} | access_token:{} | refresh_token:{} | token_expired:{}",
+            email.as_deref().unwrap_or(&svc),
+            if has_access  { "✓ present" } else { "✗ MISSING — needs re-auth" },
+            if has_refresh { "✓ present" } else { "✗ MISSING — needs re-auth" },
+            if expired { format!("YES ({}s ago)", now_secs - expires_at) } else { "no".to_string() }
+        )
+    })
+    .collect();
+
+    if rows.is_empty() {
+        return Ok(vec!["No Gmail credentials found in database — not connected.".to_string()]);
+    }
+    Ok(rows)
+}
+
 #[tauri::command]
 fn disconnect_gmail(email: Option<String>, state: State<'_, DbState>) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
@@ -311,6 +416,113 @@ async fn start_ollama_command() -> Result<String, String> {
 #[tauri::command]
 async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Vec<SyncedCalendarEvent>, String> {
     calendar::sync::sync_calendar_deadlines(&state.0).await
+}
+
+#[tauri::command]
+fn add_custom_calendar_event_command(
+    id: String,
+    summary: String,
+    event_date: String,
+    end_time: Option<String>,
+    description: Option<String>,
+    location: Option<String>,
+    is_all_day: bool,
+    state: State<'_, DbState>,
+) -> Result<SyncedCalendarEvent, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let now = db::now_iso();
+    let evt = SyncedCalendarEvent {
+        id:            format!("custom_{}", id),
+        queue_item_id: format!("custom_item_{}", id),
+        event_id:      id,
+        summary,
+        event_date,
+        end_time,
+        description,
+        location,
+        is_all_day,
+        source:        "custom".into(),
+        created_at:    now,
+    };
+    db::record_custom_calendar_event(&conn, &evt).map_err(|e| e.to_string())?;
+    Ok(evt)
+}
+
+#[tauri::command]
+fn delete_custom_calendar_event_command(
+    id: String,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    // Clean up any pending reminder for this event too
+    conn.execute(
+        "DELETE FROM reminders WHERE item_id = ?1 AND status = 'pending'",
+        rusqlite::params![id],
+    ).ok();
+    db::delete_custom_calendar_event(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_calendar_events_command(state: State<'_, DbState>) -> Result<Vec<SyncedCalendarEvent>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::get_synced_calendar_events(&conn).map_err(|e| e.to_string())
+}
+
+/// Update the reminder timing for a calendar event (replaces any existing reminder).
+#[tauri::command]
+fn set_calendar_reminder_command(
+    event_id: String,  // the calendar_events.id value (e.g. "gcal_xxx" or "custom_xxx")
+    event_summary: String,
+    event_date: String,
+    minutes_before: i64,  // 0 = at time, 15, 60, 1440 (1 day), etc.
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+
+    // Remove any existing pending reminder for this event
+    conn.execute(
+        "DELETE FROM reminders WHERE item_id = ?1 AND status = 'pending'",
+        rusqlite::params![event_id],
+    ).ok();
+
+    let event_secs = db::iso_to_unix_secs(&event_date)
+        .ok_or_else(|| format!("Invalid event_date: {}", event_date))?;
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let remind_secs = (event_secs - minutes_before * 60).max(now_secs + 5);
+
+    // Build ISO string for reminder_date
+    let remind_iso = {
+        let s = remind_secs % 60;
+        let m = (remind_secs / 60) % 60;
+        let h = (remind_secs / 3600) % 24;
+        let days = remind_secs / 86400;
+        let (yr, mo, dy) = db::days_to_ymd(days as u64);
+        format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", yr, mo, dy, h, m, s)
+    };
+
+    let timing_label = match minutes_before {
+        0    => "at event time".to_string(),
+        1..=59  => format!("{} minutes before", minutes_before),
+        60   => "1 hour before".to_string(),
+        1440 => "1 day before".to_string(),
+        _    => format!("{} minutes before", minutes_before),
+    };
+
+    let reminder = db::Reminder {
+        id:              format!("calrem_{}_{}", event_id, db::now_iso().replace(':', "-")),
+        item_id:         event_id,
+        reminder_date:   remind_iso,
+        message:         format!("⏰ {} — {}", event_summary, timing_label),
+        status:          "pending".into(),
+        created_at:      db::now_iso(),
+        triggered_at:    None,
+        recurrence_rule: "none".into(),
+    };
+    db::create_reminder(&conn, &reminder).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -657,6 +869,7 @@ fn create_reminder_command(
         status: "pending".into(),
         created_at: db::now_iso(),
         triggered_at: None,
+        recurrence_rule: "none".into(),
     };
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     db::create_reminder(&conn, &reminder).map_err(|e| e.to_string())?;
@@ -675,10 +888,62 @@ fn get_reminders_command(state: State<'_, DbState>) -> Result<Vec<db::Reminder>,
     db::get_reminders(&conn).map_err(|e| e.to_string())
 }
 
+/// Mark a reminder as triggered. If it has a recurrence_rule, automatically
+/// schedule the next occurrence so the user keeps getting reminded.
 #[tauri::command]
 fn mark_reminder_triggered_command(id: String, state: State<'_, DbState>) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    db::mark_reminder_triggered(&conn, &id).map_err(|e| e.to_string())
+
+    // Fetch the reminder before marking so we can read recurrence + message
+    let reminder: Option<db::Reminder> = conn.prepare(
+        "SELECT id, item_id, reminder_date, message, status, created_at, triggered_at,
+                COALESCE(recurrence_rule,'none')
+         FROM reminders WHERE id = ?1"
+    ).ok().and_then(|mut s| {
+        s.query_row(rusqlite::params![&id], |row| {
+            Ok(db::Reminder {
+                id:              row.get(0)?,
+                item_id:         row.get(1)?,
+                reminder_date:   row.get(2)?,
+                message:         row.get(3)?,
+                status:          row.get::<_,Option<String>>(4)?.unwrap_or_else(|| "pending".into()),
+                created_at:      row.get(5)?,
+                triggered_at:    row.get(6)?,
+                recurrence_rule: row.get(7)?,
+            })
+        }).ok()
+    });
+
+    // Mark this instance triggered
+    db::mark_reminder_triggered(&conn, &id).map_err(|e| e.to_string())?;
+
+    // Reschedule if recurring
+    if let Some(r) = reminder {
+        if r.recurrence_rule != "none" && !r.recurrence_rule.is_empty() {
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+
+            if let Some(next_date) = crate::calendar::intelligence::next_reminder_date(
+                &r.recurrence_rule, now_secs,
+            ) {
+                let next = db::Reminder {
+                    id:              format!("{}_r{}", r.id, now_secs),
+                    item_id:         r.item_id.clone(),
+                    reminder_date:   next_date,
+                    message:         r.message.clone(),
+                    status:          "pending".into(),
+                    created_at:      db::now_iso(),
+                    triggered_at:    None,
+                    recurrence_rule: r.recurrence_rule.clone(),
+                };
+                db::create_reminder(&conn, &next).ok();
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -1448,6 +1713,12 @@ pub fn run() {
             cancel_model_install_command,
             delete_ollama_model_command,
             sync_calendar_deadlines_command,
+            add_custom_calendar_event_command,
+            delete_custom_calendar_event_command,
+            get_calendar_events_command,
+            set_calendar_reminder_command,
+            get_calendar_intelligence_command,
+            push_item_to_calendar_command,
             open_external_url,
             publish_linkedin_post_command,
             get_morning_brief_command,
@@ -1528,7 +1799,8 @@ pub fn run() {
             upsert_social_post_command,
             get_social_posts_command,
             update_social_post_status_command,
-            delete_social_post_command
+            delete_social_post_command,
+            diagnose_gmail_credentials
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

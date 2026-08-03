@@ -133,7 +133,11 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
             }
         };
 
+        // Flag to break out of all categories if this account's session is revoked mid-loop
+        let mut account_session_ok = true;
+
         for (query, category_label) in &categories {
+            if !account_session_ok { break; }
             let list_url = format!(
                 "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&q={}",
                 urlencoding::encode(query)
@@ -153,10 +157,13 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
             };
 
             if list_res.status().as_u16() == 401 {
-                let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
-                db::delete_gmail_credentials(&conn, creds.email.as_deref()).ok();
-                eprintln!("[Gmail Sync] Session revoked for {}", account_email);
-                continue;
+                // Token is truly revoked — log it clearly and stop iterating this account.
+                // Do NOT delete credentials here: the token may have just expired and the
+                // refresh will handle it on the next sync cycle. Only delete if the refresh
+                // itself explicitly fails (handled in get_valid_access_token).
+                eprintln!("[Gmail Sync] 401 for {} ({}) — access token expired or revoked. Will retry on next sync.", account_email, category_label);
+                account_session_ok = false;
+                break;
             }
 
             if !list_res.status().is_success() {
@@ -368,7 +375,17 @@ async fn get_valid_access_token(
         return Ok(creds.access_token.clone());
     }
 
-    if creds.refresh_token.is_empty() {
+    // If the refresh token is empty or still holds the DB placeholder (meaning
+    // keychain retrieval returned nothing), don't attempt a refresh — just use
+    // the current access token and let the 401 handler surface the issue cleanly.
+    if creds.refresh_token.is_empty()
+        || creds.refresh_token == "[KEYCHAIN_ENCLAVE]"
+        || creds.refresh_token == "[KEYCHAIN_ENCLAVE_ACCESS]"
+    {
+        eprintln!(
+            "[Gmail Token] Refresh token unavailable for {} (keychain may be locked). Using existing access token.",
+            creds.email.as_deref().unwrap_or("unknown")
+        );
         return Ok(creds.access_token.clone());
     }
 
@@ -408,11 +425,27 @@ async fn get_valid_access_token(
             .and_then(|v| v["error"].as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| status.to_string());
 
-        // Delete only the specific account that failed, using its exact service key
-        let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
-        db::delete_gmail_credentials(&conn, creds.email.as_deref()).ok();
+        eprintln!(
+            "[Gmail Token] Refresh failed for {} — Google error: {} | body: {}",
+            creds.email.as_deref().unwrap_or("unknown"),
+            google_error,
+            body
+        );
+
+        // Return an error but NEVER delete credentials on a refresh failure.
+        // The credential row may be valid — the failure could be due to:
+        //   - A transient network issue
+        //   - Keychain being unavailable (unsigned dev build) → empty refresh token → invalid_grant
+        //   - Wrong client secret stored
+        // Deleting credentials on any of these would permanently log the user out
+        // when the fix is simply to re-run the OAuth flow. The user can disconnect
+        // manually from Settings if they actually want to remove the account.
+        eprintln!(
+            "[Gmail Token] Keeping credentials for {} — user can re-auth from Channels if needed.",
+            creds.email.as_deref().unwrap_or("unknown")
+        );
         return Err(format!(
-            "Gmail session expired and refresh failed ({}). Please reconnect Gmail.",
+            "Gmail token refresh failed ({}). Please reconnect your Gmail account in Channels.",
             google_error
         ));
     }

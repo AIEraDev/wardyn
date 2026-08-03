@@ -12,7 +12,6 @@ import {
   IconWand,
   IconBulb,
   IconRepeat,
-  IconPhoto,
   IconSend,
   IconLoader2,
 } from "@tabler/icons-react";
@@ -176,7 +175,7 @@ export const ContentTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 🧠 Network Learning Radar Section (Feed Analysis & Vision AI) */}
+      {/* LinkedIn Feed Insights — trending posts from your interest hashtags */}
       {linkedInSummary?.feed_insights &&
         linkedInSummary.feed_insights.length > 0 && (
           <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-4">
@@ -187,17 +186,16 @@ export const ContentTab: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-[#F0F4F8] m-0">
-                    Network Learning Radar (Feed & Vision AI Analysis)
+                    LinkedIn Feed Insights
                   </h3>
                   <p className="text-xs text-[#7A8492] m-0">
-                    Deconstructed insights, image diagram breakdowns &
-                    copywriting patterns
+                    Trending posts from your interest hashtags — create a post
+                    inspired by any
                   </p>
                 </div>
               </div>
-
-              <span className="font-mono text-xs text-[#34D399] bg-[rgba(52,211,153,0.15)] px-2.5 py-1 rounded border border-[rgba(52,211,153,0.3)] flex items-center gap-1">
-                <IconPhoto size={13} /> Vision AI Active
+              <span className="font-mono text-[10px] text-[#7A8492] bg-[#181E27] px-2.5 py-1 rounded border border-[#242B35]">
+                {linkedInSummary.feed_insights.length} posts
               </span>
             </div>
 
@@ -217,22 +215,6 @@ export const ContentTab: React.FC = () => {
                       </span>
                     </div>
 
-                    {/* Attached Post Image & Vision Analysis Badge */}
-                    {insight.image_url && (
-                      <div className="rounded-lg overflow-hidden border border-[#242B35] relative group">
-                        <img
-                          src={insight.image_url}
-                          alt="Post media"
-                          className="w-full h-32 object-cover"
-                        />
-                        {insight.image_analysis && (
-                          <div className="p-2 bg-[rgba(11,14,19,0.9)] text-[10px] text-[#4A8FC2] font-mono border-t border-[#242B35]">
-                            {insight.image_analysis}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
                     <div>
                       <h5 className="text-xs font-semibold text-[#F0F4F8] m-0">
                         {insight.author_name}
@@ -242,21 +224,16 @@ export const ContentTab: React.FC = () => {
                       </p>
                     </div>
 
-                    <p className="text-xs text-[#9AA4B2] italic bg-[#151A21] p-2.5 rounded border border-[#242B35] m-0">
+                    <p className="text-xs text-[#9AA4B2] italic bg-[#151A21] p-2.5 rounded border border-[#242B35] m-0 line-clamp-4">
                       "{insight.original_snippet}"
                     </p>
 
                     <div className="space-y-1 pt-1 text-xs">
                       <p className="text-[#F0F4F8] m-0">
-                        <strong className="text-[#4A8FC2]">💡 Lesson: </strong>
+                        <strong className="text-[#4A8FC2]">💡 </strong>
                         {insight.core_lesson}
                       </p>
-                      <p className="text-[#9AA4B2] text-[11px] m-0">
-                        <strong className="text-[#E8A23D]">✍️ Pattern: </strong>
-                        {insight.copy_structure}
-                      </p>
                       <p className="text-[#34D399] text-[11px] m-0">
-                        <strong className="text-[#34D399]">🛠️ Apply: </strong>
                         {insight.actionable_application}
                       </p>
                     </div>
@@ -267,7 +244,7 @@ export const ContentTab: React.FC = () => {
                     onClick={() => remixInsightToPersonalPost(insight)}
                     className="w-full py-1.5 font-mono text-xs bg-[rgba(74,143,194,0.16)] text-[#4A8FC2] hover:bg-[rgba(74,143,194,0.25)] border border-[rgba(74,143,194,0.35)] rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    <IconRepeat size={13} /> Remix & Apply to My Post
+                    <IconRepeat size={13} /> Create Post from This
                   </button>
                 </div>
               ))}

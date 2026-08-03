@@ -1221,21 +1221,25 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
           "get_linkedin_auth_status",
         );
         if (!authStatus) {
-          await get().sendDesktopNotification(
-            "💼 LinkedIn Account Unsynced",
-            'Click "Connect LinkedIn OAuth" in Channels or Settings to connect your personal profile.',
-          );
+          // Only notify about missing connection once per session, not on every periodic sync
           return;
         }
 
+        const prevSummary = get().linkedInSummary;
         const summary = await invoke<LinkedInTimelineSummary>(
           "fetch_linkedin_timeline_command",
         );
         set({ linkedInSummary: summary });
-        await get().sendDesktopNotification(
-          "💼 LinkedIn Personal Profile & Feed Synced",
-          `Fetched network insights & feed briefs for ${summary.profile_name}`,
-        );
+
+        // Only send a desktop notification when this is a fresh connection
+        // (no previous summary) — not on every routine background sync
+        const isFirstSync = !prevSummary;
+        if (isFirstSync) {
+          await get().sendDesktopNotification(
+            "💼 LinkedIn Connected",
+            `Feed synced for ${summary.profile_name}`,
+          );
+        }
       } catch (err: any) {
         console.info("LinkedIn live API check:", err);
       }

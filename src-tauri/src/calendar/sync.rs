@@ -191,11 +191,6 @@ fn unix_secs_to_iso(secs: i64) -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", yr, mo, dy, h, m, s)
 }
 
-fn format_event_time(iso: &str) -> String {
-    // Extract HH:MM from an ISO datetime for display
-    if iso.len() >= 16 { iso[11..16].to_string() } else { iso.to_string() }
-}
-
 // ─── Main sync function ───────────────────────────────────────────────────────
 
 pub async fn sync_calendar_deadlines(

@@ -133,11 +133,9 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
             }
         };
 
-        // Flag to break out of all categories if this account's session is revoked mid-loop
-        let mut account_session_ok = true;
+        // Break out of all categories if this account's session is revoked mid-loop
 
         for (query, category_label) in &categories {
-            if !account_session_ok { break; }
             let list_url = format!(
                 "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&q={}",
                 urlencoding::encode(query)
@@ -162,7 +160,6 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                 // refresh will handle it on the next sync cycle. Only delete if the refresh
                 // itself explicitly fails (handled in get_valid_access_token).
                 eprintln!("[Gmail Sync] 401 for {} ({}) — access token expired or revoked. Will retry on next sync.", account_email, category_label);
-                account_session_ok = false;
                 break;
             }
 

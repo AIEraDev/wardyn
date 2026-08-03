@@ -255,15 +255,22 @@ fn parse_leading_number(s: &str) -> Option<u32> {
 }
 
 fn extract_iso_date(text: &str) -> Option<String> {
-    // Naive: look for YYYY-MM-DD pattern
-    for i in 0..text.len().saturating_sub(9) {
+    // Walk through valid char-boundary positions looking for YYYY-MM-DD
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    if len < 10 { return None; }
+    for i in 0..=(len - 10) {
+        // Only attempt a slice at a UTF-8 char boundary
+        if !text.is_char_boundary(i) || !text.is_char_boundary(i + 10) {
+            continue;
+        }
         let slice = &text[i..i + 10];
-        if slice.len() == 10
-            && slice.chars().nth(4) == Some('-')
-            && slice.chars().nth(7) == Some('-')
-            && slice[..4].chars().all(|c| c.is_ascii_digit())
-            && slice[5..7].chars().all(|c| c.is_ascii_digit())
-            && slice[8..10].chars().all(|c| c.is_ascii_digit())
+        // Must match NNNN-NN-NN where N is ASCII digit
+        let b = slice.as_bytes();
+        if b[4] == b'-' && b[7] == b'-'
+            && b[..4].iter().all(|c| c.is_ascii_digit())
+            && b[5..7].iter().all(|c| c.is_ascii_digit())
+            && b[8..10].iter().all(|c| c.is_ascii_digit())
         {
             return Some(slice.to_string());
         }
@@ -272,23 +279,32 @@ fn extract_iso_date(text: &str) -> Option<String> {
 }
 
 fn extract_slashed_date(text: &str, current_year: u64) -> Option<String> {
-    // Look for DD/MM/YYYY or MM/DD/YYYY
-    for i in 0..text.len().saturating_sub(9) {
+    // Look for DD/MM/YYYY or MM/DD/YYYY — all chars are ASCII so byte slicing is safe
+    // after we verify we're on a char boundary.
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    if len < 10 { let _ = current_year; return None; }
+    for i in 0..=(len - 10) {
+        if !text.is_char_boundary(i) || !text.is_char_boundary(i + 10) {
+            continue;
+        }
         let slice = &text[i..i + 10];
-        if slice.chars().nth(2) == Some('/') && slice.chars().nth(5) == Some('/') {
-            let p1: u32 = slice[..2].parse().ok()?;
-            let p2: u32 = slice[3..5].parse().ok()?;
-            let yr: u32 = slice[6..10].parse().ok()?;
-            if yr < 2020 || yr > 2035 { continue; }
-            // Disambiguate: if p1 > 12 it must be DD/MM
-            let (day, month) = if p1 > 12 { (p1, p2) } else { (p2, p1) };
-            if month >= 1 && month <= 12 && day >= 1 && day <= 31 {
-                return Some(format!("{:04}-{:02}-{:02}", yr, month, day));
-            }
+        let b = slice.as_bytes();
+        // Require NN/NN/NNNN pattern (all digits except separators)
+        if b[2] != b'/' || b[5] != b'/' { continue; }
+        if !b[..2].iter().all(|c| c.is_ascii_digit()) { continue; }
+        if !b[3..5].iter().all(|c| c.is_ascii_digit()) { continue; }
+        if !b[6..10].iter().all(|c| c.is_ascii_digit()) { continue; }
+        let p1: u32 = match slice[..2].parse() { Ok(n) => n, Err(_) => continue };
+        let p2: u32 = match slice[3..5].parse() { Ok(n) => n, Err(_) => continue };
+        let yr: u32 = match slice[6..10].parse() { Ok(n) => n, Err(_) => continue };
+        if yr < 2020 || yr > 2035 { continue; }
+        let (day, month) = if p1 > 12 { (p1, p2) } else { (p2, p1) };
+        if month >= 1 && month <= 12 && day >= 1 && day <= 31 {
+            return Some(format!("{:04}-{:02}-{:02}", yr, month, day));
         }
     }
-    // Also try D/M/YY
-    let _ = current_year; // used in future enhancement
+    let _ = current_year;
     None
 }
 
@@ -398,7 +414,13 @@ fn build_event_title(category: &EmailCategory, item: &QueueItem) -> String {
 
     // Use subject (before first ":") as the title
     let subject = stripped.split(':').next().unwrap_or(stripped).trim();
-    let subject = if subject.len() > 70 { &subject[..67] } else { subject };
+    // Truncate at a char boundary — never byte-index into a Unicode string
+    let subject = if subject.chars().count() > 70 {
+        let end = subject.char_indices().nth(67).map(|(i, _)| i).unwrap_or(subject.len());
+        &subject[..end]
+    } else {
+        subject
+    };
 
     let prefix = match category {
         EmailCategory::VisaImmigration => "🛂 Visa:",

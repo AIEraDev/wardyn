@@ -544,9 +544,10 @@ fn fallback_rule_based_classify(item: &crate::models::QueueItem) -> Classificati
 
 
 fn extract_topic(preview: &str) -> String {
-    if preview.len() <= 40 {
+    if preview.chars().count() <= 40 {
         preview.to_string()
     } else {
-        format!("{}...", &preview[..37])
+        let end = preview.char_indices().nth(37).map(|(i, _)| i).unwrap_or(preview.len());
+        format!("{}...", &preview[..end])
     }
 }

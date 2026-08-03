@@ -70,16 +70,20 @@ fn extract_subject(preview: &str) -> String {
         .unwrap_or(preview)
         .trim();
 
+    // Helper: truncate at a char boundary — never byte-index into Unicode strings
+    fn truncate_chars(s: &str, max_chars: usize) -> String {
+        if s.chars().count() <= max_chars {
+            s.to_string()
+        } else {
+            let end = s.char_indices().nth(max_chars).map(|(i, _)| i).unwrap_or(s.len());
+            format!("{}...", &s[..end])
+        }
+    }
+
     if let Some((subject, _)) = stripped.split_once(':') {
         let clean = subject.trim();
-        if clean.len() > 60 {
-            format!("{}...", &clean[..57])
-        } else {
-            clean.to_string()
-        }
-    } else if stripped.len() > 60 {
-        format!("{}...", &stripped[..57])
+        truncate_chars(clean, 57)
     } else {
-        stripped.to_string()
+        truncate_chars(stripped, 57)
     }
 }

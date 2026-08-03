@@ -134,6 +134,13 @@ pub fn ensure_column(conn: &Connection, table_name: &str, column_name: &str, col
 }
 
 pub fn init_db(conn: &Connection) -> Result<()> {
+    // ── Security & performance PRAGMAs — must run before any other statement ──
+    conn.execute_batch("
+        PRAGMA foreign_keys = ON;
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+    ")?;
+
     // ── Schema version tracking ───────────────────────────────────────────────
     conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_migrations (
         version     INTEGER PRIMARY KEY,
@@ -401,6 +408,43 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         ensure_column(&tx, "reminders", "recurrence_rule", "TEXT NOT NULL DEFAULT 'none'")?;
         tx.execute(
             "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (7, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
+    // ── Migration 8: UNIQUE constraint on habit_completions ──────────────────
+    // Prevents duplicate completions from double-taps / race conditions.
+    // Uses CREATE UNIQUE INDEX instead of ALTER TABLE so it is safe to run
+    // even if the table already has data (duplicates would have been caught
+    // by INSERT OR IGNORE added to the insert handler).
+    if current_version < 8 {
+        let tx = conn.unchecked_transaction()?;
+        // Remove any existing duplicates first (keep the earliest row per pair)
+        tx.execute_batch("
+            DELETE FROM habit_completions
+            WHERE rowid NOT IN (
+                SELECT MIN(rowid)
+                FROM habit_completions
+                GROUP BY habit_id, completed_date
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_completions_unique
+                ON habit_completions(habit_id, completed_date);
+        ")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (8, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
+    // ── Migration 9: source_item_id column on reminders ──────────────────────
+    // Allows dedup check: is there already a reminder for this event at this time?
+    if current_version < 9 {
+        let tx = conn.unchecked_transaction()?;
+        ensure_column(&tx, "reminders", "source_item_id", "TEXT NOT NULL DEFAULT ''")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (9, ?1)",
             rusqlite::params![now_iso()],
         )?;
         tx.commit()?;
@@ -1275,6 +1319,22 @@ pub fn update_task_status(conn: &Connection, id: &str, status: &str) -> Result<(
     )?;
     Ok(())
 }
+
+pub fn update_task(
+    conn: &Connection,
+    id: &str,
+    title: &str,
+    description: Option<&str>,
+    due_date: Option<&str>,
+    priority: &str,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE tasks SET title = ?1, description = ?2, due_date = ?3, priority = ?4 WHERE id = ?5",
+        params![title, description, due_date, priority, id],
+    )?;
+    Ok(())
+}
+
 
 pub fn delete_task(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;

@@ -83,12 +83,16 @@ pub async fn start_oauth_flow(conn_mutex: &std::sync::Mutex<Connection>) -> Resu
         return Err("Google OAuth client secret is not configured. Go to Settings → OAuth Credentials and paste your Google Client Secret.".to_string());
     }
 
-    // PKCE — plain method: code_challenge = code_verifier (Google supports for installed apps)
+    // PKCE — S256 method: code_challenge = base64url(SHA-256(code_verifier))
     let code_verifier = generate_pkce_verifier();
-    // Plain method: challenge IS the verifier — do NOT URL-encode it, send as-is
-    let code_challenge = &code_verifier;
+    let code_challenge = {
+        use sha2::{Sha256, Digest};
+        use base64::Engine;
+        let hash = Sha256::digest(code_verifier.as_bytes());
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash)
+    };
 
-    // 1. Build Google OAuth Auth URL with PKCE, no client_secret needed
+    // 1. Build Google OAuth Auth URL with PKCE S256
     let auth_url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?\
 client_id={}&\
@@ -98,7 +102,7 @@ scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.readonly%20https%3A%2F%2Fw
 access_type=offline&\
 prompt=consent&\
 code_challenge={}&\
-code_challenge_method=plain",
+code_challenge_method=S256",
         client_id,
         REDIRECT_URI_ENCODED,
         code_challenge,

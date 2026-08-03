@@ -677,6 +677,19 @@ fn set_vault_path_command(path: String, state: State<'_, DbState>) -> Result<(),
 // Users bring their own Google / LinkedIn OAuth app credentials.
 // Stored locally in SQLite app_settings — never sent anywhere.
 
+/// SET-1 / CH-4: Never return raw credential values to the frontend.
+/// The UI only needs to know whether a credential is present — not what it is.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct OAuthCredentialStatus {
+    has_google_client_id: bool,
+    has_google_client_secret: bool,
+    has_linkedin_client_id: bool,
+    has_linkedin_client_secret: bool,
+    has_linkedin_token: bool,
+}
+
+/// Input-only struct for saving credentials (write-only path).
+#[allow(dead_code)]
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct OAuthCredentials {
     google_client_id: Option<String>,
@@ -686,16 +699,25 @@ struct OAuthCredentials {
 }
 
 #[tauri::command]
-fn get_oauth_credentials_command(state: State<'_, DbState>) -> Result<OAuthCredentials, String> {
+fn get_oauth_credentials_command(state: State<'_, DbState>) -> Result<OAuthCredentialStatus, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let get = |key: &str| -> Option<String> {
-        db::get_app_setting(&conn, key).ok().flatten().filter(|v| !v.is_empty())
+    let has = |key: &str| -> bool {
+        db::get_app_setting(&conn, key)
+            .ok()
+            .flatten()
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
     };
-    Ok(OAuthCredentials {
-        google_client_id:      get("oauth_google_client_id"),
-        google_client_secret:  get("oauth_google_client_secret"),
-        linkedin_client_id:    get("oauth_linkedin_client_id"),
-        linkedin_client_secret: get("oauth_linkedin_client_secret"),
+    let has_linkedin_token = db::get_credentials(&conn, "linkedin")
+        .ok()
+        .flatten()
+        .is_some();
+    Ok(OAuthCredentialStatus {
+        has_google_client_id:     has("oauth_google_client_id"),
+        has_google_client_secret: has("oauth_google_client_secret"),
+        has_linkedin_client_id:   has("oauth_linkedin_client_id"),
+        has_linkedin_client_secret: has("oauth_linkedin_client_secret"),
+        has_linkedin_token,
     })
 }
 
@@ -752,6 +774,35 @@ fn clear_oauth_credentials_command(service: String, state: State<'_, DbState>) -
         }
         _ => {}
     }
+    Ok(())
+}
+
+/// CH-2: Revoke the LinkedIn access token via LinkedIn's API, then remove the
+/// stored credential from the database so the user is fully disconnected.
+#[tauri::command]
+async fn disconnect_linkedin_command(state: State<'_, DbState>) -> Result<(), String> {
+    // Read the current access token before deleting it
+    let access_token = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        db::get_credentials(&conn, "linkedin")
+            .map_err(|e| e.to_string())?
+            .map(|c| c.access_token)
+            .filter(|t| !t.is_empty() && !t.starts_with('['))
+    };
+
+    // Best-effort token revocation — LinkedIn's revocation endpoint
+    if let Some(token) = access_token {
+        let client = reqwest::Client::new();
+        let _ = client
+            .post("https://www.linkedin.com/oauth/v2/revoke")
+            .form(&[("token", token.as_str())])
+            .send()
+            .await; // ignore errors — we always proceed to local deletion
+    }
+
+    // Delete the credential row from the database
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::delete_credentials(&conn, "linkedin").map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -845,6 +896,26 @@ fn update_task_status_command(id: String, status: String, state: State<'_, DbSta
 fn delete_task_command(id: String, state: State<'_, DbState>) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     db::delete_task(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_task_command(
+    id: String,
+    title: String,
+    description: Option<String>,
+    due_date: Option<String>,
+    priority: String,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::update_task(
+        &conn,
+        &id,
+        &title,
+        description.as_deref(),
+        due_date.as_deref(),
+        &priority,
+    ).map_err(|e| e.to_string())
 }
 
 // ─── Productivity: Reminders Commands ────────────────────────────────────────
@@ -1703,6 +1774,7 @@ pub fn run() {
             get_gmail_auth_status,
             start_linkedin_auth,
             get_linkedin_auth_status,
+            disconnect_linkedin_command,
             fetch_linkedin_timeline_command,
             sync_gmail_messages,
             disconnect_gmail,
@@ -1748,6 +1820,7 @@ pub fn run() {
             get_tasks_command,
             update_task_status_command,
             delete_task_command,
+            update_task_command,
             create_reminder_command,
             get_pending_reminders_command,
             get_reminders_command,

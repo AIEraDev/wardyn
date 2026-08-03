@@ -159,10 +159,10 @@ pub fn toggle_habit_completion(conn: &Connection, habit_id: &str) -> Result<bool
         )?;
         Ok(false)
     } else {
-        // Complete
+        // Complete — INSERT OR IGNORE deduplicates double-taps / race conditions
         let id = new_id("hc");
         conn.execute(
-            "INSERT INTO habit_completions (id, habit_id, completed_date, completed_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR IGNORE INTO habit_completions (id, habit_id, completed_date, completed_at) VALUES (?1, ?2, ?3, ?4)",
             params![id, habit_id, today, now_iso()],
         )?;
         Ok(true)

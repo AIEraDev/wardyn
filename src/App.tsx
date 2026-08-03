@@ -116,6 +116,7 @@ export default function App() {
   const fetchVaultPath = useQueueStore((state) => state.fetchVaultPath);
   const fetchCustomFeeds = useQueueStore((state) => state.fetchCustomFeeds);
   const fetchTasks = useQueueStore((state) => state.fetchTasks);
+  const fetchReminders = useQueueStore((state) => state.fetchReminders);
   const checkPendingReminders = useQueueStore(
     (state) => state.checkPendingReminders,
   );
@@ -133,7 +134,10 @@ export default function App() {
   );
   const fetchSocialPosts = useQueueStore((state) => state.fetchSocialPosts);
 
-  const [modelAlertDismissed, setModelAlertDismissed] = useState(false);
+  const [modelAlertDismissed, setModelAlertDismissed] = useState(() => {
+    try { return localStorage.getItem("wardyn.modelAlertDismissed") === "true"; }
+    catch { return false; }
+  });
 
   // Silent background update check on startup (non-blocking, notifies user if available)
   useEffect(() => {
@@ -193,6 +197,7 @@ export default function App() {
       fetchCustomFeeds();
       // Load productivity features
       fetchTasks();
+      fetchReminders(); // ensures reminders list is populated from DB on boot
       fetchPomodoroSessions(1); // restores any active session from DB
       fetchSocialPosts(); // restores persisted social posts across restarts
       checkPendingReminders();
@@ -212,6 +217,12 @@ export default function App() {
     };
 
     initBootSentinel();
+
+    // Re-sync calendar every 15 minutes while app is open so new invites appear
+    const calendarPollId = setInterval(() => {
+      useQueueStore.getState().syncCalendarDeadlines().catch(console.error);
+    }, 15 * 60 * 1000);
+
 
     // Listen for notification click events safely
     const setupNotificationListener = async () => {
@@ -262,6 +273,7 @@ export default function App() {
 
     return () => {
       trayUnlisten?.();
+      clearInterval(calendarPollId);
     };
   }, [
     fetchItems,
@@ -368,8 +380,12 @@ export default function App() {
           onGoToSettings={() => {
             setActiveTab("settings");
             setModelAlertDismissed(true);
+            try { localStorage.setItem("wardyn.modelAlertDismissed", "true"); } catch {}
           }}
-          onDismiss={() => setModelAlertDismissed(true)}
+          onDismiss={() => {
+            setModelAlertDismissed(true);
+            try { localStorage.setItem("wardyn.modelAlertDismissed", "true"); } catch {}
+          }}
         />
       )}
 

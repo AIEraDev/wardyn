@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   IconMail,
   IconCheck,
@@ -7,6 +7,7 @@ import {
   IconCheckbox,
   IconBell,
   IconClock,
+  IconLoader2,
 } from "@tabler/icons-react";
 import { QueueItem } from "../types/queue";
 import { useQueueStore } from "../store/useQueueStore";
@@ -36,6 +37,45 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
   const [followUpMessage, setFollowUpMessage] = useState(
     `Follow up with ${item.sender}`,
   );
+  const [regenerating, setRegenerating] = useState(false);
+  const [sendCountdown, setSendCountdown] = useState<number | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingSendRef = useRef<{ id: string; draft?: string } | null>(null);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearInterval(undoTimerRef.current);
+    };
+  }, []);
+
+  const triggerSendWithUndo = (id: string, draft?: string) => {
+    pendingSendRef.current = { id, draft };
+    setSendCountdown(4);
+    undoTimerRef.current = setInterval(() => {
+      setSendCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          // Timer done — actually send
+          clearInterval(undoTimerRef.current!);
+          undoTimerRef.current = null;
+          const pending = pendingSendRef.current;
+          if (pending) {
+            approveItem(pending.id, pending.draft);
+            pendingSendRef.current = null;
+          }
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleUndoSend = () => {
+    if (undoTimerRef.current) clearInterval(undoTimerRef.current);
+    undoTimerRef.current = null;
+    pendingSendRef.current = null;
+    setSendCountdown(null);
+  };
 
   const hasLinkedTask = tasks.some((t) => t.source_item_id === item.id);
 
@@ -55,33 +95,33 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
     if (item.flagged) {
       setShowConfirmModal(true);
     } else {
-      approveItem(
-        item.id,
-        isEditing || isLowConfidence ? editedDraft : undefined,
-      );
+      const draft = isEditing || isLowConfidence ? editedDraft : undefined;
+      triggerSendWithUndo(item.id, draft);
       setIsEditing(false);
     }
   };
 
   const handleConfirmedApprove = () => {
     setShowConfirmModal(false);
-    approveItem(
-      item.id,
-      isEditing || isLowConfidence ? editedDraft : undefined,
-    );
+    const draft = isEditing || isLowConfidence ? editedDraft : undefined;
+    triggerSendWithUndo(item.id, draft);
     setIsEditing(false);
   };
 
-  const handleToneRegenerate = (
+  const handleToneRegenerate = async (
     tone: "shorter" | "formal" | "availability",
   ) => {
-    regenerateDraft(item.id, tone);
+    if (regenerating) return; // guard: ignore rapid clicks
+    setRegenerating(true);
+    await regenerateDraft(item.id, tone); // properly awaited — no stale reads
+    // Read state AFTER the async action resolves to get the updated draft
     const updated = useQueueStore
       .getState()
       .items.find((i) => i.id === item.id);
     if (updated?.draft_text) {
       setEditedDraft(updated.draft_text);
     }
+    setRegenerating(false);
   };
 
   const handleCreateTask = async () => {
@@ -214,26 +254,29 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
             {!isDone && (
               <div className="flex items-center gap-1.5 pt-1">
                 <span className="font-mono text-[10px] text-[#7A8492] flex items-center gap-1 mr-1">
-                  <IconSparkles size={11} /> Tone:
+                  {regenerating ? <IconLoader2 size={11} className="animate-spin" /> : <IconSparkles size={11} />} Tone:
                 </span>
                 <button
                   type="button"
                   onClick={() => handleToneRegenerate("shorter")}
-                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
+                  disabled={regenerating}
+                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Shorter
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToneRegenerate("formal")}
-                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
+                  disabled={regenerating}
+                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Formal
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToneRegenerate("availability")}
-                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
+                  disabled={regenerating}
+                  className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Add Times
                 </button>
@@ -304,6 +347,23 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
               </button>
             </div>
           </form>
+        )}
+
+        {/* Undo-Send Grace Period Toast */}
+        {sendCountdown !== null && (
+          <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.25)]">
+            <span className="text-xs text-[#F59E0B] font-medium flex items-center gap-1.5">
+              <IconClock size={13} />
+              Sending in {sendCountdown}s…
+            </span>
+            <button
+              type="button"
+              onClick={handleUndoSend}
+              className="text-xs font-semibold text-[#F59E0B] hover:text-[#FCD34D] underline cursor-pointer bg-transparent border-0 p-0"
+            >
+              Undo
+            </button>
+          </div>
         )}
 
         {/* Action Controls */}

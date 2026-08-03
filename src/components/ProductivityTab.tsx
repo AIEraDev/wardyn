@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   IconCheckbox,
   IconPlus,
@@ -21,6 +21,7 @@ import {
   IconPlaneDeparture,
   IconChevronDown,
   IconChevronUp,
+  IconPencil,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 import type { Task, LifeEvent } from "../types/queue";
@@ -52,16 +53,81 @@ const TaskCard: React.FC<{
   task: Task;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
-}> = ({ task, onStatusChange, onDelete }) => {
+  onEdit: (id: string, title: string, description?: string, dueDate?: string, priority?: string) => Promise<void>;
+}> = ({ task, onStatusChange, onDelete, onEdit }) => {
   const priority =
     PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG] ||
     PRIORITY_CONFIG.medium;
   const isCompleted = task.status === "completed";
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(task.title);
+  const [editDesc, setEditDesc] = useState(task.description ?? "");
+  const [editDue, setEditDue] = useState(
+    task.due_date ? task.due_date.slice(0, 10) : "",
+  );
+  const [editPriority, setEditPriority] = useState<"low" | "medium" | "high">(
+    (task.priority as "low" | "medium" | "high") || "medium",
+  );
+  const [saving, setSaving] = useState(false);
+  const [deleteCountdown, setDeleteCountdown] = useState<number | null>(null);
+  const undoDeleteRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup delete timer on unmount
+  useEffect(() => {
+    return () => { if (undoDeleteRef.current) clearInterval(undoDeleteRef.current); };
+  }, []);
+
+  const triggerDelete = () => {
+    setDeleteCountdown(5);
+    undoDeleteRef.current = setInterval(() => {
+      setDeleteCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(undoDeleteRef.current!);
+          undoDeleteRef.current = null;
+          onDelete(task.id);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const cancelDelete = () => {
+    if (undoDeleteRef.current) clearInterval(undoDeleteRef.current);
+    undoDeleteRef.current = null;
+    setDeleteCountdown(null);
+  };
+
+  const handleSave = async () => {
+    if (!editTitle.trim()) return;
+    setSaving(true);
+    await onEdit(
+      task.id,
+      editTitle.trim(),
+      editDesc.trim() || undefined,
+      editDue || undefined,
+      editPriority,
+    );
+    setSaving(false);
+    setEditing(false);
+  };
+
+  const isOverdue =
+    !isCompleted &&
+    task.due_date != null &&
+    new Date(task.due_date).getTime() < Date.now();
 
   return (
     <div
       className="p-3 rounded-xl bg-[#0E1318] border hover:border-[rgba(74,143,194,0.3)] transition-colors group"
-      style={{ borderColor: isCompleted ? "rgba(52,211,153,0.3)" : "#1D2535" }}
+      style={{
+        borderColor: isCompleted
+          ? "rgba(52,211,153,0.3)"
+          : isOverdue
+            ? "rgba(239,68,68,0.45)"
+            : "#1D2535",
+        borderLeftWidth: isOverdue ? "3px" : undefined,
+      }}
     >
       <div className="flex items-start gap-3">
         <button
@@ -98,15 +164,42 @@ const TaskCard: React.FC<{
               >
                 {priority.label}
               </span>
+              {!isCompleted && (
+                <button
+                  type="button"
+                  onClick={() => setEditing(!editing)}
+                  className="p-1 rounded hover:bg-[rgba(74,143,194,0.1)] text-[#7A8492] hover:text-[#4A8FC2] transition-colors opacity-0 group-hover:opacity-100"
+                  title="Edit task"
+                >
+                  <IconPencil size={13} />
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => onDelete(task.id)}
+                onClick={triggerDelete}
+                aria-label="Delete task"
                 className="p-1 rounded hover:bg-[rgba(239,68,68,0.1)] text-[#7A8492] hover:text-[#EF4444] transition-colors opacity-0 group-hover:opacity-100"
               >
                 <IconTrash size={14} />
               </button>
             </div>
           </div>
+
+          {/* ── Undo Delete Toast ── */}
+          {deleteCountdown !== null && (
+            <div className="flex items-center justify-between gap-2 mt-2 px-3 py-2 rounded-lg bg-[rgba(239,68,68,0.08)] border border-[rgba(239,68,68,0.25)] text-xs font-mono animate-in fade-in">
+              <span className="text-[#EF4444]">
+                Deleting in {deleteCountdown}s…
+              </span>
+              <button
+                type="button"
+                onClick={cancelDelete}
+                className="px-2.5 py-1 rounded bg-[rgba(239,68,68,0.15)] text-[#EF4444] border border-[rgba(239,68,68,0.35)] hover:bg-[rgba(239,68,68,0.25)] transition-colors cursor-pointer text-[11px] font-semibold"
+              >
+                Undo
+              </button>
+            </div>
+          )}
 
           {task.description && (
             <p className="text-xs text-[#9AA4B2] m-0 mb-2">
@@ -166,6 +259,56 @@ const TaskCard: React.FC<{
           </div>
         </div>
       </div>
+      {editing && (
+        <div className="mt-3 pt-3 border-t border-[#1D2535] space-y-2">
+          <input
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            placeholder="Task title"
+            className="w-full text-xs bg-[#0B0F16] border border-[#242B35] rounded-md px-2.5 py-1.5 text-[#F0F4F8] placeholder-[#4A5568] outline-none focus:border-[#4A8FC2]"
+          />
+          <input
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            placeholder="Description (optional)"
+            className="w-full text-xs bg-[#0B0F16] border border-[#242B35] rounded-md px-2.5 py-1.5 text-[#F0F4F8] placeholder-[#4A5568] outline-none focus:border-[#4A8FC2]"
+          />
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={editDue}
+              onChange={(e) => setEditDue(e.target.value)}
+              className="flex-1 text-xs bg-[#0B0F16] border border-[#242B35] rounded-md px-2.5 py-1.5 text-[#F0F4F8] outline-none focus:border-[#4A8FC2]"
+            />
+            <select
+              value={editPriority}
+              onChange={(e) => setEditPriority(e.target.value as "low" | "medium" | "high")}
+              className="text-xs bg-[#0B0F16] border border-[#242B35] rounded-md px-2 py-1.5 text-[#F0F4F8] outline-none focus:border-[#4A8FC2]"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="text-xs px-3 py-1 rounded-md border border-[#242B35] text-[#9AA4B2] hover:text-[#F0F4F8] transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !editTitle.trim()}
+              className="text-xs px-3 py-1 rounded-md bg-[#4A8FC2] text-black font-semibold hover:bg-[#5BA3D6] transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -174,8 +317,16 @@ const TaskCard: React.FC<{
 const PomodoroTimer: React.FC = () => {
   const { activePomodoroSession, startPomodoro, completePomodoro } =
     useQueueStore();
-  const [timeLeft, setTimeLeft] = useState(0);
   const [customDuration, setCustomDuration] = useState(25);
+
+  // Compute timeLeft synchronously from session so no 00:00 flash on mount
+  const computeTimeLeft = (session: typeof activePomodoroSession) => {
+    if (!session) return 0;
+    const endTime = new Date(session.started_at).getTime() + session.duration_minutes * 60 * 1000;
+    return Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+  };
+
+  const [timeLeft, setTimeLeft] = useState(() => computeTimeLeft(activePomodoroSession));
 
   useEffect(() => {
     if (!activePomodoroSession) {
@@ -183,21 +334,27 @@ const PomodoroTimer: React.FC = () => {
       return;
     }
 
+    // Immediately sync on session change
+    setTimeLeft(computeTimeLeft(activePomodoroSession));
+
     const endTime =
       new Date(activePomodoroSession.started_at).getTime() +
       activePomodoroSession.duration_minutes * 60 * 1000;
+
     const interval = setInterval(() => {
       const now = Date.now();
       const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
       setTimeLeft(remaining);
-
       if (remaining === 0) {
         clearInterval(interval);
+        // Auto-complete session when timer expires
+        completePomodoro(activePomodoroSession.id);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activePomodoroSession]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePomodoroSession?.id]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
@@ -287,7 +444,14 @@ const PomodoroTimer: React.FC = () => {
       ) : (
         <div className="space-y-4">
           <div className="text-center">
-            <div className="text-4xl font-bold font-mono text-[#E8A23D] mb-1">
+            {/* Pulsing live indicator */}
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <span className={`w-2 h-2 rounded-full ${timeLeft > 0 ? "bg-[#E8A23D] animate-pulse" : "bg-[#34D399]"}`} />
+              <span className="font-mono text-[10px] text-[#7A8492] uppercase tracking-wider">
+                {timeLeft > 0 ? "Focus active" : "Session complete!"}
+              </span>
+            </div>
+            <div className={`text-4xl font-bold font-mono mb-1 transition-colors ${timeLeft > 0 ? "text-[#E8A23D]" : "text-[#34D399]"}`}>
               {String(minutes).padStart(2, "0")}:
               {String(seconds).padStart(2, "0")}
             </div>
@@ -298,7 +462,7 @@ const PomodoroTimer: React.FC = () => {
 
           <div className="relative h-2 bg-[#1D2535] rounded-full overflow-hidden">
             <div
-              className="absolute top-0 left-0 h-full bg-[#E8A23D] transition-all duration-1000 ease-linear"
+              className={`absolute top-0 left-0 h-full transition-all duration-1000 ease-linear ${timeLeft > 0 ? "bg-[#E8A23D]" : "bg-[#34D399]"}`}
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -554,6 +718,7 @@ export const ProductivityTab: React.FC = () => {
     createReminder,
     updateTaskStatus,
     deleteTask,
+    updateTask,
     deleteReminder,
     snoozeReminder,
     pomodoroSessions,
@@ -630,17 +795,33 @@ export const ProductivityTab: React.FC = () => {
     setCreatingReminder(false);
   };
 
-  const filteredTasks = tasks.filter((t) => {
-    if (taskFilter === "pending") return t.status === "pending";
-    if (taskFilter === "completed") return t.status === "completed";
-    if (taskFilter === "from_email")
-      return Boolean(
-        t.source_item_id &&
-        t.source_item_id !== "manual" &&
-        t.source_item_id.startsWith("gmail_"),
-      );
-    return true;
-  });
+  const filteredTasks = tasks
+    .filter((t) => {
+      if (taskFilter === "pending") return t.status === "pending";
+      if (taskFilter === "completed") return t.status === "completed";
+      if (taskFilter === "from_email")
+        return Boolean(
+          t.source_item_id &&
+          t.source_item_id !== "manual" &&
+          t.source_item_id.startsWith("gmail_"),
+        );
+      return true;
+    })
+    .sort((a, b) => {
+      // Overdue pending tasks first
+      const aOverdue = a.status === "pending" && a.due_date != null && new Date(a.due_date).getTime() < Date.now();
+      const bOverdue = b.status === "pending" && b.due_date != null && new Date(b.due_date).getTime() < Date.now();
+      if (aOverdue && !bOverdue) return -1;
+      if (!aOverdue && bOverdue) return 1;
+      // Completed tasks last
+      if (a.status === "completed" && b.status !== "completed") return 1;
+      if (a.status !== "completed" && b.status === "completed") return -1;
+      // Then by due date ascending
+      if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+      if (a.due_date) return -1;
+      if (b.due_date) return 1;
+      return 0;
+    });
 
   const fromEmailCount = tasks.filter(
     (t) => t.source_item_id && t.source_item_id.startsWith("gmail_"),
@@ -1058,6 +1239,7 @@ export const ProductivityTab: React.FC = () => {
               task={task}
               onStatusChange={updateTaskStatus}
               onDelete={deleteTask}
+              onEdit={updateTask}
             />
           ))}
         </div>

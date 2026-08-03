@@ -10,6 +10,17 @@ pub async fn capture_and_tag(
     url: Option<String>,
     source: String,
 ) -> Result<KnowledgeItem, String> {
+    // ── Input length validation ───────────────────────────────────────────────
+    const MAX_CONTENT_BYTES: usize = 50 * 1024; // 50 KB
+    if content.len() > MAX_CONTENT_BYTES {
+        return Err(format!(
+            "Content is too large ({} KB). Maximum is 50 KB. Please paste a shorter excerpt.",
+            content.len() / 1024
+        ));
+    }
+    if content.trim().is_empty() {
+        return Err("Content cannot be empty.".into());
+    }
     let id = format!("ki_{}", uuid_simple());
     let item = KnowledgeItem {
         id: id.clone(),

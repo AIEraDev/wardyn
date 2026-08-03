@@ -29,6 +29,16 @@ pub async fn deep_read_url(url: &str, conn_mutex: &std::sync::Mutex<Connection>)
         .map_err(|e| format!("Failed to fetch URL: {}", e))?;
 
     let html = resp.text().await.map_err(|e| format!("Failed to read page text: {}", e))?;
+
+    // Guard against absurdly large pages — 2 MB is enough for any article
+    const MAX_PAGE_BYTES: usize = 2 * 1024 * 1024;
+    if html.len() > MAX_PAGE_BYTES {
+        return Err(format!(
+            "Page is too large ({} KB). Only pages up to 2 MB are supported.",
+            html.len() / 1024
+        ));
+    }
+
     let (title, body_text) = extract_article_content(&html);
 
     if body_text.trim().is_empty() {

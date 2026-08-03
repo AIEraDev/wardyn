@@ -6,6 +6,14 @@ pub fn sync_knowledge_to_vault(
     conn_mutex: &std::sync::Mutex<rusqlite::Connection>,
     item: &KnowledgeItem,
 ) -> Result<(), String> {
+    const MAX_CONTENT_BYTES: usize = 50 * 1024; // 50 KB
+    if item.content.len() > MAX_CONTENT_BYTES {
+        return Err(format!(
+            "Knowledge item content ({} KB) exceeds maximum 50 KB limit for vault sync.",
+            item.content.len() / 1024
+        ));
+    }
+
     let vault_path = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         db::get_app_setting(&conn, "vault_path").ok().flatten()
@@ -69,6 +77,14 @@ pub fn sync_decision_to_vault(
     conn_mutex: &std::sync::Mutex<rusqlite::Connection>,
     item: &Decision,
 ) -> Result<(), String> {
+    const MAX_CONTENT_BYTES: usize = 50 * 1024; // 50 KB
+    let total_len = item.decision.len() + item.rationale.len() + item.alternatives.as_deref().map_or(0, |a| a.len());
+    if total_len > MAX_CONTENT_BYTES {
+        return Err(format!(
+            "Decision text ({} KB) exceeds maximum 50 KB limit for vault sync.",
+            total_len / 1024
+        ));
+    }
     let vault_path = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         db::get_app_setting(&conn, "vault_path").ok().flatten()
@@ -132,6 +148,13 @@ pub fn write_analytics_summary(
     conn_mutex: &std::sync::Mutex<rusqlite::Connection>,
     content: &str,
 ) -> Result<String, String> {
+    const MAX_SUMMARY_BYTES: usize = 200 * 1024; // 200 KB — analytics exports can be larger
+    if content.len() > MAX_SUMMARY_BYTES {
+        return Err(format!(
+            "Summary is too large ({} KB). Maximum export size is 200 KB.",
+            content.len() / 1024
+        ));
+    }
     let vault_path = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         db::get_app_setting(&conn, "vault_path").ok().flatten()

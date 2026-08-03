@@ -1,135 +1,476 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
-  IconMail, IconCheck, IconX, IconInbox, IconRefresh,
-  IconTag, IconSearch, IconChevronDown, IconChevronUp,
+  IconMail,
+  IconInbox,
+  IconRefresh,
+  IconTag,
+  IconSearch,
   IconSparkles,
-} from '@tabler/icons-react';
-import { useQueueStore } from '../store/useQueueStore';
+  IconFilter,
+  IconEyeOff,
+  IconChevronDown,
+  IconChevronUp,
+  IconBookmark,
+  IconCircleCheck,
+} from "@tabler/icons-react";
+import { useQueueStore } from "../store/useQueueStore";
+import { ReplyCard } from "./ReplyCard";
+import { QueueItem } from "../types/queue";
 
-type CategoryKey = 'primary' | 'updates' | 'promotions' | 'social' | 'forums' | 'all';
+// ─── Category helpers ─────────────────────────────────────────────────────────
 
-const CATEGORY_META: Record<CategoryKey, { label: string; color: string; bg: string; border: string }> = {
-  all:        { label: 'All Messages', color: '#9AA4B2', bg: 'rgba(154,164,178,0.1)', border: 'rgba(154,164,178,0.25)' },
-  primary:    { label: 'Primary',      color: '#4A8FC2', bg: 'rgba(74,143,194,0.12)', border: 'rgba(74,143,194,0.3)'  },
-  updates:    { label: 'Updates',      color: '#34D399', bg: 'rgba(52,211,153,0.12)', border: 'rgba(52,211,153,0.3)'  },
-  promotions: { label: 'Promotions',   color: '#E8A23D', bg: 'rgba(232,162,61,0.12)', border: 'rgba(232,162,61,0.3)'  },
-  social:     { label: 'Social',       color: '#A78BFA', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.3)' },
-  forums:     { label: 'Forums',       color: '#F87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.3)' },
+type CategoryKey =
+  | "primary"
+  | "updates"
+  | "promotions"
+  | "social"
+  | "forums"
+  | "all";
+
+const CATEGORY_META: Record<
+  CategoryKey,
+  { label: string; color: string; bg: string; border: string }
+> = {
+  all: {
+    label: "All",
+    color: "#9AA4B2",
+    bg: "rgba(154,164,178,0.1)",
+    border: "rgba(154,164,178,0.25)",
+  },
+  primary: {
+    label: "Primary",
+    color: "#4A8FC2",
+    bg: "rgba(74,143,194,0.12)",
+    border: "rgba(74,143,194,0.3)",
+  },
+  updates: {
+    label: "Updates",
+    color: "#34D399",
+    bg: "rgba(52,211,153,0.12)",
+    border: "rgba(52,211,153,0.3)",
+  },
+  promotions: {
+    label: "Promotions",
+    color: "#E8A23D",
+    bg: "rgba(232,162,61,0.12)",
+    border: "rgba(232,162,61,0.3)",
+  },
+  social: {
+    label: "Social",
+    color: "#A78BFA",
+    bg: "rgba(167,139,250,0.12)",
+    border: "rgba(167,139,250,0.3)",
+  },
+  forums: {
+    label: "Forums",
+    color: "#F87171",
+    bg: "rgba(248,113,113,0.12)",
+    border: "rgba(248,113,113,0.3)",
+  },
 };
 
 function extractCategory(preview: string): CategoryKey {
-  const match = preview.match(/^\[(PRIMARY|UPDATES|PROMOTIONS|SOCIAL|FORUMS)\]/i);
-  if (!match) return 'primary';
+  const match = preview.match(
+    /^\[(PRIMARY|UPDATES|PROMOTIONS|SOCIAL|FORUMS)\]/i,
+  );
+  if (!match) return "primary";
   return match[1].toLowerCase() as CategoryKey;
 }
 
 function stripCategoryPrefix(preview: string): string {
-  return preview.replace(/^\[(?:PRIMARY|UPDATES|PROMOTIONS|SOCIAL|FORUMS)\]\s*/i, '');
+  return preview.replace(
+    /^\[(?:PRIMARY|UPDATES|PROMOTIONS|SOCIAL|FORUMS)\]\s*/i,
+    "",
+  );
 }
+
+function parseSenderName(raw: string): string {
+  const nameMatch = raw.match(/^([^<]+)\s*</);
+  if (nameMatch) return nameMatch[1].trim();
+  const emailMatch = raw.match(/<([^>]+)>/);
+  if (emailMatch) return emailMatch[1].trim();
+  return raw.trim();
+}
+
+function parseSenderEmail(raw: string): string {
+  const emailMatch = raw.match(/<([^>]+)>/);
+  if (emailMatch) return emailMatch[1].trim();
+  if (raw.includes("@")) return raw.trim();
+  return "";
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 2) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+// ─── Informational row ────────────────────────────────────────────────────────
+// Compact, read-only. No draft, no approve button. Just sender + subject + time.
+
+const InfoRow: React.FC<{ item: QueueItem }> = ({ item }) => {
+  const [open, setOpen] = useState(false);
+  const cat = extractCategory(item.preview);
+  const cleanPreview = stripCategoryPrefix(item.preview);
+  const senderName = parseSenderName(item.sender);
+
+  // Extract subject (text before the first ": " after category strip)
+  const subjectMatch = cleanPreview.match(/^([^:]+):/);
+  const subject = subjectMatch ? subjectMatch[1].trim() : senderName;
+  const body = subjectMatch
+    ? cleanPreview.slice(subjectMatch[0].length).trim()
+    : cleanPreview;
+
+  return (
+    <div
+      className={`rounded-xl border transition-all overflow-hidden ${
+        open
+          ? "border-[rgba(52,211,153,0.25)] bg-[#121A15]"
+          : "border-[#1E2A20] bg-[#111814]"
+      }`}
+    >
+      <div
+        className="px-3 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-[rgba(52,211,153,0.04)] transition-colors"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {/* Dot indicator */}
+        <div className="w-1.5 h-1.5 rounded-full bg-[#34D399]/40 shrink-0" />
+
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          <span className="text-xs font-medium text-[#9AA4B2] shrink-0 max-w-[140px] truncate">
+            {senderName}
+          </span>
+          <span className="text-xs text-[#7A8492] truncate flex-1">
+            {subject}
+          </span>
+          <CategoryPill cat={cat} />
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="font-mono text-[10px] text-[#4A5568]">
+            {relativeTime(item.created_at)}
+          </span>
+          {open ? (
+            <IconChevronUp size={12} className="text-[#4A5568]" />
+          ) : (
+            <IconChevronDown size={12} className="text-[#4A5568]" />
+          )}
+        </div>
+      </div>
+
+      {open && (
+        <div className="px-4 pb-3 pt-1 border-t border-[#1E2A20]">
+          <p className="text-[11px] text-[#7A8492] leading-relaxed">
+            {body || cleanPreview}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Suppressed row ───────────────────────────────────────────────────────────
 
 const CategoryPill: React.FC<{ cat: CategoryKey }> = ({ cat }) => {
   const meta = CATEGORY_META[cat];
   return (
     <span
-      className="font-mono text-[9px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider shrink-0"
-      style={{ color: meta.color, background: meta.bg, border: `1px solid ${meta.border}` }}
+      className="font-mono text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0"
+      style={{
+        color: meta.color,
+        background: meta.bg,
+        border: `1px solid ${meta.border}`,
+      }}
     >
       {meta.label}
     </span>
   );
 };
 
+const SuppressedRow: React.FC<{ item: QueueItem }> = ({ item }) => {
+  const [open, setOpen] = useState(false);
+  const cat = extractCategory(item.preview);
+  const cleanPreview = stripCategoryPrefix(item.preview);
+  const senderName = parseSenderName(item.sender);
+
+  return (
+    <div className="rounded-xl border border-[#1A1F27] bg-[#0F1217] opacity-40 overflow-hidden">
+      <div
+        className="px-3 py-2 flex items-center gap-3 cursor-pointer"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <IconEyeOff size={11} className="text-[#3A4255] shrink-0" />
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          <span className="text-[11px] text-[#3A4255] truncate">
+            {senderName}
+          </span>
+          <CategoryPill cat={cat} />
+        </div>
+        <span className="font-mono text-[9px] text-[#2E3647]">
+          {relativeTime(item.created_at)}
+        </span>
+        {open ? (
+          <IconChevronUp size={11} className="text-[#3A4255]" />
+        ) : (
+          <IconChevronDown size={11} className="text-[#3A4255]" />
+        )}
+      </div>
+      {open && (
+        <div className="px-3 pb-2.5 pt-1 border-t border-[#1A1F27] space-y-1">
+          <p className="text-[10px] text-[#3A4255] leading-relaxed">
+            {cleanPreview}
+          </p>
+          <p className="font-mono text-[9px] text-[#2A3040]">
+            Filtered: automated sender / marketing noise
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── View mode type ───────────────────────────────────────────────────────────
+
+type ViewMode = "reply" | "digest" | "all";
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export const MessagesTab: React.FC = () => {
-  const { items, gmailAccounts, syncGmail, approveItem, skipItem, isLoading } = useQueueStore();
-  const gmailItems = items.filter((i) => i.source === 'gmail');
+  const { items, gmailAccounts, syncGmail, isLoading } = useQueueStore();
+  const gmailItems = items.filter((i) => i.source === "gmail");
 
-  const [activeFilter, setActiveFilter] = useState<CategoryKey>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'handled'>('all');
-  const [searchQuery, setSearchQuery]   = useState('');
-  const [expandedId, setExpandedId]     = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("reply");
+  const [activeFilter, setActiveFilter] = useState<CategoryKey>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredItems = gmailItems.filter((item) => {
+  // ── Pools ─────────────────────────────────────────────────────────────────
+  const replyItems = gmailItems.filter(
+    (i) =>
+      i.needs_reply &&
+      i.triage_status !== "suppressed" &&
+      i.triage_status !== "informational",
+  );
+  const infoItems = gmailItems.filter(
+    (i) =>
+      i.triage_status === "informational" ||
+      (!i.needs_reply && i.triage_status === "active"),
+  );
+  const suppressedItems = gmailItems.filter(
+    (i) => i.triage_status === "suppressed",
+  );
+
+  const replyPending = replyItems.filter((i) => i.status === "pending").length;
+
+  // ── Current pool based on view ────────────────────────────────────────────
+  const currentPool =
+    viewMode === "reply"
+      ? replyItems
+      : viewMode === "digest"
+        ? infoItems
+        : gmailItems.filter((i) => i.triage_status !== "suppressed");
+
+  const filteredItems = currentPool.filter((item) => {
     const cat = extractCategory(item.preview);
-    if (activeFilter !== 'all' && cat !== activeFilter) return false;
-
-    const isDone = item.status === 'sent' || item.status === 'approved' || item.status === 'edited' || item.status === 'skipped';
-    if (statusFilter === 'pending' && isDone) return false;
-    if (statusFilter === 'handled' && !isDone) return false;
+    if (activeFilter !== "all" && cat !== activeFilter) return false;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const matchSender = item.sender.toLowerCase().includes(q);
-      const matchPreview = item.preview.toLowerCase().includes(q);
-      const matchDraft = item.draft_text ? item.draft_text.toLowerCase().includes(q) : false;
-      if (!matchSender && !matchPreview && !matchDraft) return false;
+      const senderName = parseSenderName(item.sender).toLowerCase();
+      const senderEmail = parseSenderEmail(item.sender).toLowerCase();
+      if (
+        !senderName.includes(q) &&
+        !senderEmail.includes(q) &&
+        !item.preview.toLowerCase().includes(q) &&
+        !(item.draft_text?.toLowerCase().includes(q) ?? false)
+      )
+        return false;
     }
-
     return true;
   });
 
-  const countForCat = (cat: CategoryKey) => cat === 'all'
-    ? gmailItems.length
-    : gmailItems.filter((i) => extractCategory(i.preview) === cat).length;
+  // Reply view: flagged → high urgency → confidence → date; digest/all: newest first
+  const sortedItems = [...filteredItems].sort((a, b) => {
+    if (viewMode === "reply") {
+      if (a.flagged !== b.flagged) return a.flagged ? -1 : 1;
+      const aHigh = a.urgency === "high" || a.urgency == null;
+      const bHigh = b.urgency === "high" || b.urgency == null;
+      if (aHigh !== bHigh) return aHigh ? -1 : 1;
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
-  const pendingCount = gmailItems.filter((i) => i.status === 'pending').length;
+  const countForCat = (cat: CategoryKey) => {
+    return cat === "all"
+      ? currentPool.length
+      : currentPool.filter((i) => extractCategory(i.preview) === cat).length;
+  };
 
+  // ── View mode tab config ──────────────────────────────────────────────────
+  const VIEW_TABS: {
+    id: ViewMode;
+    label: string;
+    count: number;
+    icon: React.ReactNode;
+    activeClass: string;
+  }[] = [
+    {
+      id: "reply",
+      label: "Needs Reply",
+      count: replyPending,
+      icon: <IconSparkles size={11} />,
+      activeClass: "bg-[#4A8FC2] text-black",
+    },
+    {
+      id: "digest",
+      label: "Informational",
+      count: infoItems.length,
+      icon: <IconBookmark size={11} />,
+      activeClass:
+        "bg-[rgba(52,211,153,0.2)] text-[#34D399] border border-[rgba(52,211,153,0.3)]",
+    },
+    {
+      id: "all",
+      label: "All",
+      count: gmailItems.filter((i) => i.triage_status !== "suppressed").length,
+      icon: <IconInbox size={11} />,
+      activeClass: "bg-[#181E27] text-[#F0F4F8] border border-[#242B35]",
+    },
+  ];
+
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="flex-1 min-w-0 space-y-4">
-
-      {/* ── Page Header ── */}
+      {/* ── Header ── */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-[#F0F4F8] m-0 tracking-tight">Messages</h1>
+          <h1 className="text-xl font-bold text-[#F0F4F8] m-0 tracking-tight">
+            Messages
+          </h1>
           <p className="font-mono text-xs text-[#7A8492] mt-0.5">
-            Triaged Gmail{gmailAccounts.length > 1 ? ` · ${gmailAccounts.length} Accounts` : ''} · Automated Priority Ingestion
+            Smart Gmail Triage
+            {gmailAccounts.length > 1
+              ? ` · ${gmailAccounts.length} Accounts`
+              : ""}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           {gmailAccounts.length > 0 && (
             <button
               onClick={syncGmail}
               disabled={isLoading}
               className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#151A21] hover:bg-[#181E27] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
             >
-              <IconRefresh size={13} className={isLoading ? 'animate-spin' : ''} />
-              Sync Inbox
+              <IconRefresh
+                size={13}
+                className={isLoading ? "animate-spin" : ""}
+              />
+              Sync
             </button>
           )}
-          <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded-md bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] border border-[rgba(74,143,194,0.25)] whitespace-nowrap">
-            {gmailItems.length} Total
+          <span
+            className={`font-mono text-xs font-semibold px-2.5 py-1 rounded-md border whitespace-nowrap ${
+              replyPending > 0
+                ? "bg-[rgba(245,158,11,0.12)] text-[#F59E0B] border-[rgba(245,158,11,0.28)]"
+                : "bg-[rgba(52,211,153,0.12)] text-[#34D399] border-[rgba(52,211,153,0.25)]"
+            }`}
+          >
+            {replyPending > 0
+              ? `${replyPending} need reply`
+              : "✓ All caught up"}
+          </span>
+          <span className="font-mono text-xs px-2 py-1 rounded-md bg-[#151A21] text-[#7A8492] border border-[#242B35] whitespace-nowrap">
+            {gmailItems.length} synced
           </span>
         </div>
       </div>
 
-      {/* ── Category & Filter Bar ── */}
       {gmailAccounts.length > 0 && (
         <div className="space-y-3">
-          {/* Category Tabs */}
+          {/* ── Three-tier view toggle ── */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center bg-[#151A21] p-1 rounded-lg border border-[#242B35] gap-0.5">
+              {VIEW_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setViewMode(tab.id)}
+                  className={`font-mono text-[11px] px-3 py-1 rounded-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    viewMode === tab.id
+                      ? tab.activeClass + " font-semibold"
+                      : "text-[#7A8492] hover:text-[#9AA4B2]"
+                  }`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                  {tab.count > 0 && (
+                    <span
+                      className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                        viewMode === tab.id
+                          ? tab.id === "reply"
+                            ? "bg-black/20 text-black"
+                            : "bg-white/10 text-inherit"
+                          : "bg-[rgba(255,255,255,0.06)] text-[#7A8492]"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {suppressedItems.length > 0 && (
+              <span className="font-mono text-[10px] text-[#3A4255] flex items-center gap-1">
+                <IconFilter size={10} />
+                {suppressedItems.length} noise filtered
+              </span>
+            )}
+          </div>
+
+          {/* ── Category filter pills ── */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {(Object.keys(CATEGORY_META) as CategoryKey[]).map((cat) => {
               const meta = CATEGORY_META[cat];
               const count = countForCat(cat);
               const isActive = activeFilter === cat;
-
               return (
                 <button
                   key={cat}
                   onClick={() => setActiveFilter(cat)}
-                  className={`font-mono text-xs px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`font-mono text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                     isActive
-                      ? 'font-semibold'
-                      : 'bg-[#151A21] text-[#9AA4B2] border border-[#242B35] hover:text-[#F0F4F8]'
+                      ? "font-semibold"
+                      : "bg-[#151A21] text-[#9AA4B2] border border-[#242B35] hover:text-[#F0F4F8]"
                   }`}
-                  style={isActive ? { color: meta.color, background: meta.bg, border: `1px solid ${meta.border}` } : {}}
+                  style={
+                    isActive
+                      ? {
+                          color: meta.color,
+                          background: meta.bg,
+                          border: `1px solid ${meta.border}`,
+                        }
+                      : {}
+                  }
                 >
-                  {cat !== 'all' && <IconTag size={11} className={isActive ? 'opacity-100' : 'opacity-60'} />}
+                  {cat !== "all" && (
+                    <IconTag
+                      size={11}
+                      className={isActive ? "opacity-100" : "opacity-50"}
+                    />
+                  )}
                   <span>{meta.label}</span>
                   <span
-                    className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full font-mono"
+                    className="text-[9px] font-semibold px-1.5 rounded-full font-mono"
                     style={{
-                      background: isActive ? meta.border : 'rgba(255,255,255,0.06)',
-                      color: isActive ? meta.color : '#7A8492',
+                      background: isActive
+                        ? meta.border
+                        : "rgba(255,255,255,0.06)",
+                      color: isActive ? meta.color : "#7A8492",
                     }}
                   >
                     {count}
@@ -139,175 +480,184 @@ export const MessagesTab: React.FC = () => {
             })}
           </div>
 
-          {/* Search + Status sub-filter */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <IconSearch size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7A8492]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter messages by sender or topic…"
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#151A21] text-[#F0F4F8] rounded-md border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
-              />
-            </div>
-
-            <div className="flex items-center gap-1 bg-[#151A21] p-1 rounded-lg border border-[#242B35]">
-              {(['all', 'pending', 'handled'] as const).map((st) => {
-                const isActive = statusFilter === st;
-                const label = st === 'all' ? 'All' : st === 'pending' ? `Pending (${pendingCount})` : 'Handled';
-                return (
-                  <button
-                    key={st}
-                    onClick={() => setStatusFilter(st)}
-                    className={`font-mono text-[10px] px-2.5 py-1 rounded-md capitalize transition-colors cursor-pointer whitespace-nowrap ${
-                      isActive
-                        ? 'bg-[#181E27] text-[#F0F4F8] font-semibold border border-[#242B35]'
-                        : 'bg-transparent text-[#7A8492] hover:text-[#9AA4B2] border-0'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+          {/* ── Search ── */}
+          <div className="relative">
+            <IconSearch
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7A8492]"
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by sender, subject, or content…"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#151A21] text-[#F0F4F8] rounded-md border border-[#242B35] focus:outline-none focus:border-[#4A8FC2] font-mono"
+            />
           </div>
         </div>
       )}
 
-      {/* ── Message List ── */}
+      {/* ── Content area ── */}
       {isLoading ? (
         <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl">
-          <p className="text-xs text-[#7A8492] m-0">Loading messages…</p>
+          <p className="text-xs text-[#7A8492] m-0 font-mono">
+            Syncing and triaging…
+          </p>
         </div>
       ) : gmailAccounts.length === 0 ? (
         <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-2">
           <div className="w-10 h-10 rounded-full bg-[rgba(74,143,194,0.12)] border border-[rgba(74,143,194,0.25)] flex items-center justify-center text-[#4A8FC2]">
             <IconMail size={20} />
           </div>
-          <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">Gmail Not Connected</h4>
+          <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">
+            Gmail Not Connected
+          </h4>
           <p className="text-xs text-[#7A8492] max-w-xs m-0 leading-relaxed">
-            Connect your Gmail account on the Today tab or Settings tab to begin triaging messages automatically.
+            Connect your Gmail account on the Today tab or Settings to begin
+            smart triage.
           </p>
         </div>
-      ) : filteredItems.length === 0 ? (
-        <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-2">
-          <div className="w-10 h-10 rounded-full bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.25)] flex items-center justify-center text-[#34D399]">
-            <IconInbox size={20} />
+      ) : sortedItems.length === 0 && !searchQuery ? (
+        /* ── Empty states per view mode ── */
+        viewMode === "reply" ? (
+          <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-2">
+            <div className="w-10 h-10 rounded-full bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.25)] flex items-center justify-center text-[#34D399]">
+              <IconCircleCheck size={20} />
+            </div>
+            <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">
+              Reply queue clear
+            </h4>
+            <p className="text-xs text-[#7A8492] max-w-xs m-0 leading-relaxed">
+              No emails need a reply right now.
+              {infoItems.length > 0 && (
+                <span className="block mt-1 text-[#4A5568]">
+                  {infoItems.length} informational message
+                  {infoItems.length > 1 ? "s" : ""} in your digest →{" "}
+                  <button
+                    onClick={() => setViewMode("digest")}
+                    className="text-[#34D399] hover:underline cursor-pointer bg-transparent border-0 p-0"
+                  >
+                    View Digest
+                  </button>
+                </span>
+              )}
+            </p>
+            {gmailItems.length > 0 && (
+              <button
+                onClick={syncGmail}
+                className="mt-1 font-mono text-xs px-3 py-1.5 rounded-md bg-[#181E27] text-[#4A8FC2] border border-[rgba(74,143,194,0.3)] hover:bg-[rgba(74,143,194,0.1)] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <IconRefresh size={12} /> Check for New Mail
+              </button>
+            )}
           </div>
-          <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">No Messages Found</h4>
+        ) : viewMode === "digest" ? (
+          <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl flex flex-col items-center gap-2">
+            <div className="w-10 h-10 rounded-full bg-[rgba(52,211,153,0.08)] border border-[rgba(52,211,153,0.15)] flex items-center justify-center text-[#34D399]/60">
+              <IconBookmark size={20} />
+            </div>
+            <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">
+              Digest is empty
+            </h4>
+            <p className="text-xs text-[#7A8492] m-0">
+              No informational emails yet. Sync to check for new mail.
+            </p>
+          </div>
+        ) : (
+          <div className="p-8 text-center bg-[#151A21] border border-[#242B35] rounded-xl">
+            <p className="text-xs text-[#7A8492] m-0">
+              No messages. Sync to fetch new mail.
+            </p>
+          </div>
+        )
+      ) : filteredItems.length === 0 ? (
+        <div className="p-6 text-center bg-[#151A21] border border-[#242B35] rounded-xl">
           <p className="text-xs text-[#7A8492] m-0">
-            {searchQuery ? `No matches for "${searchQuery}".` : 'Try clearing filters or click Sync to fetch updates.'}
+            {searchQuery
+              ? `No matches for "${searchQuery}".`
+              : "No messages match the current filter."}
           </p>
         </div>
       ) : (
         <div className="space-y-2">
-          {filteredItems.map((item) => {
-            const cat = extractCategory(item.preview);
-            const cleanPreview = stripCategoryPrefix(item.preview);
-            const isExpanded = expandedId === item.id;
-            const isDone = item.status === 'sent' || item.status === 'approved' || item.status === 'edited';
-            const isSkipped = item.status === 'skipped';
+          {/* ── Reply view: full ReplyCards ── */}
+          {viewMode === "reply" &&
+            sortedItems.map((item) => <ReplyCard key={item.id} item={item} />)}
 
-            return (
-              <div
-                key={item.id}
-                className={`rounded-xl border transition-all overflow-hidden ${
-                  isExpanded ? 'border-[rgba(74,143,194,0.4)]' : 'border-[#242B35]'
-                } ${isDone ? 'bg-[#151A21]/60' : 'bg-[#151A21]'} ${isSkipped ? 'opacity-50' : 'opacity-100'}`}
-              >
-                {/* Header Row */}
-                <div
-                  onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                  className="p-3 flex items-center justify-between gap-3 cursor-pointer hover:bg-[#181E27]/50 transition-colors"
-                >
-                  <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <div className="w-8 h-8 rounded-lg bg-[#181E27] border border-[#242B35] flex items-center justify-center text-[#4A8FC2] shrink-0">
-                      <IconMail size={16} />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                        <span className="text-xs font-semibold text-[#F0F4F8] truncate">{item.sender}</span>
-                        <CategoryPill cat={cat} />
-                        {item.flagged && (
-                          <span className="font-mono text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)] text-[#F59E0B] uppercase">
-                            Flagged
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-[#9AA4B2] truncate m-0">{cleanPreview}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isDone ? (
-                      <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.25)] text-[#34D399] flex items-center gap-1">
-                        <IconCheck size={11} /> Sent
-                      </span>
-                    ) : isSkipped ? (
-                      <span className="font-mono text-[10px] font-medium px-2 py-0.5 rounded bg-[#181E27] border border-[#242B35] text-[#7A8492] flex items-center gap-1">
-                        <IconX size={11} /> Skipped
-                      </span>
-                    ) : (
-                      <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)] text-[#F59E0B] flex items-center gap-1">
-                        <IconInbox size={11} /> Pending
-                      </span>
-                    )}
-
-                    <div className="text-[#7A8492]">
-                      {isExpanded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Expanded Details */}
-                {isExpanded && (
-                  <div className="p-3.5 border-t border-[#242B35] bg-[#181E27]/50 space-y-3">
-                    <div>
-                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#7A8492] block mb-1">
-                        Message Preview
-                      </span>
-                      <div className="text-xs text-[#F0F4F8] leading-relaxed bg-[#181E27] p-2.5 rounded-lg border border-[#242B35]">
-                        {cleanPreview}
-                      </div>
-                    </div>
-
-                    {item.draft_text && (
-                      <div>
-                        <div className="flex items-center gap-1 mb-1">
-                          <IconSparkles size={11} className="text-[#4A8FC2]" />
-                          <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#4A8FC2]">
-                            AI Suggested Draft
-                          </span>
-                        </div>
-                        <div className="text-xs text-[#C8D6E5] leading-relaxed bg-[rgba(74,143,194,0.06)] p-2.5 rounded-lg border border-[rgba(74,143,194,0.2)]">
-                          {item.draft_text}
-                        </div>
-                      </div>
-                    )}
-
-                    {!isDone && !isSkipped && (
-                      <div className="flex items-center justify-end gap-2 pt-1">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); skipItem(item.id); }}
-                          className="font-mono text-xs px-3 py-1 rounded-md bg-transparent border border-[#242B35] text-[#7A8492] hover:text-[#F0F4F8] transition-colors cursor-pointer"
-                        >
-                          Skip
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); approveItem(item.id); }}
-                          className="font-mono text-xs px-3 py-1.5 rounded-md bg-[#4A8FC2] text-black font-semibold hover:bg-[#5b9bd1] transition-colors cursor-pointer flex items-center gap-1 whitespace-nowrap"
-                        >
-                          <IconCheck size={12} /> Approve & Send
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
+          {/* ── Digest view: compact InfoRows, newest first ── */}
+          {viewMode === "digest" && (
+            <>
+              <div className="flex items-center gap-2 pb-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#34D399]/60 flex items-center gap-1">
+                  <IconBookmark size={10} />
+                  Informational · {filteredItems.length} messages
+                </span>
+                <div className="flex-1 h-px bg-[rgba(52,211,153,0.1)]" />
               </div>
-            );
-          })}
+              {sortedItems.map((item) => (
+                <InfoRow key={item.id} item={item} />
+              ))}
+            </>
+          )}
+
+          {/* ── All view: reply cards first, then info rows, then suppressed ── */}
+          {viewMode === "all" &&
+            (() => {
+              const allReply = sortedItems.filter(
+                (i) => i.needs_reply && i.triage_status !== "informational",
+              );
+              const allInfo = sortedItems.filter(
+                (i) => !i.needs_reply || i.triage_status === "informational",
+              );
+              return (
+                <>
+                  {allReply.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-2 pb-0.5">
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#F59E0B]/70 flex items-center gap-1">
+                          <IconSparkles size={10} />
+                          Needs Reply ({allReply.length})
+                        </span>
+                        <div className="flex-1 h-px bg-[rgba(245,158,11,0.12)]" />
+                      </div>
+                      {allReply.map((item) => (
+                        <ReplyCard key={item.id} item={item} />
+                      ))}
+                    </>
+                  )}
+                  {allInfo.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-2 pt-2 pb-0.5">
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#34D399]/60 flex items-center gap-1">
+                          <IconBookmark size={10} />
+                          Informational ({allInfo.length})
+                        </span>
+                        <div className="flex-1 h-px bg-[rgba(52,211,153,0.08)]" />
+                      </div>
+                      {allInfo.map((item) => (
+                        <InfoRow key={item.id} item={item} />
+                      ))}
+                    </>
+                  )}
+                  {suppressedItems.length > 0 &&
+                    !searchQuery &&
+                    activeFilter === "all" && (
+                      <div className="space-y-1.5 pt-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#2E3647] flex items-center gap-1">
+                            <IconFilter size={10} />
+                            Noise Filtered ({suppressedItems.length})
+                          </span>
+                          <div className="flex-1 h-px bg-[#1A1F27]" />
+                        </div>
+                        {suppressedItems.map((item) => (
+                          <SuppressedRow key={item.id} item={item} />
+                        ))}
+                      </div>
+                    )}
+                </>
+              );
+            })()}
         </div>
       )}
     </div>

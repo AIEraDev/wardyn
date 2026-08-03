@@ -45,7 +45,7 @@ Wardyn is a private desktop application that acts as your personal chief-of-staf
 | ---------------- | ----------------------------------------------------------------------------------------------- |
 | **Today Brief**  | AI-generated morning summary of your inbox, deadlines, and knowledge captures                   |
 | **Messages**     | Triages Gmail threads, drafts replies in your writing voice, queues them for one-click approval |
-| **Content**      | Drafts LinkedIn and Twitter/X posts from your daily activity                                    |
+| **Content**      | Drafts LinkedIn posts from your daily activity                                                  |
 | **Research**     | Free web search via DuckDuckGo + Wikipedia with local AI synthesis                              |
 | **Analytics**    | Tracks response times and engagement patterns                                                   |
 | **Productivity** | Tasks, reminders, Pomodoro sessions                                                             |

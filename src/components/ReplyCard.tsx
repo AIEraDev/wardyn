@@ -1,27 +1,50 @@
-import React, { useState } from 'react';
-import { IconMail, IconCheck, IconAlertCircle, IconSparkles, IconCheckbox, IconBell, IconClock } from '@tabler/icons-react';
-import { QueueItem } from '../types/queue';
-import { useQueueStore } from '../store/useQueueStore';
-import { ConfirmModal } from './ConfirmModal';
+import React, { useState } from "react";
+import {
+  IconMail,
+  IconCheck,
+  IconAlertCircle,
+  IconSparkles,
+  IconCheckbox,
+  IconBell,
+  IconClock,
+} from "@tabler/icons-react";
+import { QueueItem } from "../types/queue";
+import { useQueueStore } from "../store/useQueueStore";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface ReplyCardProps {
   item: QueueItem;
 }
 
 export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
-  const { approveItem, skipItem, regenerateDraft, createTaskFromItem, createReminder, tasks } = useQueueStore();
+  const {
+    approveItem,
+    skipItem,
+    regenerateDraft,
+    createTaskFromItem,
+    createReminder,
+    tasks,
+  } = useQueueStore();
+  const ollamaModels = useQueueStore((s) => s.ollamaModels);
+  const ollamaChecked = useQueueStore((s) => s.ollamaChecked);
+  const aiOnline = ollamaChecked && ollamaModels.length > 0;
   const [isEditing, setIsEditing] = useState(false);
-  const [editedDraft, setEditedDraft] = useState(item.draft_text || '');
+  const [editedDraft, setEditedDraft] = useState(item.draft_text || "");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
-  const [followUpDate, setFollowUpDate] = useState('');
-  const [followUpMessage, setFollowUpMessage] = useState(`Follow up with ${item.sender}`);
+  const [followUpDate, setFollowUpDate] = useState("");
+  const [followUpMessage, setFollowUpMessage] = useState(
+    `Follow up with ${item.sender}`,
+  );
 
   const hasLinkedTask = tasks.some((t) => t.source_item_id === item.id);
 
   const isLowConfidence = item.confidence < 0.6;
-  const isDone = item.status === 'sent' || item.status === 'approved' || item.status === 'edited';
-  const isSkipped = item.status === 'skipped';
+  const isDone =
+    item.status === "sent" ||
+    item.status === "approved" ||
+    item.status === "edited";
+  const isSkipped = item.status === "skipped";
 
   const handleApproveClick = () => {
     if (isLowConfidence && (!editedDraft || editedDraft.trim().length === 0)) {
@@ -32,28 +55,45 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
     if (item.flagged) {
       setShowConfirmModal(true);
     } else {
-      approveItem(item.id, isEditing || isLowConfidence ? editedDraft : undefined);
+      approveItem(
+        item.id,
+        isEditing || isLowConfidence ? editedDraft : undefined,
+      );
       setIsEditing(false);
     }
   };
 
   const handleConfirmedApprove = () => {
     setShowConfirmModal(false);
-    approveItem(item.id, isEditing || isLowConfidence ? editedDraft : undefined);
+    approveItem(
+      item.id,
+      isEditing || isLowConfidence ? editedDraft : undefined,
+    );
     setIsEditing(false);
   };
 
-  const handleToneRegenerate = (tone: 'shorter' | 'formal' | 'availability') => {
+  const handleToneRegenerate = (
+    tone: "shorter" | "formal" | "availability",
+  ) => {
     regenerateDraft(item.id, tone);
-    const updated = useQueueStore.getState().items.find((i) => i.id === item.id);
+    const updated = useQueueStore
+      .getState()
+      .items.find((i) => i.id === item.id);
     if (updated?.draft_text) {
       setEditedDraft(updated.draft_text);
     }
   };
 
   const handleCreateTask = async () => {
-    const subject = item.preview.length > 60 ? `${item.preview.slice(0, 57)}...` : item.preview;
-    await createTaskFromItem(item.id, `Reply: ${subject}`, `From ${item.sender}`);
+    const subject =
+      item.preview.length > 60
+        ? `${item.preview.slice(0, 57)}...`
+        : item.preview;
+    await createTaskFromItem(
+      item.id,
+      `Reply: ${subject}`,
+      `From ${item.sender}`,
+    );
   };
 
   const handleSetFollowUp = async (e: React.FormEvent) => {
@@ -61,12 +101,21 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
     if (!followUpDate || !followUpMessage.trim()) return;
     const scheduledAt = new Date(followUpDate);
     if (scheduledAt.getTime() <= Date.now()) {
-      useQueueStore.getState().showStatusMessage('error', 'Reminder must be scheduled in the future.');
+      useQueueStore
+        .getState()
+        .showStatusMessage(
+          "error",
+          "Reminder must be scheduled in the future.",
+        );
       return;
     }
-    await createReminder(item.id, scheduledAt.toISOString(), followUpMessage.trim());
+    await createReminder(
+      item.id,
+      scheduledAt.toISOString(),
+      followUpMessage.trim(),
+    );
     setShowFollowUp(false);
-    setFollowUpDate('');
+    setFollowUpDate("");
   };
 
   if (isSkipped) return null;
@@ -76,8 +125,8 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
       <div
         className={`rcard p-5 mb-4 rounded-xl border transition-all duration-200 ${
           isDone
-            ? 'opacity-50 bg-[#151A21] border-[#242B35]'
-            : 'bg-[#181E27] border-[#242B35] hover:border-[#384352]'
+            ? "opacity-50 bg-[#151A21] border-[#242B35]"
+            : "bg-[#181E27] border-[#242B35] hover:border-[#384352]"
         }`}
       >
         {/* Badges Bar */}
@@ -89,34 +138,49 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
 
           {item.flagged && (
             <span className="font-mono text-xs px-2 py-0.5 rounded bg-[rgba(232,162,61,0.15)] text-[#E8A23D] font-medium border border-[rgba(232,162,61,0.3)] flex items-center gap-1">
-              Visa
+              ⚑ Flagged
             </span>
           )}
 
           <span
             className={`font-mono text-[11px] ml-auto px-2 py-0.5 rounded ${
               isLowConfidence
-                ? 'bg-[rgba(232,162,61,0.15)] text-[#E8A23D] font-medium'
-                : 'text-[#7A8492]'
+                ? "bg-[rgba(232,162,61,0.15)] text-[#E8A23D] font-medium"
+                : "text-[#7A8492]"
             }`}
           >
             {(item.confidence * 100).toFixed(0)}% confidence
           </span>
+          {!aiOnline && (
+            <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#EF4444] border border-[rgba(239,68,68,0.25)] font-semibold uppercase tracking-wider">
+              ⚡ AI offline
+            </span>
+          )}
         </div>
 
         {/* Sender & Subject */}
-        <p className="text-sm font-semibold text-[#F0F4F8] mb-0.5">{item.sender}</p>
+        <p className="text-sm font-semibold text-[#F0F4F8] mb-0.5">
+          {item.sender}
+        </p>
         <p className="text-xs text-[#9AA4B2] mb-3">{item.preview}</p>
 
         {/* Low Confidence Guardrail Alert & Manual Draft Input */}
         {isLowConfidence ? (
           <div className="mb-3.5 p-3 rounded-lg bg-[rgba(232,162,61,0.08)] border border-[rgba(232,162,61,0.25)] space-y-2">
             <div className="flex items-start gap-2">
-              <IconAlertCircle size={18} className="text-[#E8A23D] shrink-0 mt-0.5" />
+              <IconAlertCircle
+                size={18}
+                className="text-[#E8A23D] shrink-0 mt-0.5"
+              />
               <div>
-                <p className="text-xs font-semibold text-[#E8A23D]">Uncertain — manual review required</p>
+                <p className="text-xs font-semibold text-[#E8A23D]">
+                  Uncertain — manual review required
+                </p>
                 <p className="text-[12px] text-[#9AA4B2] mt-0.5">
-                  Model confidence is below threshold ({(item.confidence * 100).toFixed(0)}% &lt; 60%). No draft was auto-generated. Please write your reply manually before approving.
+                  Model confidence is below threshold (
+                  {(item.confidence * 100).toFixed(0)}% &lt; 60%). No draft was
+                  auto-generated. Please write your reply manually before
+                  approving.
                 </p>
               </div>
             </div>
@@ -154,21 +218,21 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
                 </span>
                 <button
                   type="button"
-                  onClick={() => handleToneRegenerate('shorter')}
+                  onClick={() => handleToneRegenerate("shorter")}
                   className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
                 >
                   Shorter
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleToneRegenerate('formal')}
+                  onClick={() => handleToneRegenerate("formal")}
                   className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
                 >
                   Formal
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleToneRegenerate('availability')}
+                  onClick={() => handleToneRegenerate("availability")}
                   className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#181E27] text-[#9AA4B2] border border-[#242B35] hover:text-[#4A8FC2] hover:border-[#4A8FC2] transition-colors cursor-pointer"
                 >
                   Add Times
@@ -206,7 +270,10 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
         )}
 
         {showFollowUp && !isDone && (
-          <form onSubmit={handleSetFollowUp} className="mb-3 p-3 rounded-lg bg-[rgba(167,139,250,0.06)] border border-[rgba(167,139,250,0.25)] space-y-2">
+          <form
+            onSubmit={handleSetFollowUp}
+            className="mb-3 p-3 rounded-lg bg-[rgba(167,139,250,0.06)] border border-[rgba(167,139,250,0.25)] space-y-2"
+          >
             <input
               type="text"
               value={followUpMessage}
@@ -222,10 +289,17 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
               required
             />
             <div className="flex gap-2">
-              <button type="submit" className="px-3 py-1.5 text-xs font-medium text-black bg-[#A78BFA] rounded-lg hover:bg-[#b89afc] cursor-pointer flex items-center gap-1">
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-xs font-medium text-black bg-[#A78BFA] rounded-lg hover:bg-[#b89afc] cursor-pointer flex items-center gap-1"
+              >
                 <IconClock size={12} /> Schedule
               </button>
-              <button type="button" onClick={() => setShowFollowUp(false)} className="px-3 py-1.5 text-xs text-[#7A8492] hover:text-[#9AA4B2] cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setShowFollowUp(false)}
+                className="px-3 py-1.5 text-xs text-[#7A8492] hover:text-[#9AA4B2] cursor-pointer"
+              >
                 Cancel
               </button>
             </div>
@@ -247,8 +321,8 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
                 disabled={isLowConfidence && !editedDraft.trim()}
                 className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                   isLowConfidence && !editedDraft.trim()
-                    ? 'text-[#7A8492] bg-[#151A21] border border-[#242B35] cursor-not-allowed opacity-50'
-                    : 'text-[#4A8FC2] bg-[rgba(74,143,194,0.16)] border border-[rgba(74,143,194,0.35)] hover:bg-[rgba(74,143,194,0.25)]'
+                    ? "text-[#7A8492] bg-[#151A21] border border-[#242B35] cursor-not-allowed opacity-50"
+                    : "text-[#4A8FC2] bg-[rgba(74,143,194,0.16)] border border-[rgba(74,143,194,0.35)] hover:bg-[rgba(74,143,194,0.25)]"
                 }`}
               >
                 Save & Approve
@@ -290,7 +364,7 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
               <button
                 type="button"
                 onClick={() => {
-                  setEditedDraft(item.draft_text || '');
+                  setEditedDraft(item.draft_text || "");
                   setIsEditing(true);
                 }}
                 className="px-3.5 py-1.5 text-xs font-medium text-[#F0F4F8] bg-[#151A21] border border-[#242B35] rounded-lg hover:bg-[#181E27] transition-colors cursor-pointer"
@@ -309,11 +383,11 @@ export const ReplyCard: React.FC<ReplyCardProps> = ({ item }) => {
         </div>
       </div>
 
-      {/* Visa Warning Guardrail Confirmation Modal */}
+      {/* Flagged Email Guardrail Confirmation Modal */}
       <ConfirmModal
         isOpen={showConfirmModal}
-        title="Visa-Related Email Guardrail"
-        message="This is a visa-related email. Are you sure you want to approve and send this response to UK Visas and Immigration?"
+        title="Flagged Email — Review Before Sending"
+        message="This email has been flagged as high-priority or sensitive. Double-check the draft before approving."
         confirmText="Send anyway"
         cancelText="Cancel"
         onConfirm={handleConfirmedApprove}

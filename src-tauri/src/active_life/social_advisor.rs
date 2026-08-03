@@ -40,11 +40,7 @@ pub async fn generate_full_post(
         _ => "Plain text post. Write the full post text. Use line breaks for readability. No emojis overdose — keep it authentic.",
     };
 
-    let platform_guidance = if platform == "twitter" {
-        "Keep under 280 characters for the hook. Full post can be a thread."
-    } else {
-        "LinkedIn style: professional but personal, first-person voice, value-driven."
-    };
+    let platform_guidance = "LinkedIn style: professional but personal, first-person voice, value-driven.";
 
     let prompt = format!(
         r#"You are a personal brand copywriter for a builder/developer/entrepreneur.

@@ -20,6 +20,8 @@ import { TranslationDictionary, useTranslation } from "../i18n/translations";
 export const Sidebar: React.FC = () => {
   const activeTab = useQueueStore((state) => state.activeTab);
   const setActiveTab = useQueueStore((state) => state.setActiveTab);
+  const ollamaModels = useQueueStore((state) => state.ollamaModels);
+  const ollamaChecked = useQueueStore((state) => state.ollamaChecked);
   const t = useTranslation();
   const [appVersion, setAppVersion] = useState<string>("");
 
@@ -103,6 +105,32 @@ export const Sidebar: React.FC = () => {
           );
         })}
       </nav>
+
+      {/* AI Status Indicator */}
+      {ollamaChecked && (
+        <div className="mt-2 pt-2 border-t border-[rgba(255,255,255,0.07)]">
+          {ollamaModels.length > 0 ? (
+            <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-md">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#34D399] shrink-0" />
+              <span className="font-mono text-[9px] text-[#4A5568] truncate">
+                AI · {ollamaModels[0].name.split(":")[0]}
+              </span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setActiveTab("settings")}
+              title="AI offline — click to install a model"
+              className="flex items-center gap-1.5 px-1.5 py-1 rounded-md w-full text-left cursor-pointer border-none bg-transparent hover:bg-[rgba(239,68,68,0.08)] transition-colors group"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-[#EF4444] shrink-0" />
+              <span className="font-mono text-[9px] text-[#EF4444] truncate group-hover:text-[#FCA5A5]">
+                AI offline
+              </span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

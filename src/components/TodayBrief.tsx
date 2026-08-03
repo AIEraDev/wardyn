@@ -1,31 +1,68 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 import {
-  IconCheck, IconMail, IconRefresh, IconPlugConnected, IconShieldCheck,
-  IconInbox, IconSparkles, IconBrain, IconLoader2, IconChartBar,
-  IconVolume, IconPlayerStop,
-} from '@tabler/icons-react';
-import { useQueueStore } from '../store/useQueueStore';
-import { ReplyCard } from './ReplyCard';
+  IconCheck,
+  IconMail,
+  IconRefresh,
+  IconPlugConnected,
+  IconShieldCheck,
+  IconInbox,
+  IconSparkles,
+  IconBrain,
+  IconLoader2,
+  IconChartBar,
+  IconVolume,
+  IconPlayerStop,
+} from "@tabler/icons-react";
+import { BriefRenderer } from "./BriefRenderer";
+
+import { useQueueStore } from "../store/useQueueStore";
+import { ReplyCard } from "./ReplyCard";
 
 export const TodayBrief: React.FC = () => {
   const {
-    items, calendarEvents, isLoading, gmailAccounts,
-    checkGmailStatus, connectGmail, syncGmail, syncCalendarDeadlines,
-    testOverrideRecipient, setTestOverrideRecipient,
-    morningBrief, morningBriefLoading, refreshMorningBrief,
-    weeklyReview, weeklyReviewLoading, refreshWeeklyReview,
-    isPlayingAudio, speakText, stopSpeech, language,
+    items,
+    calendarEvents,
+    isLoading,
+    gmailAccounts,
+    checkGmailStatus,
+    connectGmail,
+    syncGmail,
+    syncCalendarDeadlines,
+    testOverrideRecipient,
+    setTestOverrideRecipient,
+    morningBrief,
+    morningBriefLoading,
+    refreshMorningBrief,
+    weeklyReview,
+    weeklyReviewLoading,
+    refreshWeeklyReview,
+    isPlayingAudio,
+    speakText,
+    stopSpeech,
+    language,
+    ollamaModels,
+    ollamaChecked,
   } = useQueueStore();
 
   const localeMap: Record<string, string> = {
-    en: 'en-US', fr: 'fr-FR', es: 'es-ES', de: 'de-DE', zh: 'zh-CN', ja: 'ja-JP',
+    en: "en-US",
+    fr: "fr-FR",
+    es: "es-ES",
+    de: "de-DE",
+    zh: "zh-CN",
+    ja: "ja-JP",
   };
-  const todayLabel = new Date().toLocaleDateString(localeMap[language] || 'en-US', {
-    weekday: 'long', month: 'short', day: 'numeric',
-  });
+  const todayLabel = new Date().toLocaleDateString(
+    localeMap[language] || "en-US",
+    {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+    },
+  );
 
   const [showSafetyInput, setShowSafetyInput] = useState(false);
-  const [scratchEmail, setScratchEmail]       = useState('');
+  const [scratchEmail, setScratchEmail] = useState("");
 
   useEffect(() => {
     checkGmailStatus();
@@ -33,8 +70,25 @@ export const TodayBrief: React.FC = () => {
     useQueueStore.getState().fetchTasks();
   }, [checkGmailStatus, syncCalendarDeadlines]);
 
-  const pendingItems = items.filter((i) => i.status === 'pending');
-  const reviewCount  = pendingItems.length;
+  // Only surface emails that genuinely need a reply — suppress automated noise
+  const pendingItems = items.filter(
+    (i) =>
+      i.status === "pending" &&
+      i.needs_reply !== false &&
+      i.triage_status !== "suppressed" &&
+      i.triage_status !== "informational",
+  );
+  // Informational emails — worth knowing about, no reply needed
+  const infoItems = items.filter(
+    (i) =>
+      i.source === "gmail" &&
+      i.status === "pending" &&
+      (i.triage_status === "informational" ||
+        (!i.needs_reply && i.triage_status === "active")),
+  );
+  // Full pending count for the badge context
+  const totalPending = items.filter((i) => i.status === "pending").length;
+  const reviewCount = pendingItems.length;
 
   const handleSetScratchEmail = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,13 +97,16 @@ export const TodayBrief: React.FC = () => {
 
   return (
     <div className="flex-1 min-w-0 space-y-4">
-
       {/* ── Page Header ── */}
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-xl font-bold text-[#F0F4F8] m-0 tracking-tight">Today</h1>
-            <p className="font-mono text-xs text-[#7A8492] mt-0.5">{todayLabel}</p>
+            <h1 className="text-xl font-bold text-[#F0F4F8] m-0 tracking-tight">
+              Today
+            </h1>
+            <p className="font-mono text-xs text-[#7A8492] mt-0.5">
+              {todayLabel}
+            </p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -57,7 +114,9 @@ export const TodayBrief: React.FC = () => {
               <>
                 <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] border border-[rgba(74,143,194,0.25)] flex items-center gap-1.5 whitespace-nowrap">
                   <IconPlugConnected size={13} />
-                  {gmailAccounts.length === 1 ? gmailAccounts[0] : `${gmailAccounts.length} Inboxes`}
+                  {gmailAccounts.length === 1
+                    ? gmailAccounts[0]
+                    : `${gmailAccounts.length} Inboxes`}
                 </span>
                 <button
                   onClick={syncGmail}
@@ -76,12 +135,19 @@ export const TodayBrief: React.FC = () => {
               </button>
             )}
 
-            <span className={`font-mono text-xs px-2.5 py-1 rounded-md border whitespace-nowrap ${
-              reviewCount > 0
-                ? 'bg-[rgba(245,158,11,0.12)] text-[#F59E0B] border-[rgba(245,158,11,0.28)] font-semibold'
-                : 'bg-[#151A21] text-[#7A8492] border-[#242B35]'
-            }`}>
-              {reviewCount} to review
+            <span
+              className={`font-mono text-xs px-2.5 py-1 rounded-md border whitespace-nowrap ${
+                reviewCount > 0
+                  ? "bg-[rgba(245,158,11,0.12)] text-[#F59E0B] border-[rgba(245,158,11,0.28)] font-semibold"
+                  : "bg-[#151A21] text-[#7A8492] border-[#242B35]"
+              }`}
+            >
+              {reviewCount > 0 ? `${reviewCount} need reply` : "✓ Inbox clear"}
+              {totalPending > reviewCount && (
+                <span className="ml-1.5 opacity-50 font-normal">
+                  ({totalPending - reviewCount} filtered)
+                </span>
+              )}
             </span>
 
             <button
@@ -89,8 +155,8 @@ export const TodayBrief: React.FC = () => {
               title="Safety Test Target"
               className={`p-1.5 rounded-md border transition-colors cursor-pointer flex items-center ${
                 testOverrideRecipient
-                  ? 'bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] border-[rgba(74,143,194,0.3)]'
-                  : 'bg-[#151A21] text-[#7A8492] border-[#242B35]'
+                  ? "bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] border-[rgba(74,143,194,0.3)]"
+                  : "bg-[#151A21] text-[#7A8492] border-[#242B35]"
               }`}
             >
               <IconShieldCheck size={14} />
@@ -99,7 +165,10 @@ export const TodayBrief: React.FC = () => {
         </div>
 
         {showSafetyInput && (
-          <form onSubmit={handleSetScratchEmail} className="p-3 rounded-lg bg-[#151A21] border border-[#242B35] flex items-center gap-2">
+          <form
+            onSubmit={handleSetScratchEmail}
+            className="p-3 rounded-lg bg-[#151A21] border border-[#242B35] flex items-center gap-2"
+          >
             <input
               type="email"
               value={scratchEmail}
@@ -107,13 +176,19 @@ export const TodayBrief: React.FC = () => {
               placeholder="Test recipient email…"
               className="flex-1 bg-[#181E27] text-xs text-[#F0F4F8] p-2 rounded border border-[#242B35] focus:outline-none focus:border-[#4A8FC2]"
             />
-            <button type="submit" className="text-xs bg-[#4A8FC2] text-black px-3 py-1.5 rounded-md font-semibold cursor-pointer whitespace-nowrap">
+            <button
+              type="submit"
+              className="text-xs bg-[#4A8FC2] text-black px-3 py-1.5 rounded-md font-semibold cursor-pointer whitespace-nowrap"
+            >
               Set Target
             </button>
             {testOverrideRecipient && (
               <button
                 type="button"
-                onClick={() => { setTestOverrideRecipient(null); setScratchEmail(''); }}
+                onClick={() => {
+                  setTestOverrideRecipient(null);
+                  setScratchEmail("");
+                }}
                 className="text-xs text-[#F59E0B] hover:underline cursor-pointer bg-transparent border-0 px-1"
               >
                 Clear
@@ -130,24 +205,38 @@ export const TodayBrief: React.FC = () => {
             <div className="w-6 h-6 rounded-md bg-[rgba(74,143,194,0.15)] border border-[rgba(74,143,194,0.25)] flex items-center justify-center text-[#4A8FC2]">
               <IconBrain size={14} />
             </div>
-            <span className="text-xs font-semibold text-[#F0F4F8]">Morning Intelligence Brief</span>
-            <span className="font-mono text-[9px] font-semibold px-2 py-0.5 rounded bg-[rgba(52,211,153,0.12)] text-[#34D399] border border-[rgba(52,211,153,0.25)] uppercase tracking-wider">
-              AI · Local
+            <span className="text-xs font-semibold text-[#F0F4F8]">
+              Morning Intelligence Brief
             </span>
+            {ollamaChecked && ollamaModels.length === 0 ? (
+              <span className="font-mono text-[9px] font-semibold px-2 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#EF4444] border border-[rgba(239,68,68,0.25)] uppercase tracking-wider">
+                ⚡ AI offline
+              </span>
+            ) : (
+              <span className="font-mono text-[9px] font-semibold px-2 py-0.5 rounded bg-[rgba(52,211,153,0.12)] text-[#34D399] border border-[rgba(52,211,153,0.25)] uppercase tracking-wider">
+                AI · Local
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             {morningBrief && (
               <button
-                onClick={() => isPlayingAudio ? stopSpeech() : speakText(morningBrief)}
-                title={isPlayingAudio ? 'Stop' : 'Listen'}
+                onClick={() =>
+                  isPlayingAudio ? stopSpeech() : speakText(morningBrief)
+                }
+                title={isPlayingAudio ? "Stop" : "Listen"}
                 className={`font-mono text-xs px-2.5 py-1 rounded-md border flex items-center gap-1 transition-colors cursor-pointer ${
                   isPlayingAudio
-                    ? 'bg-[rgba(239,68,68,0.15)] text-[#EF4444] border-[rgba(239,68,68,0.3)] animate-pulse'
-                    : 'bg-[#151A21] text-[#9AA4B2] border-[#242B35] hover:text-[#4A8FC2]'
+                    ? "bg-[rgba(239,68,68,0.15)] text-[#EF4444] border-[rgba(239,68,68,0.3)] animate-pulse"
+                    : "bg-[#151A21] text-[#9AA4B2] border-[#242B35] hover:text-[#4A8FC2]"
                 }`}
               >
-                {isPlayingAudio ? <IconPlayerStop size={12} /> : <IconVolume size={12} />}
-                {isPlayingAudio ? 'Stop' : 'Listen'}
+                {isPlayingAudio ? (
+                  <IconPlayerStop size={12} />
+                ) : (
+                  <IconVolume size={12} />
+                )}
+                {isPlayingAudio ? "Stop" : "Listen"}
               </button>
             )}
             <button
@@ -156,7 +245,11 @@ export const TodayBrief: React.FC = () => {
               title="Refresh Brief"
               className="p-1.5 rounded-md bg-[#151A21] text-[#7A8492] hover:text-[#F0F4F8] border border-[#242B35] transition-colors cursor-pointer disabled:opacity-40"
             >
-              {morningBriefLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconRefresh size={13} />}
+              {morningBriefLoading ? (
+                <IconLoader2 size={13} className="animate-spin" />
+              ) : (
+                <IconRefresh size={13} />
+              )}
             </button>
           </div>
         </div>
@@ -165,17 +258,22 @@ export const TodayBrief: React.FC = () => {
           {morningBriefLoading && !morningBrief ? (
             <div className="space-y-2">
               {[82, 64, 91, 72, 58].map((w, i) => (
-                <div key={i} className="h-2.5 bg-[#181E27] rounded animate-pulse" style={{ width: `${w}%` }} />
+                <div
+                  key={i}
+                  className="h-2.5 bg-[#181E27] rounded animate-pulse"
+                  style={{ width: `${w}%` }}
+                />
               ))}
-              <p className="font-mono text-[10px] text-[#7A8492] pt-1">Ingesting feeds & synthesising brief…</p>
+              <p className="font-mono text-[10px] text-[#7A8492] pt-1">
+                Ingesting feeds & synthesising brief…
+              </p>
             </div>
           ) : morningBrief ? (
-            <pre className="text-[12px] text-[#C8D6E5] leading-relaxed whitespace-pre-wrap font-sans m-0">
-              {morningBrief}
-            </pre>
+            <BriefRenderer text={morningBrief} baseColor="#C8D6E5" />
           ) : (
             <p className="text-xs text-[#7A8492]">
-              Brief will auto-generate on next launch. Click refresh to generate now.
+              Brief will auto-generate on next launch. Click refresh to generate
+              now.
             </p>
           )}
         </div>
@@ -188,7 +286,9 @@ export const TodayBrief: React.FC = () => {
             <div className="w-6 h-6 rounded-md bg-[rgba(155,89,182,0.15)] border border-[rgba(155,89,182,0.25)] flex items-center justify-center text-[#9B59B6]">
               <IconChartBar size={14} />
             </div>
-            <span className="text-xs font-semibold text-[#F0F4F8]">Weekly Executive Review</span>
+            <span className="text-xs font-semibold text-[#F0F4F8]">
+              Weekly Executive Review
+            </span>
             <span className="font-mono text-[9px] font-semibold px-2 py-0.5 rounded bg-[rgba(155,89,182,0.12)] text-[#9B59B6] border border-[rgba(155,89,182,0.25)] uppercase tracking-wider">
               Sunday Synthesis
             </span>
@@ -199,7 +299,11 @@ export const TodayBrief: React.FC = () => {
             title="Refresh Review"
             className="p-1.5 rounded-md bg-[#151A21] text-[#7A8492] hover:text-[#F0F4F8] border border-[#242B35] transition-colors cursor-pointer disabled:opacity-40"
           >
-            {weeklyReviewLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconRefresh size={13} />}
+            {weeklyReviewLoading ? (
+              <IconLoader2 size={13} className="animate-spin" />
+            ) : (
+              <IconRefresh size={13} />
+            )}
           </button>
         </div>
 
@@ -207,17 +311,22 @@ export const TodayBrief: React.FC = () => {
           {weeklyReviewLoading && !weeklyReview ? (
             <div className="space-y-2">
               {[88, 66, 94, 77].map((w, i) => (
-                <div key={i} className="h-2.5 bg-[#181E27] rounded animate-pulse" style={{ width: `${w}%` }} />
+                <div
+                  key={i}
+                  className="h-2.5 bg-[#181E27] rounded animate-pulse"
+                  style={{ width: `${w}%` }}
+                />
               ))}
-              <p className="font-mono text-[10px] text-[#7A8492] pt-1">Synthesising week's decisions & captures…</p>
+              <p className="font-mono text-[10px] text-[#7A8492] pt-1">
+                Synthesising week's decisions & captures…
+              </p>
             </div>
           ) : weeklyReview ? (
-            <pre className="text-[12px] text-[#DCD6F7] leading-relaxed whitespace-pre-wrap font-sans m-0">
-              {weeklyReview}
-            </pre>
+            <BriefRenderer text={weeklyReview} baseColor="#DCD6F7" />
           ) : (
             <p className="text-xs text-[#7A8492]">
-              Weekly review generates automatically every Sunday, or click refresh to generate now.
+              Weekly review generates automatically every Sunday, or click
+              refresh to generate now.
             </p>
           )}
         </div>
@@ -228,10 +337,13 @@ export const TodayBrief: React.FC = () => {
         <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
           <div className="flex items-center gap-2 text-[#4A8FC2]">
             <IconSparkles size={18} />
-            <h3 className="text-sm font-bold text-[#F0F4F8] m-0">Welcome to Wardyn</h3>
+            <h3 className="text-sm font-bold text-[#F0F4F8] m-0">
+              Welcome to Wardyn
+            </h3>
           </div>
           <p className="text-xs text-[#9AA4B2] leading-relaxed m-0">
-            Wardyn is your local-first chief-of-staff. Connect Gmail to start triaging high-signal messages and drafting responses in your voice.
+            Wardyn is your local-first chief-of-staff. Connect Gmail to start
+            triaging high-signal messages and drafting responses in your voice.
           </p>
           <button
             onClick={connectGmail}
@@ -259,8 +371,12 @@ export const TodayBrief: React.FC = () => {
           <div className="w-10 h-10 rounded-full bg-[rgba(52,211,153,0.12)] border border-[rgba(52,211,153,0.25)] flex items-center justify-center text-[#34D399]">
             <IconInbox size={20} />
           </div>
-          <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">All caught up!</h4>
-          <p className="text-xs text-[#7A8492] max-w-xs m-0">No pending items awaiting approval.</p>
+          <h4 className="text-sm font-semibold text-[#F0F4F8] m-0">
+            All caught up!
+          </h4>
+          <p className="text-xs text-[#7A8492] max-w-xs m-0">
+            No pending items awaiting approval.
+          </p>
           {gmailAccounts.length > 0 && (
             <button
               onClick={syncGmail}
@@ -272,30 +388,109 @@ export const TodayBrief: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-3">
-          {pendingItems.map((item) => <ReplyCard key={item.id} item={item} />)}
+          {pendingItems.map((item) => (
+            <ReplyCard key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Informational digest strip ── */}
+      {infoItems.length > 0 && (
+        <div className="rounded-xl border border-[rgba(52,211,153,0.15)] bg-[#0F1A12] overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-[rgba(52,211,153,0.1)] flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#34D399]/80 flex items-center gap-1.5">
+              📬 Informational
+            </span>
+            <span className="font-mono text-[10px] text-[#34D399]/50">
+              {infoItems.length} message{infoItems.length > 1 ? "s" : ""} · no
+              reply needed
+            </span>
+          </div>
+          <div className="divide-y divide-[rgba(52,211,153,0.06)]">
+            {infoItems.slice(0, 5).map((item) => {
+              const cleanPreview = item.preview.replace(
+                /^\[(?:PRIMARY|UPDATES|PROMOTIONS|SOCIAL|FORUMS)\]\s*/i,
+                "",
+              );
+              const senderMatch = item.sender.match(/^([^<]+)\s*</);
+              const senderName = senderMatch
+                ? senderMatch[1].trim()
+                : item.sender.replace(/<[^>]+>/, "").trim() || item.sender;
+              const subjectMatch = cleanPreview.match(/^([^:]+):/);
+              const subject = subjectMatch
+                ? subjectMatch[1].trim()
+                : cleanPreview.slice(0, 50);
+              return (
+                <div
+                  key={item.id}
+                  className="px-4 py-2 flex items-center gap-3"
+                >
+                  <div className="w-1 h-1 rounded-full bg-[#34D399]/30 shrink-0" />
+                  <span className="text-[11px] font-medium text-[#7A8492] shrink-0 max-w-[120px] truncate">
+                    {senderName}
+                  </span>
+                  <span className="text-[11px] text-[#4A5568] flex-1 truncate">
+                    {subject}
+                  </span>
+                </div>
+              );
+            })}
+            {infoItems.length > 5 && (
+              <div className="px-4 py-2">
+                <span className="font-mono text-[10px] text-[#34D399]/40">
+                  +{infoItems.length - 5} more in Messages → Informational
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* ── Low-urgency digest ── */}
-      {items.some((i) => i.urgency === 'low') && (
+      {items.some(
+        (i) => i.urgency === "low" && i.triage_status !== "suppressed",
+      ) && (
         <div className="p-4 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#F0F4F8] flex items-center gap-1.5">
-              📬 Daily Digest <span className="font-normal text-[#7A8492]">(5 PM Batch)</span>
+              📬 Daily Digest{" "}
+              <span className="font-normal text-[#7A8492]">(5 PM Batch)</span>
             </span>
             <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)] text-[#F59E0B]">
-              {items.filter((i) => i.urgency === 'low').length} Batched
+              {
+                items.filter(
+                  (i) =>
+                    i.urgency === "low" && i.triage_status !== "suppressed",
+                ).length
+              }{" "}
+              Batched
             </span>
           </div>
-          <p className="text-xs text-[#7A8492] m-0">Low-urgency items silenced to prevent executive interruption.</p>
+          <p className="text-xs text-[#7A8492] m-0">
+            Low-urgency items silenced to prevent executive interruption.
+          </p>
           <div className="pt-2 border-t border-[#242B35] space-y-1.5">
-            {items.filter((i) => i.urgency === 'low').slice(0, 3).map((item) => (
-              <div key={item.id} className="flex items-center gap-2 p-2 rounded-md bg-[#181E27] border border-[#242B35] text-xs">
-                <span className="font-semibold text-[#F0F4F8] shrink-0 max-w-[120px] truncate">{item.sender}</span>
-                <span className="flex-1 text-[#7A8492] truncate">{item.preview}</span>
-                <span className="font-mono text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[rgba(74,143,194,0.1)] border border-[rgba(74,143,194,0.2)] text-[#4A8FC2] uppercase shrink-0">{item.status}</span>
-              </div>
-            ))}
+            {items
+              .filter(
+                (i) => i.urgency === "low" && i.triage_status !== "suppressed",
+              )
+              .slice(0, 3)
+              .map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-2 p-2 rounded-md bg-[#181E27] border border-[#242B35] text-xs"
+                >
+                  <span className="font-semibold text-[#F0F4F8] shrink-0 max-w-[120px] truncate">
+                    {item.sender}
+                  </span>
+                  <span className="flex-1 text-[#7A8492] truncate">
+                    {item.preview}
+                  </span>
+                  <span className="font-mono text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[rgba(74,143,194,0.1)] border border-[rgba(74,143,194,0.2)] text-[#4A8FC2] uppercase shrink-0">
+                    {item.status}
+                  </span>
+                </div>
+              ))}
           </div>
         </div>
       )}

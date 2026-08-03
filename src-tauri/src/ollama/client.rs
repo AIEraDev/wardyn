@@ -10,7 +10,12 @@ pub struct ClassificationResult {
     pub urgency: Option<String>,
     pub draft_text: Option<String>,
     pub confidence: f64,
+    #[serde(default = "default_needs_reply")]
+    pub needs_reply: bool,
 }
+
+/// Default for needs_reply when field is absent from AI JSON — conservative: assume true.
+fn default_needs_reply() -> bool { true }
 
 #[derive(Debug, Clone)]
 pub struct ClassifyOutcome {
@@ -443,6 +448,7 @@ pub fn rule_based_classify_only(sender: &str, preview: &str) -> ClassificationRe
         draft_text: None, status: String::new(), flagged: false,
         confidence: 0.0, created_at: String::new(), updated_at: String::new(),
         thread_id: None, message_id: None, urgency: None,
+        needs_reply: true, triage_status: "active".to_string(),
     };
     fallback_rule_based_classify(&temp)
 }
@@ -451,6 +457,48 @@ fn fallback_rule_based_classify(item: &crate::models::QueueItem) -> Classificati
     let lower_sender = item.sender.to_lowercase();
     let lower_preview = item.preview.to_lowercase();
 
+    // ── Hard no-reply signals ──────────────────────────────────────────────
+    let is_automated_sender = lower_sender.contains("noreply")
+        || lower_sender.contains("no-reply")
+        || lower_sender.contains("donotreply")
+        || lower_sender.contains("mailer-daemon")
+        || lower_sender.contains("bounce")
+        || lower_sender.contains("notifications@")
+        || lower_sender.contains("newsletter")
+        || lower_sender.contains("alerts@")
+        || lower_sender.contains("updates@");
+
+    let is_automated_content = lower_preview.contains("unsubscribe")
+        || lower_preview.contains("your receipt")
+        || lower_preview.contains("order confirmed")
+        || lower_preview.contains("invoice #")
+        || lower_preview.contains("password reset")
+        || lower_preview.contains("welcome to ")
+        || lower_preview.contains("weekly digest")
+        || lower_preview.contains("weekly roundup")
+        || lower_preview.contains("you have ")
+        || lower_preview.contains("weekly update");
+
+    // ── Actionable signals ───────────────────────────────────────────────
+    let has_action_words = lower_preview.contains("please")
+        || lower_preview.contains("could you")
+        || lower_preview.contains("can you")
+        || lower_preview.contains("asap")
+        || lower_preview.contains("urgent")
+        || lower_preview.contains("deadline")
+        || lower_preview.contains("follow up")
+        || lower_preview.contains("let me know")
+        || lower_preview.contains("get back to")
+        || lower_preview.contains("reply");
+
+    let has_question = lower_preview.contains('?');
+
+    let needs_reply = !is_automated_sender
+        && !is_automated_content
+        && (has_action_words || has_question || lower_sender.contains("visa")
+            || lower_sender.contains("ukvi") || lower_sender.contains("home office"));
+
+    // ── Flagged / urgency ──────────────────────────────────────────────
     let is_flagged = lower_sender.contains("visa")
         || lower_sender.contains("ukvi")
         || lower_sender.contains("home office")
@@ -490,6 +538,7 @@ fn fallback_rule_based_classify(item: &crate::models::QueueItem) -> Classificati
         urgency: Some(if is_low_urgency { "low".to_string() } else { "high".to_string() }),
         draft_text,
         confidence,
+        needs_reply,
     }
 }
 

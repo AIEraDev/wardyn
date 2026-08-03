@@ -14,6 +14,7 @@ import {
 
 import { useQueueStore } from "../store/useQueueStore";
 import type { KnowledgeItem, Decision } from "../types/queue";
+import { BriefRenderer } from "./BriefRenderer";
 
 // ─── Tag pill parser ─────────────────────────────────────────────────────────
 function parseTags(tagsJson: string): string[] {
@@ -141,9 +142,7 @@ const KnowledgeCard: React.FC<{ item: KnowledgeItem }> = ({ item }) => {
               </p>
             </div>
           ) : deepReadText ? (
-            <pre className="text-[11px] text-[#C8D6E5] leading-relaxed whitespace-pre-wrap font-sans">
-              {deepReadText}
-            </pre>
+            <BriefRenderer text={deepReadText} baseColor="#C8D6E5" />
           ) : null}
         </div>
       )}
@@ -271,12 +270,22 @@ export const MemoryTab: React.FC = () => {
     fetchKnowledgeItems,
     saveDecision,
     fetchDecisions,
+    askClarification,
+    ollamaModels,
+    ollamaChecked,
   } = useQueueStore();
+
+  const aiOnline = ollamaChecked && ollamaModels.length > 0;
 
   // Capture state
   const [captureText, setCaptureText] = useState("");
   const [captureSaving, setCaptureSaving] = useState(false);
   const [captureDone, setCaptureDone] = useState(false);
+  // Clarification state for quick capture
+  const [clarifyQuestions, setClarifyQuestions] = useState<string[]>([]);
+  const [clarifyAnswers, setClarifyAnswers] = useState<string[]>([]);
+  const [clarifyPending, setClarifyPending] = useState(false);
+  const [pendingCaptureText, setPendingCaptureText] = useState("");
 
   // Decision form state
   const [showDecisionForm, setShowDecisionForm] = useState(false);
@@ -285,29 +294,84 @@ export const MemoryTab: React.FC = () => {
   const [alternativesText, setAlternativesText] = useState("");
   const [decisionSaving, setDecisionSaving] = useState(false);
 
+  const captureBytes = new TextEncoder().encode(captureText).length;
+  const captureOverLimit = captureBytes > 50 * 1024;
+  const captureNearLimit = captureBytes > 40 * 1024;
+
+  const decisionBytes = new TextEncoder().encode(
+    decisionText + rationaleText + alternativesText,
+  ).length;
+  const decisionOverLimit = decisionBytes > 50 * 1024;
+
   useEffect(() => {
     fetchKnowledgeItems();
     fetchDecisions();
   }, [fetchKnowledgeItems, fetchDecisions]);
 
-  const handleCapture = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!captureText.trim()) return;
+  const doSave = async (text: string) => {
     setCaptureSaving(true);
-    const isUrl = captureText.trim().startsWith("http");
+    const isUrl = text.trim().startsWith("http");
     await saveKnowledgeItem(
-      isUrl ? "" : captureText.trim(),
-      isUrl ? captureText.trim() : undefined,
+      isUrl ? "" : text.trim(),
+      isUrl ? text.trim() : undefined,
     );
     setCaptureText("");
+    setPendingCaptureText("");
+    setClarifyQuestions([]);
+    setClarifyAnswers([]);
     setCaptureSaving(false);
     setCaptureDone(true);
-    setTimeout(() => setCaptureDone(false), 2000);
+    setTimeout(() => setCaptureDone(false), 2500);
+  };
+
+  const handleCapture = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!captureText.trim() || captureOverLimit) return;
+
+    const raw = captureText.trim();
+    const isUrl = raw.startsWith("http");
+
+    // URLs don't benefit from clarification — save immediately
+    if (isUrl || !aiOnline) {
+      await doSave(raw);
+      return;
+    }
+
+    // Ask AI if it needs more context
+    setClarifyPending(true);
+    setPendingCaptureText(raw);
+    try {
+      const qs = await askClarification(raw);
+      if (qs.length > 0) {
+        setClarifyQuestions(qs);
+        setClarifyAnswers(new Array(qs.length).fill(""));
+        setClarifyPending(false);
+        return; // show clarify UI inline
+      }
+    } catch {
+      // fall through to save
+    }
+    setClarifyPending(false);
+    await doSave(raw);
+  };
+
+  const handleClarifySubmit = async () => {
+    const extras = clarifyQuestions
+      .map((q, i) =>
+        clarifyAnswers[i]?.trim() ? `${q} ${clarifyAnswers[i].trim()}` : "",
+      )
+      .filter(Boolean)
+      .join(". ");
+    const enriched = extras
+      ? `${pendingCaptureText}. Additional context: ${extras}`
+      : pendingCaptureText;
+    await doSave(enriched);
   };
 
   const handleSaveDecision = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!decisionText.trim() || !rationaleText.trim()) return;
+    if (!decisionText.trim() || !rationaleText.trim() || decisionOverLimit)
+      return;
     setDecisionSaving(true);
     await saveDecision(
       decisionText.trim(),
@@ -349,6 +413,11 @@ export const MemoryTab: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!aiOnline && (
+            <span className="font-mono text-[9px] font-semibold px-2 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#EF4444] border border-[rgba(239,68,68,0.25)] uppercase tracking-wider">
+              ⚡ AI offline
+            </span>
+          )}
           <span className="font-mono text-[10px] bg-[rgba(74,143,194,0.1)] text-[#4A8FC2] px-2 py-1 rounded border border-[rgba(74,143,194,0.25)]">
             {knowledgeItems.length} captures
           </span>
@@ -371,11 +440,17 @@ export const MemoryTab: React.FC = () => {
             value={captureText}
             onChange={(e) => setCaptureText(e.target.value)}
             placeholder="https://... or type a thought, insight, or note..."
-            className="flex-1 bg-[#0B0F16] text-[12px] text-[#F0F4F8] placeholder-[#4A5568] p-2.5 rounded-lg border border-[#1D2535] focus:outline-none focus:border-[#4A8FC2] transition-colors font-mono"
+            className={`flex-1 bg-[#0B0F16] text-[12px] text-[#F0F4F8] placeholder-[#4A5568] p-2.5 rounded-lg border focus:outline-none transition-colors font-mono ${
+              captureOverLimit
+                ? "border-[#EF4444] focus:border-[#EF4444]"
+                : captureNearLimit
+                  ? "border-[#E8A23D] focus:border-[#E8A23D]"
+                  : "border-[#1D2535] focus:border-[#4A8FC2]"
+            }`}
           />
           <button
             type="submit"
-            disabled={captureSaving || !captureText.trim()}
+            disabled={captureSaving || !captureText.trim() || captureOverLimit}
             className="px-3 py-2 bg-[#4A8FC2] text-black text-xs font-semibold rounded-lg hover:bg-[#5b9bd1] transition-colors disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
           >
             {captureSaving ? (
@@ -388,10 +463,95 @@ export const MemoryTab: React.FC = () => {
             {captureDone ? "Saved!" : "Capture"}
           </button>
         </form>
-        <p className="text-[10px] text-[#4A5568] font-mono mt-1.5">
-          Ollama will auto-tag and summarise in the background. Tags appear
-          within ~10s.
-        </p>
+        {captureOverLimit ? (
+          <p className="text-[10px] text-[#EF4444] font-mono mt-1.5">
+            ❌ Content exceeds 50 KB soft cap (
+            {(captureBytes / 1024).toFixed(1)} KB). Please trim text.
+          </p>
+        ) : captureNearLimit ? (
+          <p className="text-[10px] text-[#E8A23D] font-mono mt-1.5">
+            ⚠️ Approaching limit: {(captureBytes / 1024).toFixed(1)} KB / 50 KB
+          </p>
+        ) : (
+          <p className="text-[10px] text-[#4A5568] font-mono mt-1.5">
+            {aiOnline
+              ? "Ollama will auto-tag and summarise in the background. Tags appear within ~10s."
+              : "⚡ AI offline — note will be captured with keyword-based tags."}
+          </p>
+        )}
+
+        {/* ── Inline clarification panel ── */}
+        {clarifyPending && (
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-[#64748B]">
+            <IconLoader2 size={13} className="animate-spin text-[#4A8FC2]" />
+            Checking if more context would help…
+          </div>
+        )}
+
+        {clarifyQuestions.length > 0 && !clarifyPending && (
+          <div className="mt-3 p-3.5 rounded-xl bg-[#080C12] border border-[rgba(74,143,194,0.2)] space-y-3">
+            <p className="text-[11px] text-[#7A8492]">
+              A couple of quick questions to make this more useful:
+            </p>
+            <div className="text-[11px] text-[#4A5568] italic truncate bg-[rgba(255,255,255,0.03)] px-2 py-1 rounded">
+              "
+              {pendingCaptureText.length > 70
+                ? pendingCaptureText.slice(0, 70) + "…"
+                : pendingCaptureText}
+              "
+            </div>
+
+            {clarifyQuestions.map((q, i) => (
+              <div key={i} className="space-y-1">
+                <label className="text-[11px] font-medium text-[#C8D6E5] flex items-start gap-2">
+                  <span className="w-4 h-4 rounded-full bg-[rgba(74,143,194,0.2)] text-[#4A8FC2] flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">
+                    {i + 1}
+                  </span>
+                  {q}
+                </label>
+                <input
+                  type="text"
+                  value={clarifyAnswers[i] ?? ""}
+                  onChange={(e) => {
+                    const next = [...clarifyAnswers];
+                    next[i] = e.target.value;
+                    setClarifyAnswers(next);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && i === clarifyQuestions.length - 1)
+                      handleClarifySubmit();
+                  }}
+                  autoFocus={i === 0}
+                  placeholder="Your answer (or leave blank to skip)"
+                  className="w-full bg-[#0B0F16] text-[12px] text-[#F0F4F8] placeholder-[#3A4255] p-2 rounded-lg border border-[#1D2535] focus:outline-none focus:border-[#4A8FC2] font-mono"
+                />
+              </div>
+            ))}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => doSave(pendingCaptureText)}
+                className="font-mono text-[10px] px-3 py-1.5 rounded-lg bg-transparent border border-[#242B35] text-[#4A5568] hover:text-[#9AA4B2] transition-colors cursor-pointer"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                onClick={handleClarifySubmit}
+                disabled={captureSaving}
+                className="flex-1 font-mono text-[11px] px-3 py-1.5 rounded-lg bg-[#4A8FC2] text-black font-semibold hover:bg-[#5b9bd1] transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {captureSaving ? (
+                  <IconLoader2 size={12} className="animate-spin" />
+                ) : (
+                  <IconCheck size={12} />
+                )}
+                Save with context
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Log Decision Button / Form ── */}

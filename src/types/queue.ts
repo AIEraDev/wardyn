@@ -1,10 +1,40 @@
-export type QueueItemStatus = "pending" | "approved" | "edited" | "skipped" | "sent";
-export type QueueItemSource = "gmail" | "calendar" | "slack" | "discord" | "telegram" | "imessage" | "linkedin" | "twitter" | "whatsapp" | "teams";
+export type QueueItemStatus =
+  | "pending"
+  | "approved"
+  | "edited"
+  | "skipped"
+  | "sent";
+export type QueueItemSource =
+  | "gmail"
+  | "calendar"
+  | "slack"
+  | "discord"
+  | "telegram"
+  | "imessage"
+  | "linkedin"
+  | "whatsapp"
+  | "teams";
 export type QueueItemKind = "reply" | "deadline" | "social" | "dm";
-export type TabType = "today" | "messages" | "content" | "deadlines" | "channels" | "settings" | "analytics" | "memory" | "productivity" | "active-life" | "research";
+export type TabType =
+  | "today"
+  | "messages"
+  | "content"
+  | "deadlines"
+  | "channels"
+  | "settings"
+  | "analytics"
+  | "memory"
+  | "productivity"
+  | "active-life"
+  | "research";
 
-export type SocialPlatform = "linkedin" | "twitter";
-export type SocialPostStatus = "pending" | "approved" | "edited" | "skipped" | "posted";
+export type SocialPlatform = "linkedin";
+export type SocialPostStatus =
+  | "pending"
+  | "approved"
+  | "edited"
+  | "skipped"
+  | "posted";
 
 export type ChannelCategory = "email" | "work" | "messaging" | "social";
 export type ChannelStatus = "connected" | "disconnected" | "configuring";
@@ -36,6 +66,10 @@ export interface QueueItem {
   thread_id?: string | null;
   message_id?: string | null;
   urgency?: "high" | "low" | null;
+  /** AI + rule scored: does this email warrant a human reply? */
+  needs_reply: boolean;
+  /** "active" | "suppressed" | "pending_ai" */
+  triage_status: string;
 }
 
 export interface SocialPost {
@@ -175,7 +209,13 @@ export interface LifeEvent {
   id: string;
   title: string;
   raw_input: string;
-  intent: "event_prep" | "study_plan" | "project_kickoff" | "habit_goal" | "deadline" | "travel";
+  intent:
+    | "event_prep"
+    | "study_plan"
+    | "project_kickoff"
+    | "habit_goal"
+    | "deadline"
+    | "travel";
   event_date: string | null;
   status: "active" | "completed" | "cancelled";
   created_at: string;
@@ -231,7 +271,7 @@ export interface DailyIntel {
   learning_summary: string | null;
   social_post_idea: string | null;
   social_format: "video" | "image_text" | "plain_text" | null;
-  social_platform: "linkedin" | "twitter" | null;
+  social_platform: "linkedin" | null;
   day_plan: string | null;
   generated_at: string;
 }
@@ -250,7 +290,7 @@ export interface HabitReminder {
   habit_id: string;
   habit_name: string;
   habit_icon: string;
-  remind_time: string;   // "HH:MM" 24h e.g. "05:30"
+  remind_time: string; // "HH:MM" 24h e.g. "05:30"
   enabled: boolean;
   created_at: string;
 }

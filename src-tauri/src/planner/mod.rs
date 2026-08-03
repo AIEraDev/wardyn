@@ -85,7 +85,7 @@ pub async fn parse_life_event(text: &str, conn_mutex: Option<&std::sync::Mutex<r
         let resp = match client
             .post("http://127.0.0.1:11434/api/generate")
             .json(&body)
-            .timeout(std::time::Duration::from_secs(60))
+            .timeout(std::time::Duration::from_secs(180))
             .send()
             .await
         {

@@ -35,8 +35,16 @@ pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) ->
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
         let feeds = db::get_recent_feed_items(&conn, 24, 10).unwrap_or_default();
         let items = db::get_all_queue_items(&conn).unwrap_or_default();
-        let pending = items.iter().filter(|i| i.status == "pending").count();
-        let flagged = items.iter().filter(|i| i.flagged && i.status == "pending").count();
+        // Only count emails that genuinely need a reply — exclude informational/suppressed
+        let pending = items.iter().filter(|i| {
+            i.status == "pending"
+                && i.needs_reply
+                && i.triage_status != "suppressed"
+                && i.triage_status != "informational"
+        }).count();
+        let flagged = items.iter().filter(|i| {
+            i.flagged && i.status == "pending" && i.triage_status != "suppressed"
+        }).count();
         let cal = db::get_synced_calendar_events(&conn).unwrap_or_default().len();
         let knowledge = db::get_knowledge_items(&conn, 5).unwrap_or_default();
         let decisions = db::get_decisions(&conn, 3).unwrap_or_default();
@@ -209,7 +217,7 @@ OUTPUT FORMAT (use exactly these sections):
 
 async fn call_ollama_for_brief(prompt: &str) -> Result<String, String> {
     let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(180)) // 3 min — 7B models take ~45s for a full brief
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -221,7 +229,7 @@ async fn call_ollama_for_brief(prompt: &str) -> Result<String, String> {
             "model": model,
             "prompt": prompt,
             "stream": false,
-            "options": { "num_predict": 800, "temperature": 0.4 }
+            "options": { "num_predict": 600, "temperature": 0.4 }
         });
 
         let res = client.post(format!("{}/api/generate", OLLAMA_BASE))

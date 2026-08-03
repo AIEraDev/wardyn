@@ -240,7 +240,7 @@ pub fn get_current_week_key() -> String {
 
 async fn call_ollama_for_weekly(prompt: &str) -> Result<String, String> {
     let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(180))
         .build()
         .map_err(|e| e.to_string())?;
 

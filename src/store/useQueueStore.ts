@@ -165,7 +165,7 @@ interface QueueStore {
   // LinkedIn OAuth Actions
   connectLinkedIn: () => Promise<void>;
 
-  // Social Post Actions (LinkedIn & Twitter/X)
+  // Social Post Actions (LinkedIn)
   approveSocialPost: (id: string, editedContent?: string) => Promise<void>;
   skipSocialPost: (id: string) => void;
   regenerateSocialPost: (
@@ -297,8 +297,14 @@ interface QueueStore {
   lifeEvents: LifeEvent[];
   lifeEventCapturing: boolean;
   captureLifeEvent: (text: string) => Promise<LifeEvent | null>;
+  askClarification: (text: string) => Promise<string[]>;
   fetchLifeEvents: () => Promise<void>;
   updateLifeEventStatus: (id: string, status: string) => Promise<void>;
+
+  // Data Management
+  clearGmailCache: (handledOnly: boolean) => Promise<number>;
+  clearAiCache: () => Promise<void>;
+  resetAllData: () => Promise<void>;
 
   // Ollama Model Guard & Background Downloads
   ollamaModels: Array<{ name: string; size_gb: string }>;
@@ -859,10 +865,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       console.warn("Clipboard write warning:", err);
     }
 
-    const shareUrl =
-      target.platform === "linkedin"
-        ? `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(finalContent)}`
-        : `https://twitter.com/intent/tweet?text=${encodeURIComponent(finalContent)}`;
+    const shareUrl = `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(finalContent)}`;
 
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
@@ -876,11 +879,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       window.open(shareUrl, "_blank");
     }
 
-    const platformLabel =
-      target.platform === "linkedin" ? "LinkedIn" : "Twitter / X";
     await get().sendDesktopNotification(
-      `🚀 ${platformLabel} Post Approved`,
-      `Copied to clipboard! Opened ${platformLabel} composer window.`,
+      `🚀 LinkedIn Post Approved`,
+      `Copied to clipboard! Opened LinkedIn composer window.`,
     );
   },
 
@@ -926,7 +927,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         >("get_social_posts_command");
         const posts = records.map((r) => ({
           id: r.id,
-          platform: r.platform as "linkedin" | "twitter",
+          platform: r.platform as "linkedin",
           topic: r.topic,
           content: r.content,
           hashtags: (() => {
@@ -1369,27 +1370,40 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
         if (newItemsCount > 0) {
           const latestItems = get().items;
-          const urgentFlagged = latestItems.find(
-            (i) => i.flagged && i.status === "pending",
-          );
-          const highUrgentItem = latestItems.find(
+          // Only notify for reply-needed emails — not informational/suppressed
+          const actionableItems = latestItems.filter(
             (i) =>
-              (i.urgency === "high" || !i.urgency) && i.status === "pending",
+              i.status === "pending" &&
+              i.needs_reply &&
+              i.triage_status !== "suppressed" &&
+              i.triage_status !== "informational",
           );
+          const urgentFlagged = actionableItems.find((i) => i.flagged);
+          const highUrgentItem = actionableItems.find(
+            (i) => i.urgency === "high" || !i.urgency,
+          );
+          const infoCount = latestItems.filter(
+            (i) =>
+              i.status === "pending" && i.triage_status === "informational",
+          ).length;
 
           if (urgentFlagged) {
             await get().sendDesktopNotification(
-              "⚠️ Urgent Visa / Deadline Alert",
+              "⚠️ Urgent Flagged Email",
               `Action Required: ${urgentFlagged.sender} — ${urgentFlagged.preview}`,
             );
           } else if (highUrgentItem) {
             await get().sendDesktopNotification(
               "📩 Priority Message Triaged",
-              `High Urgency: ${highUrgentItem.sender} — ${highUrgentItem.preview}`,
+              `Needs your reply: ${highUrgentItem.sender} — ${highUrgentItem.preview}`,
+            );
+          } else if (infoCount > 0) {
+            console.log(
+              `[Triage] ${infoCount} informational message(s) added to digest. No reply needed.`,
             );
           } else {
             console.log(
-              `[Executive Triage] ${newItemsCount} low-urgency item(s) suppressed from desktop alerts and batched to Daily Digest.`,
+              `[Triage] ${newItemsCount} item(s) synced — no actionable emails detected.`,
             );
           }
         }
@@ -2245,6 +2259,19 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     return null;
   },
 
+  askClarification: async (text: string): Promise<string[]> => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        return await invoke<string[]>("ask_clarification_command", { text });
+      } catch {
+        // Ollama offline or timeout — skip clarification silently
+        return [];
+      }
+    }
+    return [];
+  },
+
   fetchLifeEvents: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
@@ -2270,6 +2297,86 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       } catch (err) {
         console.error("Update life event status error:", err);
       }
+    }
+  },
+
+  // ─── Data Management ───────────────────────────────────────────────────────
+
+  clearGmailCache: async (handledOnly: boolean): Promise<number> => {
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+      return 0;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const deleted = await invoke<number>("clear_gmail_cache_command", {
+        handledOnly,
+      });
+      // Reload items from DB so the UI reflects the deletion immediately
+      await get().fetchItems();
+      // Full gmail clear: re-sync calendar so orphaned cal_ entries are cleaned up
+      if (!handledOnly) {
+        await get().syncCalendarDeadlines();
+      }
+      return deleted;
+    } catch (err) {
+      console.error("clearGmailCache error:", err);
+      return 0;
+    }
+  },
+
+  clearAiCache: async (): Promise<void> => {
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+      return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("clear_ai_cache_command");
+      // Clear cached AI outputs from store memory
+      set({
+        morningBrief: null,
+        weeklyReview: null,
+      });
+    } catch (err) {
+      console.error("clearAiCache error:", err);
+    }
+  },
+
+  resetAllData: async (): Promise<void> => {
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+      return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("reset_all_data_command");
+      // Flush all in-memory state to match the now-empty DB
+      set({
+        items: [],
+        socialPosts: [],
+        calendarEvents: [],
+        knowledgeItems: [],
+        decisions: [],
+        lifeEvents: [],
+        tasks: [],
+        reminders: [],
+        habitReminders: [],
+        pomodoroSessions: [],
+        activePomodoroSession: null,
+        dailyHabits: [],
+        habitCompletions: [],
+        activeProjects: [],
+        customFeeds: [],
+        morningBrief: null,
+        weeklyReview: null,
+        weeklyReviewLoading: false,
+        dailyIntel: null,
+        dayPlan: null,
+        generatedPost: null,
+        responseAnalytics: [],
+        categoryResponseTimes: [],
+        linkedInSummary: null,
+        searchHistory: [],
+      });
+      // Re-fetch calendar events from Google so Deadlines tab stays populated
+      await get().syncCalendarDeadlines();
+    } catch (err) {
+      console.error("resetAllData error:", err);
     }
   },
 

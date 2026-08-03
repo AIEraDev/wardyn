@@ -18,6 +18,9 @@ import {
   IconExternalLink,
   IconEye,
   IconEyeOff,
+  IconDatabase,
+  IconAlertTriangle,
+  IconShield,
 } from "@tabler/icons-react";
 import { OllamaSetupModal } from "./OllamaSetupModal";
 
@@ -120,6 +123,302 @@ const FREE_MODEL_CATALOG: CatalogModel[] = [
   },
 ];
 
+// ─── Data Management Section ──────────────────────────────────────────────────
+
+interface DataStats {
+  gmail_messages: number;
+  gmail_handled: number;
+  gmail_suppressed: number;
+  gmail_informational: number;
+  voice_edits: number;
+  response_analytics: number;
+  morning_briefs: number;
+  weekly_reviews: number;
+  feed_items: number;
+  feed_interactions: number;
+  knowledge_items: number;
+  decisions: number;
+  life_events: number;
+  tasks: number;
+  social_posts: number;
+  reminders: number;
+  pomodoro_sessions: number;
+}
+
+const DataManagementSection: React.FC = () => {
+  const { clearGmailCache, clearAiCache, resetAllData } = useQueueStore();
+  const [stats, setStats] = React.useState<DataStats | null>(null);
+  const [loadingStats, setLoadingStats] = React.useState(false);
+  const [working, setWorking] = React.useState<string | null>(null);
+  const [result, setResult] = React.useState<{
+    type: "success" | "error";
+    msg: string;
+  } | null>(null);
+  const [confirmTarget, setConfirmTarget] = React.useState<
+    null | "handled" | "all_gmail" | "ai_cache" | "full_reset"
+  >(null);
+
+  const invokeRaw = async (cmd: string, args?: Record<string, unknown>) => {
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+      return null;
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke(cmd, args);
+  };
+
+  const loadStats = async () => {
+    setLoadingStats(true);
+    try {
+      const s = await invokeRaw("get_data_stats_command");
+      setStats(s as DataStats);
+    } catch (e) {
+      console.error("get_data_stats_command failed", e);
+    }
+    setLoadingStats(false);
+  };
+
+  React.useEffect(() => {
+    loadStats();
+  }, []);
+
+  const run = async (target: typeof confirmTarget) => {
+    setConfirmTarget(null);
+    setWorking(target!);
+    setResult(null);
+    try {
+      if (target === "handled") {
+        const n = await clearGmailCache(true);
+        setResult({
+          type: "success",
+          msg: `Cleared ${n} handled Gmail messages.`,
+        });
+      } else if (target === "all_gmail") {
+        const n = await clearGmailCache(false);
+        setResult({
+          type: "success",
+          msg: `Cleared ${n} Gmail messages from local cache.`,
+        });
+      } else if (target === "ai_cache") {
+        await clearAiCache();
+        setResult({
+          type: "success",
+          msg: "AI caches cleared. Briefs will regenerate on next launch.",
+        });
+      } else if (target === "full_reset") {
+        await resetAllData();
+        setResult({
+          type: "success",
+          msg: "System reset complete. OAuth credentials and Ollama models were preserved.",
+        });
+      }
+      await loadStats();
+    } catch (e: any) {
+      setResult({ type: "error", msg: e?.message || String(e) });
+    }
+    setWorking(null);
+  };
+
+  const ACTIONS: {
+    id: typeof confirmTarget;
+    label: string;
+    description: string;
+    detail: string;
+    buttonLabel: string;
+    buttonClass: string;
+    confirmMsg: string;
+  }[] = [
+    {
+      id: "handled",
+      label: "Clear Handled Emails",
+      description:
+        "Remove sent, skipped, and approved Gmail messages from local cache.",
+      detail: stats ? `${stats.gmail_handled} handled messages` : "—",
+      buttonLabel: "Clear Handled",
+      buttonClass:
+        "bg-[rgba(74,143,194,0.15)] text-[#4A8FC2] border-[rgba(74,143,194,0.3)] hover:bg-[rgba(74,143,194,0.25)]",
+      confirmMsg: `This will delete ${stats?.gmail_handled ?? "all"} handled Gmail messages from local storage. Pending emails and all personal data are untouched. Continue?`,
+    },
+    {
+      id: "all_gmail",
+      label: "Clear All Cached Gmail",
+      description:
+        "Remove all locally cached Gmail messages. Re-syncing will fetch fresh data.",
+      detail: stats
+        ? `${stats.gmail_messages} total (${stats.gmail_suppressed} filtered + ${stats.gmail_informational} informational)`
+        : "—",
+      buttonLabel: "Clear Gmail Cache",
+      buttonClass:
+        "bg-[rgba(232,162,61,0.15)] text-[#E8A23D] border-[rgba(232,162,61,0.3)] hover:bg-[rgba(232,162,61,0.25)]",
+      confirmMsg: `This will delete all ${stats?.gmail_messages ?? ""} locally cached Gmail messages. Your Gmail inbox is not affected — they'll re-sync on next refresh. Continue?`,
+    },
+    {
+      id: "ai_cache",
+      label: "Clear AI Caches",
+      description:
+        "Reset morning briefs, weekly reviews, feed data, and voice edits. Does not touch your memory or emails.",
+      detail: stats
+        ? `${stats.morning_briefs} briefs · ${stats.feed_items} feed items · ${stats.voice_edits} voice edits`
+        : "—",
+      buttonLabel: "Clear AI Caches",
+      buttonClass:
+        "bg-[rgba(155,89,182,0.15)] text-[#9B59B6] border-[rgba(155,89,182,0.3)] hover:bg-[rgba(155,89,182,0.25)]",
+      confirmMsg:
+        "This clears all AI-generated caches (briefs, feed items, voice corpus). Your knowledge captures, decisions, and life events are untouched. Continue?",
+    },
+    {
+      id: "full_reset",
+      label: "Full System Reset",
+      description:
+        "Wipe all app data. OAuth credentials and Ollama models are preserved.",
+      detail: stats
+        ? `${stats.knowledge_items} knowledge · ${stats.decisions} decisions · ${stats.life_events} life events · ${stats.tasks} tasks`
+        : "—",
+      buttonLabel: "Reset Everything",
+      buttonClass:
+        "bg-[rgba(239,68,68,0.15)] text-[#EF4444] border-[rgba(239,68,68,0.3)] hover:bg-[rgba(239,68,68,0.25)]",
+      confirmMsg:
+        "⚠️ This will permanently delete ALL app data including your knowledge captures, decisions, life events, tasks, and email cache.\n\nPreserved: Gmail/LinkedIn OAuth tokens, OAuth client credentials, vault path setting, and all Ollama models.\n\nThis cannot be undone. Continue?",
+    },
+  ];
+
+  return (
+    <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-lg bg-[rgba(239,68,68,0.1)] text-[#EF4444] border border-[rgba(239,68,68,0.2)]">
+            <IconDatabase size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[#F0F4F8]">
+              Data Management
+            </p>
+            <p className="text-xs text-[#9AA4B2]">
+              Cleanup cached messages and reset system data
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={loadStats}
+          disabled={loadingStats}
+          className="font-mono text-[10px] px-2.5 py-1 rounded-md bg-[#181E27] text-[#7A8492] border border-[#242B35] hover:text-[#F0F4F8] flex items-center gap-1 cursor-pointer disabled:opacity-40"
+        >
+          <IconRefresh
+            size={11}
+            className={loadingStats ? "animate-spin" : ""}
+          />
+          {loadingStats ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {/* Action rows */}
+      <div className="space-y-2.5">
+        {ACTIONS.map((action) => (
+          <div
+            key={action.id}
+            className="flex items-start justify-between gap-4 p-3.5 rounded-xl bg-[#181E27] border border-[#242B35]"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-[#F0F4F8] flex items-center gap-1.5">
+                {action.id === "full_reset" && (
+                  <IconAlertTriangle size={12} className="text-[#EF4444]" />
+                )}
+                {action.label}
+              </p>
+              <p className="text-[11px] text-[#7A8492] mt-0.5 leading-relaxed">
+                {action.description}
+              </p>
+              <p className="font-mono text-[10px] text-[#4A5568] mt-1">
+                {action.detail}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={() => setConfirmTarget(action.id)}
+              className={`font-mono text-[11px] px-3 py-1.5 rounded-lg border font-medium transition-colors cursor-pointer disabled:opacity-40 shrink-0 flex items-center gap-1.5 ${action.buttonClass}`}
+            >
+              {working === action.id ? (
+                <>
+                  <IconLoader2 size={11} className="animate-spin" /> Working…
+                </>
+              ) : (
+                <>
+                  <IconTrash size={11} /> {action.buttonLabel}
+                </>
+              )}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Result banner */}
+      {result && (
+        <div
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-mono ${
+            result.type === "success"
+              ? "bg-[rgba(52,211,153,0.1)] border border-[rgba(52,211,153,0.25)] text-[#34D399]"
+              : "bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.25)] text-[#EF4444]"
+          }`}
+        >
+          {result.type === "success" ? (
+            <IconCheck size={13} />
+          ) : (
+            <IconAlertTriangle size={13} />
+          )}
+          {result.msg}
+        </div>
+      )}
+
+      {/* Preserved note */}
+      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-[rgba(74,143,194,0.05)] border border-[rgba(74,143,194,0.12)]">
+        <IconShield size={12} className="text-[#4A8FC2] mt-0.5 shrink-0" />
+        <p className="text-[10px] text-[#4A5568] leading-relaxed">
+          Gmail and LinkedIn OAuth tokens, your OAuth client credentials, vault
+          path, and all Ollama model files are never touched by any cleanup
+          action.
+        </p>
+      </div>
+
+      {/* Confirm modal */}
+      {confirmTarget && (
+        <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="w-full max-w-md bg-[#0F1520] rounded-2xl border border-[#242B35] shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] flex items-center justify-center">
+                <IconAlertTriangle size={18} className="text-[#EF4444]" />
+              </div>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                {ACTIONS.find((a) => a.id === confirmTarget)?.label}
+              </p>
+            </div>
+            <p className="text-xs text-[#9AA4B2] leading-relaxed whitespace-pre-line">
+              {ACTIONS.find((a) => a.id === confirmTarget)?.confirmMsg}
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setConfirmTarget(null)}
+                className="flex-1 px-4 py-2 rounded-xl bg-[#181E27] border border-[#242B35] text-[#9AA4B2] text-xs font-medium cursor-pointer hover:bg-[#1E2530] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => run(confirmTarget)}
+                className="flex-1 px-4 py-2 rounded-xl bg-[rgba(239,68,68,0.2)] border border-[rgba(239,68,68,0.4)] text-[#EF4444] text-xs font-semibold cursor-pointer hover:bg-[rgba(239,68,68,0.3)] transition-colors"
+              >
+                Yes, proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Main Settings Component ──────────────────────────────────────────────────
 export const SettingsTab: React.FC = () => {
   const {
     gmailAccounts,
@@ -1177,6 +1476,10 @@ export const SettingsTab: React.FC = () => {
           later."
         </p>
       </div>
+
+      {/* ── Data Management ── */}
+      <DataManagementSection />
+
       {/* Ollama Setup Modal */}
       {setupTarget && (
         <OllamaSetupModal

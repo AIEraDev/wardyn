@@ -4,6 +4,98 @@ use crate::models::QueueItem;
 use crate::ollama;
 use crate::productivity;
 
+/// Three-tier triage classification applied at sync time (before AI):
+///
+///   "suppressed"   — pure noise: bounce@, mailer-daemon@, marketing spam, unsubscribe
+///   "informational"— worth reading, no reply needed: bank alerts, shipping, event
+///                    confirmations, real newsletters, CI notifications, FYI emails
+///   "active"       — may need a reply (upgraded/downgraded by AI pass)
+///
+/// The key insight: informational emails are NOT suppressed. They belong in a
+/// readable digest panel. Only true junk/bounces are suppressed.
+fn classify_triage_tier(sender: &str, preview: &str, category_label: &str) -> &'static str {
+    let lower_sender = sender.to_lowercase();
+    let lower_preview = preview.to_lowercase();
+
+    // ── Tier 1: Hard suppress — pure noise, never useful ─────────────────
+    let is_pure_noise = lower_sender.contains("mailer-daemon")
+        || lower_sender.contains("bounce@")
+        || lower_sender.contains("donotreply@")
+        || lower_preview.contains("this is an automated message")
+        || lower_preview.contains("do not reply to this email")
+        // Promotional spam with unsubscribe links (marketing blasts)
+        || (lower_preview.contains("unsubscribe") && (
+               category_label == "promotions"
+            || lower_sender.contains("marketing@")
+            || lower_sender.contains("promo@")
+            || lower_sender.contains("deals@")
+            || lower_sender.contains("offers@")
+        ));
+
+    if is_pure_noise {
+        return "suppressed";
+    }
+
+    // ── Tier 2: Informational — real content, no reply expected ──────────
+    // These are emails from real services you care about: banks, shops, events,
+    // SaaS platforms, newsletters you actually subscribed to, CI systems, etc.
+    let is_informational =
+        // Transactional: financial / orders
+        lower_preview.contains("your receipt")
+        || lower_preview.contains("order confirmed")
+        || lower_preview.contains("order shipped")
+        || lower_preview.contains("your order")
+        || lower_preview.contains("invoice #")
+        || lower_preview.contains("payment received")
+        || lower_preview.contains("payment confirmed")
+        || lower_preview.contains("transaction")
+        || lower_preview.contains("statement is ready")
+        || lower_preview.contains("bank statement")
+        // Account / auth
+        || lower_preview.contains("password reset")
+        || lower_preview.contains("verify your email")
+        || lower_preview.contains("confirm your email")
+        || lower_preview.contains("two-factor")
+        || lower_preview.contains("sign-in attempt")
+        || lower_preview.contains("new login")
+        // Events / bookings
+        || lower_preview.contains("booking confirmed")
+        || lower_preview.contains("reservation confirmed")
+        || lower_preview.contains("your ticket")
+        || lower_preview.contains("event reminder")
+        || lower_preview.contains("appointment confirmed")
+        // Dev / CI / platform notifications
+        || lower_preview.contains("build passed")
+        || lower_preview.contains("build failed")
+        || lower_preview.contains("pull request")
+        || lower_preview.contains("merged into")
+        || lower_preview.contains("pipeline")
+        || lower_preview.contains("deployment")
+        // Shipping
+        || lower_preview.contains("has been shipped")
+        || lower_preview.contains("out for delivery")
+        || lower_preview.contains("delivered")
+        || lower_preview.contains("tracking number")
+        // Digests / newsletters (non-spam — sender not a known spammer)
+        || lower_preview.contains("weekly digest")
+        || lower_preview.contains("daily digest")
+        || lower_preview.contains("this week in")
+        || lower_preview.contains("weekly roundup")
+        || lower_preview.contains("newsletter")
+        // Notification-style category emails that have real content
+        || (category_label == "updates" && lower_sender.contains("noreply"))
+        || (category_label == "social"
+            && (lower_sender.contains("linkedin")
+                || lower_sender.contains("github")));
+
+    if is_informational {
+        return "informational";
+    }
+
+    // ── Tier 3: Active — potentially needs a reply (AI will confirm) ──────
+    "active"
+}
+
 // No compile-time credentials — users supply their own via Settings → OAuth Credentials.
 
 pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> Result<usize, String> {
@@ -136,10 +228,25 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                         };
 
                         let now = crate::db::now_iso();
+                        // Classify into three tiers: suppressed / informational / active
+                        let triage_status = classify_triage_tier(&sender, &preview, category_label);
+                        let is_suppressed = triage_status == "suppressed";
+                        let is_informational = triage_status == "informational";
+
                         // Fast rule-based classify first — AI classification runs in parallel below
                         let fast_result = ollama::client::rule_based_classify_only(
                             &sender, &preview
                         );
+
+                        // Suppressed and informational items never need a reply
+                        let needs_reply = !is_suppressed && !is_informational && fast_result.needs_reply;
+
+                        // pending_ai only for active items — no point running AI on suppressed/informational
+                        let final_triage_status = if is_suppressed || is_informational {
+                            triage_status.to_string()
+                        } else {
+                            "pending_ai".to_string() // upgraded to "active" by AI pass below
+                        };
 
                         let item = QueueItem {
                             id: item_id,
@@ -156,6 +263,8 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                             thread_id,
                             message_id,
                             urgency: fast_result.urgency,
+                            needs_reply,
+                            triage_status: final_triage_status,
                         };
                         new_items.push(item);
                     }
@@ -212,13 +321,25 @@ pub async fn sync_gmail_messages(conn_mutex: &std::sync::Mutex<Connection>) -> R
                 let result = outcome.result;
                 if let Ok(conn) = conn_ref.lock() {
                     let now = db::now_iso();
+                    // After AI scores, promote triage_status from 'pending_ai' -> 'active'
+                    // (suppressed items keep their status; AI doesn't override the hard exclusion)
                     conn.execute(
-                        "UPDATE queue_items SET flagged=?1, draft_text=?2, confidence=?3, urgency=?4, updated_at=?5 WHERE id=?6",
+                        "UPDATE queue_items
+                         SET flagged=?1, draft_text=?2, confidence=?3, urgency=?4,
+                             needs_reply=?5,
+                             triage_status=CASE
+                               WHEN triage_status='suppressed'    THEN 'suppressed'
+                               WHEN triage_status='informational' THEN 'informational'
+                               ELSE 'active'
+                             END,
+                             updated_at=?6
+                         WHERE id=?7",
                         rusqlite::params![
                             if result.flagged { 1 } else { 0 },
                             result.draft_text,
                             result.confidence,
                             result.urgency.as_deref().unwrap_or("high"),
+                            if result.needs_reply { 1 } else { 0 },
                             now,
                             item_id
                         ],

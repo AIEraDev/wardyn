@@ -98,341 +98,215 @@ pub fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     (y as u64, m, d)
 }
 
-pub fn init_db(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS queue_items (
-            id TEXT PRIMARY KEY,
-            source TEXT NOT NULL,
-            kind TEXT NOT NULL,
-            sender TEXT NOT NULL,
-            preview TEXT NOT NULL,
-            draft_text TEXT,
-            status TEXT NOT NULL,
-            flagged INTEGER NOT NULL,
-            confidence REAL NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            thread_id TEXT,
-            message_id TEXT
-        )",
-        [],
-    )?;
+/// Returns true if `column_name` exists in `table_name`.
+pub fn has_column(conn: &Connection, table_name: &str, column_name: &str) -> bool {
+    let pragma_sql = format!("PRAGMA table_info({})", table_name);
+    let mut stmt = match conn.prepare(&pragma_sql) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let mut rows = match stmt.query([]) {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    while let Ok(Some(row)) = rows.next() {
+        if let Ok(name) = row.get::<_, String>(1) {
+            if name.eq_ignore_ascii_case(column_name) {
+                return true;
+            }
+        }
+    }
+    false
+}
 
-    // Safe column migrations for existing databases
-    conn.execute("ALTER TABLE queue_items ADD COLUMN thread_id TEXT;", []).ok();
-    conn.execute("ALTER TABLE queue_items ADD COLUMN message_id TEXT;", []).ok();
-    conn.execute("ALTER TABLE queue_items ADD COLUMN urgency TEXT DEFAULT 'high';", []).ok();
-    conn.execute("ALTER TABLE queue_items ADD COLUMN draft_generation_time_ms INTEGER;", []).ok();
-    conn.execute("ALTER TABLE queue_items ADD COLUMN draft_edit_distance INTEGER;", []).ok(); // 0=approved as-is, high=heavily rewritten
-
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS credentials (
-            service TEXT PRIMARY KEY,
-            access_token TEXT NOT NULL,
-            refresh_token TEXT NOT NULL,
-            expires_at INTEGER NOT NULL,
-            email TEXT
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS calendar_events (
-            id TEXT PRIMARY KEY,
-            queue_item_id TEXT NOT NULL,
-            event_id TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            event_date TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS voice_edits (
-            id TEXT PRIMARY KEY,
-            queue_item_id TEXT NOT NULL,
-            original_draft TEXT NOT NULL,
-            edited_draft TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS feed_items (
-            id TEXT PRIMARY KEY,
-            source TEXT NOT NULL,
-            title TEXT NOT NULL,
-            url TEXT NOT NULL,
-            summary TEXT,
-            score INTEGER DEFAULT 0,
-            relevance_score REAL DEFAULT 0.0,
-            fetched_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS morning_briefs (
-            date TEXT PRIMARY KEY,
-            brief_text TEXT NOT NULL,
-            generated_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS knowledge_items (
-            id TEXT PRIMARY KEY,
-            content TEXT NOT NULL,
-            url TEXT,
-            tags TEXT DEFAULT '[]',
-            summary TEXT,
-            source TEXT DEFAULT 'manual',
-            created_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS decisions (
-            id TEXT PRIMARY KEY,
-            decision TEXT NOT NULL,
-            rationale TEXT NOT NULL,
-            alternatives TEXT,
-            outcome TEXT,
-            created_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS feed_interactions (
-            id TEXT PRIMARY KEY,
-            item_id TEXT NOT NULL,
-            item_source TEXT NOT NULL,
-            tags TEXT DEFAULT '[]',
-            action TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS weekly_reviews (
-            week TEXT PRIMARY KEY,
-            review_text TEXT NOT NULL,
-            generated_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS custom_feeds (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            url TEXT NOT NULL,
-            category TEXT DEFAULT 'custom',
-            created_at TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    // Analytics: Response time tracking
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS response_analytics (
-            id TEXT PRIMARY KEY,
-            queue_item_id TEXT NOT NULL,
-            sender TEXT NOT NULL,
-            category TEXT,
-            received_at TEXT NOT NULL,
-            responded_at TEXT,
-            response_time_seconds INTEGER,
-            draft_generation_time_ms INTEGER
-        )",
-        [],
-    )?;
-
-    // Productivity: Tasks extracted from emails
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT,
-            source_item_id TEXT,
-            due_date TEXT,
-            priority TEXT DEFAULT 'medium',
-            status TEXT DEFAULT 'pending',
-            created_at TEXT NOT NULL,
-            completed_at TEXT
-        )",
-        [],
-    )?;
-
-    // Productivity: Follow-up reminders
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS reminders (
-            id TEXT PRIMARY KEY,
-            item_id TEXT NOT NULL,
-            reminder_date TEXT NOT NULL,
-            message TEXT NOT NULL,
-            status TEXT DEFAULT 'pending',
-            created_at TEXT NOT NULL,
-            triggered_at TEXT
-        )",
-        [],
-    )?;
-
-    // Productivity: Pomodoro sessions
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS pomodoro_sessions (
-            id TEXT PRIMARY KEY,
-            task_id TEXT,
-            duration_minutes INTEGER NOT NULL,
-            completed INTEGER NOT NULL,
-            started_at TEXT NOT NULL,
-            ended_at TEXT
-        )",
-        [],
-    )?;
-
-    // Life Intelligence: Life event plans
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS life_events (
-            id          TEXT PRIMARY KEY,
-            title       TEXT NOT NULL,
-            raw_input   TEXT NOT NULL,
-            intent      TEXT NOT NULL,
-            event_date  TEXT,
-            status      TEXT DEFAULT 'active',
-            created_at  TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    // Safe migration: add life_event_id FK to tasks table
-    conn.execute("ALTER TABLE tasks ADD COLUMN life_event_id TEXT;", []).ok();
-
-    // ─── Active Life: Projects ────────────────────────────────────────────────
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS active_projects (
-            id                   TEXT PRIMARY KEY,
-            name                 TEXT NOT NULL,
-            description          TEXT,
-            status               TEXT NOT NULL DEFAULT 'active',
-            daily_target_minutes INTEGER DEFAULT 60,
-            last_worked_at       TEXT,
-            color                TEXT DEFAULT '#4A8FC2',
-            created_at           TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS project_time_logs (
-            id           TEXT PRIMARY KEY,
-            project_id   TEXT NOT NULL,
-            session_date TEXT NOT NULL,
-            minutes_spent INTEGER DEFAULT 0,
-            notes        TEXT,
-            created_at   TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    // ─── Active Life: Habits ──────────────────────────────────────────────────
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS daily_habits (
-            id             TEXT PRIMARY KEY,
-            name           TEXT NOT NULL,
-            icon           TEXT DEFAULT '✅',
-            category       TEXT DEFAULT 'general',
-            sort_order     INTEGER DEFAULT 0,
-            created_at     TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS habit_completions (
-            id             TEXT PRIMARY KEY,
-            habit_id       TEXT NOT NULL,
-            completed_date TEXT NOT NULL,
-            completed_at   TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    // ─── Active Life: Daily Intelligence (quote, learning, social, day plan) ──
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS daily_intel (
-            date              TEXT PRIMARY KEY,
-            motivation_quote  TEXT,
-            quote_author      TEXT,
-            learning_topic    TEXT,
-            learning_summary  TEXT,
-            social_post_idea  TEXT,
-            social_format     TEXT,
-            social_platform   TEXT,
-            day_plan          TEXT,
-            generated_at      TEXT NOT NULL
-        )",
-        [],
-    )?;
-
-    // ─── Active Life: Engagement Monitor ─────────────────────────────────────
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS engagement_sessions (
-            id               TEXT PRIMARY KEY,
-            app_name         TEXT NOT NULL,
-            window_title     TEXT,
-            project_id       TEXT,
-            started_at       TEXT NOT NULL,
-            ended_at         TEXT,
-            duration_seconds INTEGER DEFAULT 0
-        )",
-        [],
-    )?;
-
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS habit_reminders (
-            id          TEXT PRIMARY KEY,
-            habit_id    TEXT NOT NULL UNIQUE,
-            remind_time TEXT NOT NULL,
-            enabled     INTEGER DEFAULT 1,
-            created_at  TEXT NOT NULL
-        );"
-    )?;
-
-    // ─── Social Posts (persisted across sessions) ─────────────────────────────
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS social_posts (
-            id          TEXT PRIMARY KEY,
-            platform    TEXT NOT NULL,
-            topic       TEXT NOT NULL,
-            content     TEXT NOT NULL,
-            hashtags    TEXT NOT NULL DEFAULT '[]',
-            media_cue   TEXT,
-            status      TEXT NOT NULL DEFAULT 'pending',
-            created_at  TEXT NOT NULL,
-            updated_at  TEXT NOT NULL
-        );"
-    )?;
-
+/// Safely adds a column to a table only if it does not already exist.
+pub fn ensure_column(conn: &Connection, table_name: &str, column_name: &str, column_def: &str) -> Result<()> {
+    if !has_column(conn, table_name, column_name) {
+        let alter_sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table_name, column_name, column_def);
+        conn.execute(&alter_sql, [])?;
+    }
     Ok(())
 }
 
+pub fn init_db(conn: &Connection) -> Result<()> {
+    // ── Schema version tracking ───────────────────────────────────────────────
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_migrations (
+        version     INTEGER PRIMARY KEY,
+        applied_at  TEXT NOT NULL
+    );")?;
+
+    let current_version: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations", [], |r| r.get(0)
+    ).unwrap_or(0);
+
+    // ── Migration 1: full baseline schema ────────────────────────────────────
+    if current_version < 1 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch("
+        CREATE TABLE IF NOT EXISTS queue_items (
+            id TEXT PRIMARY KEY, source TEXT NOT NULL, kind TEXT NOT NULL,
+            sender TEXT NOT NULL, preview TEXT NOT NULL, draft_text TEXT,
+            status TEXT NOT NULL, flagged INTEGER NOT NULL, confidence REAL NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            thread_id TEXT, message_id TEXT,
+            urgency TEXT DEFAULT 'high', draft_generation_time_ms INTEGER,
+            draft_edit_distance INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS credentials (
+            service TEXT PRIMARY KEY, access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL, expires_at INTEGER NOT NULL, email TEXT
+        );
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id TEXT PRIMARY KEY, queue_item_id TEXT NOT NULL,
+            event_id TEXT NOT NULL, summary TEXT NOT NULL,
+            event_date TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS voice_edits (
+            id TEXT PRIMARY KEY, queue_item_id TEXT NOT NULL,
+            original_draft TEXT NOT NULL, edited_draft TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS feed_items (
+            id TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL,
+            url TEXT NOT NULL, summary TEXT, score INTEGER DEFAULT 0,
+            relevance_score REAL DEFAULT 0.0, fetched_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS morning_briefs (
+            date TEXT PRIMARY KEY, brief_text TEXT NOT NULL, generated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS knowledge_items (
+            id TEXT PRIMARY KEY, content TEXT NOT NULL, url TEXT,
+            tags TEXT DEFAULT '[]', summary TEXT,
+            source TEXT DEFAULT 'manual', created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS decisions (
+            id TEXT PRIMARY KEY, decision TEXT NOT NULL, rationale TEXT NOT NULL,
+            alternatives TEXT, outcome TEXT, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS feed_interactions (
+            id TEXT PRIMARY KEY, item_id TEXT NOT NULL, item_source TEXT NOT NULL,
+            tags TEXT DEFAULT '[]', action TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS weekly_reviews (
+            week TEXT PRIMARY KEY, review_text TEXT NOT NULL, generated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY, value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS custom_feeds (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT NOT NULL,
+            category TEXT DEFAULT 'custom', created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS response_analytics (
+            id TEXT PRIMARY KEY, queue_item_id TEXT NOT NULL, sender TEXT NOT NULL,
+            category TEXT, received_at TEXT NOT NULL, responded_at TEXT,
+            response_time_seconds INTEGER, draft_generation_time_ms INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT,
+            source_item_id TEXT, due_date TEXT, priority TEXT DEFAULT 'medium',
+            status TEXT DEFAULT 'pending', created_at TEXT NOT NULL,
+            completed_at TEXT, life_event_id TEXT
+        );
+        CREATE TABLE IF NOT EXISTS reminders (
+            id TEXT PRIMARY KEY, item_id TEXT NOT NULL, reminder_date TEXT NOT NULL,
+            message TEXT NOT NULL, status TEXT DEFAULT 'pending',
+            created_at TEXT NOT NULL, triggered_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS pomodoro_sessions (
+            id TEXT PRIMARY KEY, task_id TEXT, duration_minutes INTEGER NOT NULL,
+            completed INTEGER NOT NULL, started_at TEXT NOT NULL, ended_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS life_events (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, raw_input TEXT NOT NULL,
+            intent TEXT NOT NULL, event_date TEXT,
+            status TEXT DEFAULT 'active', created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS active_projects (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+            status TEXT NOT NULL DEFAULT 'active', daily_target_minutes INTEGER DEFAULT 60,
+            last_worked_at TEXT, color TEXT DEFAULT '#4A8FC2', created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS project_time_logs (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL, session_date TEXT NOT NULL,
+            minutes_spent INTEGER DEFAULT 0, notes TEXT, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS daily_habits (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT DEFAULT '✅',
+            category TEXT DEFAULT 'general', sort_order INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS habit_completions (
+            id TEXT PRIMARY KEY, habit_id TEXT NOT NULL,
+            completed_date TEXT NOT NULL, completed_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS daily_intel (
+            date TEXT PRIMARY KEY, motivation_quote TEXT, quote_author TEXT,
+            learning_topic TEXT, learning_summary TEXT, social_post_idea TEXT,
+            social_format TEXT, social_platform TEXT, day_plan TEXT,
+            generated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS engagement_sessions (
+            id TEXT PRIMARY KEY, app_name TEXT NOT NULL, window_title TEXT,
+            project_id TEXT, started_at TEXT NOT NULL, ended_at TEXT,
+            duration_seconds INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS habit_reminders (
+            id TEXT PRIMARY KEY, habit_id TEXT NOT NULL UNIQUE,
+            remind_time TEXT NOT NULL, enabled INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS social_posts (
+            id TEXT PRIMARY KEY, platform TEXT NOT NULL, topic TEXT NOT NULL,
+            content TEXT NOT NULL, hashtags TEXT NOT NULL DEFAULT '[]',
+            media_cue TEXT, status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        ")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (1, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
+    // ── Migration 2: safe transactional column backfill for pre-migration installs ──────────
+    if current_version < 2 {
+        let tx = conn.unchecked_transaction()?;
+        ensure_column(&tx, "queue_items", "urgency", "TEXT DEFAULT 'high'")?;
+        ensure_column(&tx, "queue_items", "draft_generation_time_ms", "INTEGER")?;
+        ensure_column(&tx, "queue_items", "draft_edit_distance", "INTEGER")?;
+        ensure_column(&tx, "tasks", "life_event_id", "TEXT")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (2, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
+    // ── Migration 3: smart triage fields ──────────────────────────────────────
+    if current_version < 3 {
+        let tx = conn.unchecked_transaction()?;
+        // needs_reply defaults 1 (true) — conservative: existing emails stay visible
+        ensure_column(&tx, "queue_items", "needs_reply", "INTEGER NOT NULL DEFAULT 1")?;
+        // triage_status defaults 'active' — existing rows are treated as active
+        ensure_column(&tx, "queue_items", "triage_status", "TEXT NOT NULL DEFAULT 'active'")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
+    // ── Future migrations: add a new `if current_version < N` block here ─────
+    // Example:
+    // if current_version < 3 {
+    //     conn.execute_batch("ALTER TABLE decisions ADD COLUMN context TEXT;")?;
+    //     conn.execute("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, ?1)",
+    //         rusqlite::params![now_iso()])?;
+    // }
+
+    Ok(())
+}
 
 
 // ─── Custom RSS Feeds ────────────────────────────────────────────────────────
@@ -782,11 +656,13 @@ pub fn get_recent_voice_edits(conn: &Connection, limit: usize) -> Result<Vec<Voi
 
 pub fn get_queue_item_by_id(conn: &Connection, id: &str) -> Result<Option<QueueItem>> {
     let mut stmt = conn.prepare(
-        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency
+        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency,
+                COALESCE(needs_reply, 1), COALESCE(triage_status, 'active')
          FROM queue_items WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], |row| {
         let flagged_int: i32 = row.get(7)?;
+        let needs_reply_int: i32 = row.get(14)?;
         Ok(QueueItem {
             id: row.get(0)?,
             source: row.get(1)?,
@@ -802,6 +678,8 @@ pub fn get_queue_item_by_id(conn: &Connection, id: &str) -> Result<Option<QueueI
             thread_id: row.get(11)?,
             message_id: row.get(12)?,
             urgency: row.get(13)?,
+            needs_reply: needs_reply_int != 0,
+            triage_status: row.get(15)?,
         })
     })?;
     match rows.next() {
@@ -811,9 +689,14 @@ pub fn get_queue_item_by_id(conn: &Connection, id: &str) -> Result<Option<QueueI
 }
 
 pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
-    let mut stmt = conn.prepare("SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency FROM queue_items ORDER BY created_at DESC")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency,
+                COALESCE(needs_reply, 1), COALESCE(triage_status, 'active')
+         FROM queue_items ORDER BY created_at DESC",
+    )?;
     let items_iter = stmt.query_map([], |row| {
         let flagged_int: i32 = row.get(7)?;
+        let needs_reply_int: i32 = row.get(14)?;
         Ok(QueueItem {
             id: row.get(0)?,
             source: row.get(1)?,
@@ -829,6 +712,8 @@ pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
             thread_id: row.get(11)?,
             message_id: row.get(12)?,
             urgency: row.get(13)?,
+            needs_reply: needs_reply_int != 0,
+            triage_status: row.get(15)?,
         })
     })?;
 
@@ -841,8 +726,10 @@ pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
 
 pub fn insert_queue_item(conn: &Connection, item: &QueueItem) -> Result<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO queue_items (id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        "INSERT OR IGNORE INTO queue_items
+             (id, source, kind, sender, preview, draft_text, status, flagged, confidence,
+              created_at, updated_at, thread_id, message_id, urgency, needs_reply, triage_status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         params![
             item.id,
             item.source,
@@ -857,7 +744,9 @@ pub fn insert_queue_item(conn: &Connection, item: &QueueItem) -> Result<()> {
             item.updated_at,
             item.thread_id,
             item.message_id,
-            item.urgency.as_deref().unwrap_or("high")
+            item.urgency.as_deref().unwrap_or("high"),
+            if item.needs_reply { 1 } else { 0 },
+            item.triage_status
         ],
     )?;
     Ok(())
@@ -990,7 +879,8 @@ pub fn delete_gmail_credentials(conn: &Connection, email: Option<&str>) -> Resul
 
 pub fn get_sender_history(conn: &Connection, sender: &str, limit: usize) -> Result<Vec<QueueItem>> {
     let mut stmt = conn.prepare(
-        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency
+        "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency,
+                COALESCE(needs_reply, 1), COALESCE(triage_status, 'active')
          FROM queue_items
          WHERE sender = ?1 OR sender LIKE ?2
          ORDER BY created_at DESC LIMIT ?3"
@@ -998,6 +888,7 @@ pub fn get_sender_history(conn: &Connection, sender: &str, limit: usize) -> Resu
     let pattern = format!("%{}%", sender);
     let rows = stmt.query_map(params![sender, pattern, limit as i64], |row| {
         let flagged_int: i32 = row.get(7)?;
+        let needs_reply_int: i32 = row.get(14)?;
         Ok(QueueItem {
             id: row.get(0)?,
             source: row.get(1)?,
@@ -1013,6 +904,8 @@ pub fn get_sender_history(conn: &Connection, sender: &str, limit: usize) -> Resu
             thread_id: row.get(11)?,
             message_id: row.get(12)?,
             urgency: row.get(13)?,
+            needs_reply: needs_reply_int != 0,
+            triage_status: row.get(15)?,
         })
     })?;
 

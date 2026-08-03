@@ -13,6 +13,15 @@ pub fn log_decision(
     rationale: String,
     alternatives: Option<String>,
 ) -> Result<Decision, String> {
+    const MAX_INPUT_BYTES: usize = 50 * 1024; // 50 KB
+    let total_len = decision.len() + rationale.len() + alternatives.as_deref().map_or(0, |a| a.len());
+    if total_len > MAX_INPUT_BYTES {
+        return Err(format!(
+            "Decision content is too large ({} KB). Maximum allowed is 50 KB.",
+            total_len / 1024
+        ));
+    }
+
     let item = Decision {
         id: format!("dec_{}", uuid_simple()),
         decision,

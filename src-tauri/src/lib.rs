@@ -139,13 +139,20 @@ async fn process_item_with_ollama(id: String, state: State<'_, DbState>) -> Resu
     let now = db::now_iso();
     let urgency_val = result.urgency.as_deref().unwrap_or("high");
     conn.execute(
-        "UPDATE queue_items SET flagged = ?1, draft_text = ?2, confidence = ?3, updated_at = ?4, urgency = ?5 WHERE id = ?6",
+        "UPDATE queue_items SET flagged = ?1, draft_text = ?2, confidence = ?3, updated_at = ?4, urgency = ?5,
+         needs_reply = ?6, triage_status = CASE
+           WHEN triage_status = 'suppressed'    THEN 'suppressed'
+           WHEN triage_status = 'informational' THEN 'informational'
+           ELSE 'active'
+         END
+         WHERE id = ?7",
         rusqlite::params![
             if result.flagged { 1 } else { 0 },
             result.draft_text,
             result.confidence,
             now,
             urgency_val,
+            if result.needs_reply { 1 } else { 0 },
             id
         ],
     ).map_err(|e| e.to_string())?;
@@ -761,7 +768,216 @@ fn get_pomodoro_sessions_command(days: i64, state: State<'_, DbState>) -> Result
     db::get_pomodoro_sessions(&conn, days).map_err(|e| e.to_string())
 }
 
-// ─── Life Intelligence Commands ───────────────────────────────────────────────
+// ─── Data Management Commands ─────────────────────────────────────────────────
+
+/// Returns row counts for each cleanable data category so the UI can show
+/// what will be affected before the user confirms.
+#[derive(Debug, serde::Serialize)]
+struct DataStats {
+    gmail_messages: i64,
+    gmail_handled: i64,    // sent/skipped/approved — safe to purge first
+    gmail_suppressed: i64, // triage_status=suppressed
+    gmail_informational: i64,
+    voice_edits: i64,
+    response_analytics: i64,
+    morning_briefs: i64,
+    weekly_reviews: i64,
+    feed_items: i64,
+    feed_interactions: i64,
+    knowledge_items: i64,
+    decisions: i64,
+    life_events: i64,
+    tasks: i64,
+    social_posts: i64,
+    reminders: i64,
+    pomodoro_sessions: i64,
+}
+
+#[tauri::command]
+fn get_data_stats_command(state: State<'_, DbState>) -> Result<DataStats, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let q = |sql: &str| -> i64 {
+        conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(0)
+    };
+    Ok(DataStats {
+        gmail_messages:      q("SELECT COUNT(*) FROM queue_items WHERE source='gmail'"),
+        gmail_handled:       q("SELECT COUNT(*) FROM queue_items WHERE source='gmail' AND status IN ('sent','skipped','approved','edited')"),
+        gmail_suppressed:    q("SELECT COUNT(*) FROM queue_items WHERE source='gmail' AND triage_status='suppressed'"),
+        gmail_informational: q("SELECT COUNT(*) FROM queue_items WHERE source='gmail' AND triage_status='informational'"),
+        voice_edits:         q("SELECT COUNT(*) FROM voice_edits"),
+        response_analytics:  q("SELECT COUNT(*) FROM response_analytics"),
+        morning_briefs:      q("SELECT COUNT(*) FROM morning_briefs"),
+        weekly_reviews:      q("SELECT COUNT(*) FROM weekly_reviews"),
+        feed_items:          q("SELECT COUNT(*) FROM feed_items"),
+        feed_interactions:   q("SELECT COUNT(*) FROM feed_interactions"),
+        knowledge_items:     q("SELECT COUNT(*) FROM knowledge_items"),
+        decisions:           q("SELECT COUNT(*) FROM decisions"),
+        life_events:         q("SELECT COUNT(*) FROM life_events"),
+        tasks:               q("SELECT COUNT(*) FROM tasks"),
+        social_posts:        q("SELECT COUNT(*) FROM social_posts"),
+        reminders:           q("SELECT COUNT(*) FROM reminders"),
+        pomodoro_sessions:   q("SELECT COUNT(*) FROM pomodoro_sessions"),
+    })
+}
+
+/// Clear only cached Gmail messages (queue_items where source='gmail').
+/// Preserves: credentials, OAuth tokens, app_settings, knowledge, decisions,
+/// life events, tasks — everything that is "about you".
+#[tauri::command]
+fn clear_gmail_cache_command(
+    handled_only: bool,
+    state: State<'_, DbState>,
+) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let sql = if handled_only {
+        "DELETE FROM queue_items WHERE source='gmail' AND status IN ('sent','skipped','approved','edited')"
+    } else {
+        "DELETE FROM queue_items WHERE source='gmail'"
+    };
+    let rows = conn.execute(sql, []).map_err(|e| e.to_string())? as i64;
+    // Also clean up orphaned analytics/reminders for deleted items
+    conn.execute(
+        "DELETE FROM response_analytics WHERE queue_item_id NOT IN (SELECT id FROM queue_items)",
+        [],
+    ).ok();
+    conn.execute(
+        "DELETE FROM reminders WHERE item_id NOT IN (SELECT id FROM queue_items)
+         AND item_id NOT LIKE 'life:%'",
+        [],
+    ).ok();
+    Ok(rows)
+}
+
+/// Reset only AI-generated caches (briefs, feed items, analytics).
+/// Preserves all user data: emails, knowledge, decisions, life events.
+#[tauri::command]
+fn clear_ai_cache_command(state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM morning_briefs",    []).ok();
+    conn.execute("DELETE FROM weekly_reviews",    []).ok();
+    conn.execute("DELETE FROM feed_items",        []).ok();
+    conn.execute("DELETE FROM feed_interactions", []).ok();
+    conn.execute("DELETE FROM voice_edits",       []).ok();
+    conn.execute("DELETE FROM response_analytics",[]).ok();
+    conn.execute("DELETE FROM social_posts WHERE status='skipped'", []).ok();
+    Ok(())
+}
+
+/// Full system reset — wipes all app data EXCEPT:
+///   - OAuth credentials (Gmail + LinkedIn tokens)
+///   - App settings (OAuth client IDs, vault path, sync interval)
+/// Ollama models are stored on disk by Ollama, not in this DB, so they are
+/// never touched regardless.
+#[tauri::command]
+fn reset_all_data_command(state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    // Operational data
+    conn.execute("DELETE FROM queue_items",        []).ok();
+    conn.execute("DELETE FROM calendar_events",    []).ok();
+    conn.execute("DELETE FROM response_analytics", []).ok();
+    conn.execute("DELETE FROM voice_edits",        []).ok();
+    // AI caches
+    conn.execute("DELETE FROM morning_briefs",     []).ok();
+    conn.execute("DELETE FROM weekly_reviews",     []).ok();
+    conn.execute("DELETE FROM feed_items",         []).ok();
+    conn.execute("DELETE FROM feed_interactions",  []).ok();
+    // Personal memory — intentionally cleared in full reset
+    conn.execute("DELETE FROM knowledge_items",    []).ok();
+    conn.execute("DELETE FROM decisions",          []).ok();
+    conn.execute("DELETE FROM life_events",        []).ok();
+    conn.execute("DELETE FROM tasks",              []).ok();
+    conn.execute("DELETE FROM reminders",          []).ok();
+    conn.execute("DELETE FROM social_posts",       []).ok();
+    conn.execute("DELETE FROM pomodoro_sessions",  []).ok();
+    conn.execute("DELETE FROM daily_habits",       []).ok();
+    conn.execute("DELETE FROM habit_completions",  []).ok();
+    conn.execute("DELETE FROM habit_reminders",    []).ok();
+    conn.execute("DELETE FROM active_projects",    []).ok();
+    conn.execute("DELETE FROM project_time_logs",  []).ok();
+    conn.execute("DELETE FROM daily_intel",        []).ok();
+    conn.execute("DELETE FROM custom_feeds",       []).ok();
+    // Preserve: credentials, app_settings (OAuth keys, vault path, etc.)
+    Ok(())
+}
+
+
+
+/// Ask Ollama whether the raw user input needs clarification before processing.
+/// Returns a list of 1–2 focused follow-up questions, or an empty Vec if the
+/// input is already complete enough to act on.
+/// Fails fast (8 s timeout) — callers should skip straight to save on error.
+#[tauri::command]
+async fn ask_clarification_command(text: String) -> Result<Vec<String>, String> {
+    let prompt = format!(
+        r#"You are a smart personal assistant. A user just told you something about their life, plans, or goals.
+
+Decide whether you need 1–2 focused follow-up questions to make their input more actionable.
+
+USER INPUT: "{}"
+
+RULES:
+- If the input already has enough detail (who, what, when, why), return an empty array: []
+- If genuinely unclear or missing key context, return 1–2 SHORT, specific questions
+- Questions must be direct and easy to answer in one sentence
+- Do NOT ask about things that don't matter for planning or storing the information
+- NEVER ask more than 2 questions
+- Return ONLY valid JSON — an array of strings: ["question 1", "question 2"] or []
+- No explanation, no markdown, no wrapper object"#,
+        text
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .unwrap_or_default();
+
+    let models = ["llama3", "qwen2.5", "mistral", "gemma", "phi3", "llama3:70b"];
+
+    for model in &models {
+        let body = serde_json::json!({
+            "model": model,
+            "prompt": prompt,
+            "stream": false,
+            "options": { "num_predict": 120, "temperature": 0.3 }
+        });
+        let Ok(resp) = client
+            .post("http://127.0.0.1:11434/api/generate")
+            .json(&body)
+            .send()
+            .await
+        else {
+            return Err("Ollama unreachable".into());
+        };
+        if resp.status().as_u16() == 404 {
+            continue; // model not installed
+        }
+        if !resp.status().is_success() {
+            continue;
+        }
+        let Ok(json) = resp.json::<serde_json::Value>().await else {
+            continue;
+        };
+        let raw = json["response"].as_str().unwrap_or("").trim().to_string();
+
+        // Extract JSON array from the response
+        let start = raw.find('[').unwrap_or(0);
+        let end = raw.rfind(']').map(|i| i + 1).unwrap_or(raw.len());
+        let slice = &raw[start..end];
+
+        if let Ok(questions) = serde_json::from_str::<Vec<String>>(slice) {
+            // Clamp to max 2, filter empty strings
+            let clean: Vec<String> = questions
+                .into_iter()
+                .filter(|q| !q.trim().is_empty())
+                .take(2)
+                .collect();
+            return Ok(clean);
+        }
+    }
+
+    // If Ollama is offline or all models failed — return empty (skip clarification)
+    Ok(vec![])
+}
 
 #[tauri::command]
 async fn capture_life_event_command(text: String, state: State<'_, DbState>) -> Result<db::LifeEvent, String> {
@@ -960,7 +1176,7 @@ async fn regenerate_draft_command(
         tone_instruction, sender_name, original_draft
     );
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(90))
         .build()
         .unwrap_or_default();
     let models = ["qwen2.5", "llama3", "mistral", "gemma", "phi3", "llama3:70b"];
@@ -993,14 +1209,11 @@ async fn regenerate_draft_command(
 
 #[tauri::command]
 async fn generate_social_content_command(
-    platform: String,
+    _platform: String,
     topic: String,
     tone: String,
 ) -> Result<String, String> {
-    let platform_context = match platform.to_lowercase().as_str() {
-        "twitter" | "x" => "Twitter/X (max 280 chars, punchy, 1-2 hashtags)",
-        _ => "LinkedIn (professional, 150-300 words, 3-5 relevant hashtags)",
-    };
+    let platform_context = "LinkedIn (professional, 150-300 words, 3-5 relevant hashtags)";
 
     let tone_instruction = match tone.as_str() {
         "punchy"     => "Write in a bold, direct, high-energy tone. Lead with a strong hook.",
@@ -1017,7 +1230,7 @@ async fn generate_social_content_command(
     );
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(90))
         .build()
         .unwrap_or_default();
 
@@ -1275,6 +1488,11 @@ pub fn run() {
             complete_pomodoro_command,
             get_pomodoro_sessions_command,
             capture_life_event_command,
+            ask_clarification_command,
+            get_data_stats_command,
+            clear_gmail_cache_command,
+            clear_ai_cache_command,
+            reset_all_data_command,
             get_life_events_command,
             update_life_event_status_command,
             // Active Life

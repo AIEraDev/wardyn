@@ -15,7 +15,9 @@ pub struct QueueItem {
     pub updated_at: String,
     pub thread_id: Option<String>,
     pub message_id: Option<String>,
-    pub urgency: Option<String>, // "high" | "low"
+    pub urgency: Option<String>,     // "high" | "low"
+    pub needs_reply: bool,           // AI/rule scored: does this email warrant a human reply?
+    pub triage_status: String,       // "active" | "suppressed" | "pending_ai"
 }
 
 

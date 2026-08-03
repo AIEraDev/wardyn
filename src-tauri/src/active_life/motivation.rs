@@ -124,7 +124,7 @@ Generate today's personal intelligence brief in EXACTLY this JSON format. No mar
   "learning_summary": "<3 key points about this topic, separated by • bullet. Each point max 15 words.>",
   "social_post_idea": "<A compelling post idea based on the user's actual projects and journey. Include a suggested opening hook sentence.>",
   "social_format": "<one of: video | image_text | plain_text>",
-  "social_platform": "<one of: linkedin | twitter>"
+  "social_platform": "linkedin"
 }}
 
 Rules:
@@ -149,7 +149,7 @@ Rules:
 
 async fn call_ollama(prompt: &str) -> Result<String, String> {
     let client = Client::builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(180))
         .build()
         .map_err(|e| e.to_string())?;
 

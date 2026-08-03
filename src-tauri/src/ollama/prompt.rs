@@ -57,8 +57,9 @@ YOUR TASK:
 Analyze the incoming message sender and preview. Output ONLY a valid JSON object with the following schema:
 {{
   "flagged": true/false,     // Set to true ONLY if sender or subject is related to UK Visas, UKVI, Home Office, or immigration documents.
+  "needs_reply": true/false, // Set to true if this email genuinely requires a direct human reply (e.g. a question, action request, direct inquiry). Set to false for newsletters, automated notifications, marketing, order confirmations, password resets, digests, or any email where no reply is expected.
   "urgency": "high",         // Use "high" for direct inquiries, action items, or Visa/UKVI emails. Use "low" for newsletters, social updates, and promotional items.
-  "draft_text": "...",       // Suggested reply draft matching the corpus and preference corrections above. If confidence < 0.6, set this to null.
+  "draft_text": "...",       // Suggested reply draft matching the corpus and preference corrections above. If confidence < 0.6 or needs_reply is false, set this to null.
   "confidence": 0.95         // Floating point between 0.0 and 1.0 indicating classification & drafting confidence.
 }}
 

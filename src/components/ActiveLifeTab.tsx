@@ -23,6 +23,18 @@ import { useQueueStore } from "../store/useQueueStore";
 import { BriefRenderer } from "./BriefRenderer";
 import type { ActiveProject } from "../types/queue";
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Format minutes as "1h 30m", "45m", "2h", etc. */
+function fmtMins(mins: number): string {
+  if (mins <= 0) return "0m";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 // ─── Color Palette ───────────────────────────────────────────────────────────
 const PROJECT_COLORS = [
   "#4A8FC2",
@@ -143,9 +155,17 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
   const addActiveProject = useQueueStore((s) => s.addActiveProject);
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
-  const [target, setTarget] = useState(60);
+  // Hours + minutes stored separately; combined to minutes on submit
+  const [targetHours, setTargetHours] = useState(1);
+  const [targetMins, setTargetMins] = useState(0);
   const [color, setColor] = useState(PROJECT_COLORS[0]);
   const [saving, setSaving] = useState(false);
+
+  // Total minutes, clamped to [15, 480]
+  const totalMinutes = Math.min(
+    480,
+    Math.max(15, targetHours * 60 + targetMins),
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,7 +174,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
     await addActiveProject(
       name.trim(),
       desc.trim() || undefined,
-      target,
+      totalMinutes,
       color,
     );
     setSaving(false);
@@ -196,16 +216,58 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
 
         <div>
           <label className="text-[#9AA4B2] text-[11px] font-semibold block mb-1.5">
-            DAILY TARGET (MINUTES)
+            DAILY TARGET
           </label>
-          <input
-            type="number"
-            min={15}
-            max={480}
-            value={target}
-            onChange={(e) => setTarget(Number(e.target.value))}
-            className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2.5 text-sm outline-none w-full box-border"
-          />
+          <div className="flex items-center gap-2">
+            {/* Hours */}
+            <div className="flex-1 flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                max={8}
+                value={targetHours}
+                onChange={(e) =>
+                  setTargetHours(
+                    Math.min(8, Math.max(0, Number(e.target.value) || 0)),
+                  )
+                }
+                className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2.5 text-sm outline-none w-full text-center box-border focus:border-[#4A8FC2]"
+              />
+              <span className="text-[#7A8492] text-xs font-mono whitespace-nowrap">
+                hr
+              </span>
+            </div>
+            <span className="text-[#4A5568] font-bold text-sm">:</span>
+            {/* Minutes */}
+            <div className="flex-1 flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                max={59}
+                step={5}
+                value={targetMins}
+                onChange={(e) =>
+                  setTargetMins(
+                    Math.min(59, Math.max(0, Number(e.target.value) || 0)),
+                  )
+                }
+                className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2.5 text-sm outline-none w-full text-center box-border focus:border-[#4A8FC2]"
+              />
+              <span className="text-[#7A8492] text-xs font-mono whitespace-nowrap">
+                min
+              </span>
+            </div>
+          </div>
+          {/* Summary label */}
+          <p className="font-mono text-[10px] text-[#4A5568] mt-1.5 m-0">
+            = {totalMinutes} minutes/day
+            {totalMinutes === 480 && (
+              <span className="text-[#E8A23D]"> (max 8h)</span>
+            )}
+            {totalMinutes === 15 && targetHours === 0 && targetMins < 15 && (
+              <span className="text-[#E8A23D]"> (min 15 min)</span>
+            )}
+          </p>
         </div>
 
         <div>
@@ -354,14 +416,27 @@ function LogSessionModal({
   onClose: () => void;
 }) {
   const logProjectSession = useQueueStore((s) => s.logProjectSession);
-  const [minutes, setMinutes] = useState(30);
+  const [hours, setHours] = useState(0);
+  const [mins, setMins] = useState(30);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const totalMinutes = Math.min(480, Math.max(1, hours * 60 + mins));
+
+  // Quick-pick sets hours + mins
+  const quickPick = (m: number) => {
+    setHours(Math.floor(m / 60));
+    setMins(m % 60);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    await logProjectSession(project.id, minutes, notes.trim() || undefined);
+    await logProjectSession(
+      project.id,
+      totalMinutes,
+      notes.trim() || undefined,
+    );
     setSaving(false);
     onClose();
   };
@@ -385,25 +460,73 @@ function LogSessionModal({
           </button>
         </div>
 
-        <div className="flex gap-2">
+        {/* Quick-pick buttons */}
+        <div className="flex gap-2 flex-wrap">
           {[15, 30, 45, 60, 90, 120].map((m) => (
             <button
               key={m}
               type="button"
-              onClick={() => setMinutes(m)}
+              onClick={() => quickPick(m)}
               className="flex-1 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
               style={{
                 border:
-                  minutes === m
+                  totalMinutes === m
                     ? `2px solid ${project.color}`
                     : "1px solid #242B35",
-                background: minutes === m ? `${project.color}22` : "#0E1318",
-                color: minutes === m ? project.color : "#9AA4B2",
+                background:
+                  totalMinutes === m ? `${project.color}22` : "#0E1318",
+                color: totalMinutes === m ? project.color : "#9AA4B2",
               }}
             >
-              {m}m
+              {fmtMins(m)}
             </button>
           ))}
+        </div>
+
+        {/* Custom hours + minutes input */}
+        <div>
+          <label className="text-[#9AA4B2] text-[11px] font-semibold block mb-1.5">
+            CUSTOM DURATION
+          </label>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                max={8}
+                value={hours}
+                onChange={(e) =>
+                  setHours(
+                    Math.min(8, Math.max(0, Number(e.target.value) || 0)),
+                  )
+                }
+                className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2 text-sm outline-none w-full text-center focus:border-[#4A8FC2]"
+                style={{ borderColor: `${project.color}44` }}
+              />
+              <span className="text-[#7A8492] text-xs font-mono">hr</span>
+            </div>
+            <span className="text-[#4A5568] font-bold">:</span>
+            <div className="flex-1 flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                max={59}
+                step={5}
+                value={mins}
+                onChange={(e) =>
+                  setMins(
+                    Math.min(59, Math.max(0, Number(e.target.value) || 0)),
+                  )
+                }
+                className="bg-[#0E1318] border border-[#242B35] rounded-lg text-[#F0F4F8] px-3 py-2 text-sm outline-none w-full text-center focus:border-[#4A8FC2]"
+                style={{ borderColor: `${project.color}44` }}
+              />
+              <span className="text-[#7A8492] text-xs font-mono">min</span>
+            </div>
+          </div>
+          <p className="font-mono text-[10px] text-[#4A5568] mt-1 m-0">
+            = {totalMinutes} minutes total
+          </p>
         </div>
 
         <input
@@ -415,11 +538,11 @@ function LogSessionModal({
 
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || totalMinutes < 1}
           className="border-none rounded-xl text-white py-3 font-bold text-sm cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-70"
           style={{ background: project.color }}
         >
-          {saving ? "Logging..." : `Log ${minutes}m`}
+          {saving ? "Logging..." : `Log ${fmtMins(totalMinutes)}`}
         </button>
       </form>
     </div>
@@ -497,7 +620,10 @@ export const ActiveLifeTab: React.FC = () => {
       tickRef.current = null;
     }
     return () => {
-      if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+      if (tickRef.current) {
+        clearInterval(tickRef.current);
+        tickRef.current = null;
+      }
     };
   }, [activeProjects]);
 
@@ -506,7 +632,8 @@ export const ActiveLifeTab: React.FC = () => {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
     const s = secs % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    if (h > 0)
+      return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   };
 
@@ -734,17 +861,28 @@ export const ActiveLifeTab: React.FC = () => {
                         {p.status !== "paused" ? (
                           <span
                             className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full font-mono"
-                            style={{ color: p.color, background: `${p.color}22` }}
+                            style={{
+                              color: p.color,
+                              background: `${p.color}22`,
+                            }}
                           >
                             {/* pulsing dot */}
-                            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: p.color }} />
+                            <span
+                              className="w-1.5 h-1.5 rounded-full animate-pulse"
+                              style={{ background: p.color }}
+                            />
                             {/* live tick: adds sessionTick seconds to today_minutes for display */}
-                            {formatElapsed(p.today_minutes * 60 + (sessionTick % 3600))}
+                            {formatElapsed(
+                              p.today_minutes * 60 + (sessionTick % 3600),
+                            )}
                           </span>
                         ) : p.today_minutes > 0 ? (
                           <span
                             className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full font-mono"
-                            style={{ color: p.color, background: `${p.color}22` }}
+                            style={{
+                              color: p.color,
+                              background: `${p.color}22`,
+                            }}
                           >
                             PAUSED
                           </span>
@@ -766,7 +904,8 @@ export const ActiveLifeTab: React.FC = () => {
                           />
                         </div>
                         <span className="text-[10px] font-mono text-[#9AA4B2] whitespace-nowrap">
-                          {p.today_minutes}m / {p.daily_target_minutes}m
+                          {fmtMins(p.today_minutes)} /{" "}
+                          {fmtMins(p.daily_target_minutes)}
                         </span>
                       </div>
                     </div>

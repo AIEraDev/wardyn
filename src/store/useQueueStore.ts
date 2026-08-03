@@ -296,6 +296,13 @@ interface QueueStore {
   fetchTasks: (statusFilter?: string) => Promise<void>;
   updateTaskStatus: (id: string, status: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  updateTask: (
+    id: string,
+    title: string,
+    description?: string,
+    dueDate?: string,
+    priority?: string,
+  ) => Promise<void>;
   createReminder: (
     itemId: string,
     reminderDate: string,
@@ -394,10 +401,13 @@ interface QueueStore {
   deleteHabitReminder: (id: string) => Promise<void>;
   toggleHabitReminder: (id: string, enabled: boolean) => Promise<void>;
 
-  // Research search history (persists across tab switches)
+  // Research search history (persists across tab switches via localStorage)
   searchHistory: string[];
   addSearchHistory: (query: string) => void;
   clearSearchHistory: () => void;
+  // Saved result URLs (persists across nav)
+  savedResultUrls: string[];
+  toggleSavedResult: (url: string) => void;
 }
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
@@ -409,7 +419,13 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   linkedInSummary: null,
   linkedInAccount: null,
   linkedInCadence: "every_2_days",
-  activeTab: "today",
+  activeTab: (() => {
+    try {
+      const saved = localStorage.getItem("wardyn.activeTab") as TabType | null;
+      const valid: TabType[] = ["today","active-life","messages","content","research","analytics","productivity","deadlines","memory","channels","settings"];
+      return saved && valid.includes(saved) ? saved : "today";
+    } catch { return "today"; }
+  })() as TabType,
   isLoading: false,
   error: null,
   statusMessage: null,
@@ -466,6 +482,7 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   setActiveTab: (tab: TabType) => {
     set({ activeTab: tab });
+    try { localStorage.setItem("wardyn.activeTab", tab); } catch {}
   },
 
   setLinkedInCadence: (cadence: PostCadence) => {
@@ -519,7 +536,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   setSyncInterval: (minutes: number) => {
-    set({ syncIntervalMinutes: minutes });
+    const safe = Math.max(5, Math.min(minutes, 1440)); // clamp: 5min–24h
+    set({ syncIntervalMinutes: safe });
   },
 
   showStatusMessage: (type: StatusMessageType, text: string) => {
@@ -2164,6 +2182,38 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
+  updateTask: async (
+    id: string,
+    title: string,
+    description?: string,
+    dueDate?: string,
+    priority: string = "medium",
+  ) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("update_task_command", {
+          id,
+          title,
+          description: description ?? null,
+          dueDate: dueDate ?? null,
+          priority,
+        });
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id
+              ? { ...t, title, description: description ?? null, due_date: dueDate ?? null, priority: priority as Task["priority"] }
+              : t,
+          ),
+        }));
+        get().showStatusMessage("success", "Task updated.");
+      } catch (err) {
+        console.error("Update task error:", err);
+        get().showStatusMessage("error", "Failed to update task.");
+      }
+    }
+  },
+
   // ─── Productivity: Reminders ─────────────────────────────────────────────────
 
   createReminder: async (
@@ -2787,23 +2837,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   toggleHabitComplete: async (habitId: string) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const isNowDone = await invoke<boolean>(
-        "toggle_habit_completion_command",
-        { habitId },
-      );
-      set((s) => ({
-        dailyHabits: s.dailyHabits.map((h) =>
-          h.id === habitId
-            ? {
-                ...h,
-                completed_today: isNowDone,
-                current_streak: isNowDone
-                  ? h.current_streak + 1
-                  : Math.max(0, h.current_streak - 1),
-              }
-            : h,
-        ),
-      }));
+      // Toggle on backend (which has the UNIQUE constraint and correct streak logic)
+      await invoke<boolean>("toggle_habit_completion_command", { habitId });
+      // Refetch the full habits list so streaks are accurate from DB, not guessed
+      await get().fetchDailyHabits();
     } catch (err) {
       console.error("toggleHabitComplete error:", err);
     }
@@ -2864,21 +2901,48 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   habitReminders: [],
 
-  // ─── Research History ──────────────────────────────────────────────────────
+  // ─── Research History (localStorage-backed) ────────────────────────────────
 
-  searchHistory: [],
+  searchHistory: (() => {
+    try {
+      const raw = localStorage.getItem("wardyn.searchHistory");
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch { return []; }
+  })(),
+
+  savedResultUrls: (() => {
+    try {
+      const raw = localStorage.getItem("wardyn.savedResultUrls");
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch { return []; }
+  })(),
 
   addSearchHistory: (query: string) => {
     if (!query.trim()) return;
-    set((state) => ({
-      searchHistory: [
+    set((state) => {
+      const next = [
         query,
         ...state.searchHistory.filter((q) => q !== query),
-      ].slice(0, 20), // keep last 20 unique queries
-    }));
+      ].slice(0, 20);
+      try { localStorage.setItem("wardyn.searchHistory", JSON.stringify(next)); } catch {}
+      return { searchHistory: next };
+    });
   },
 
-  clearSearchHistory: () => set({ searchHistory: [] }),
+  clearSearchHistory: () => {
+    try { localStorage.removeItem("wardyn.searchHistory"); } catch {}
+    set({ searchHistory: [] });
+  },
+
+  toggleSavedResult: (url: string) => {
+    set((state) => {
+      const next = state.savedResultUrls.includes(url)
+        ? state.savedResultUrls.filter((u) => u !== url)
+        : [...state.savedResultUrls, url];
+      try { localStorage.setItem("wardyn.savedResultUrls", JSON.stringify(next)); } catch {}
+      return { savedResultUrls: next };
+    });
+  },
 
   fetchHabitReminders: async () => {
     try {

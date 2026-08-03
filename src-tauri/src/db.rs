@@ -16,7 +16,12 @@ pub struct SyncedCalendarEvent {
     pub queue_item_id: String,
     pub event_id: String,
     pub summary: String,
-    pub event_date: String,
+    pub event_date: String,        // start datetime (RFC3339)
+    pub end_time: Option<String>,  // end datetime (RFC3339)
+    pub description: Option<String>,
+    pub location: Option<String>,
+    pub is_all_day: bool,
+    pub source: String,            // "gcal" | "custom" | "email"
     pub created_at: String,
 }
 
@@ -297,13 +302,111 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         tx.commit()?;
     }
 
+    // ── Migration 4: credential fallback columns ────────────────────────────
+    // Adds plaintext fallback columns so tokens survive even if the macOS
+    // keychain is unavailable (dev sandbox, permission reset, cold boot race).
+    // These are separate from the keychain — keychain is always preferred.
+    if current_version < 4 {
+        let tx = conn.unchecked_transaction()?;
+        ensure_column(&tx, "credentials", "refresh_token_fallback", "TEXT NOT NULL DEFAULT ''")?;
+        ensure_column(&tx, "credentials", "access_token_fallback", "TEXT NOT NULL DEFAULT ''")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (4, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
+    // ── Migration 5: consolidate tokens — migrate fallback columns → direct columns ──
+    // Previously tokens were stored as [KEYCHAIN_ENCLAVE] sentinel in access_token/
+    // refresh_token with real values in *_fallback columns. Now the main columns
+    // hold the encrypted tokens directly. Migrate any existing data.
+    if current_version < 5 {
+        let tx = conn.unchecked_transaction()?;
+        // Ensure old fallback columns exist (may not on fresh installs)
+        let has_ref_fallback = has_column(&tx, "credentials", "refresh_token_fallback");
+        let has_acc_fallback = has_column(&tx, "credentials", "access_token_fallback");
+
+        if has_ref_fallback || has_acc_fallback {
+            let rows: Vec<(String, String, String, String, String)> = {
+                let fallback_ref_col = if has_ref_fallback { "COALESCE(refresh_token_fallback,'')" } else { "''" };
+                let fallback_acc_col = if has_acc_fallback { "COALESCE(access_token_fallback,'')" } else { "''" };
+                let sql = format!(
+                    "SELECT service, COALESCE(access_token,''), COALESCE(refresh_token,''), {}, {} FROM credentials",
+                    fallback_acc_col, fallback_ref_col
+                );
+                let mut stmt = tx.prepare(&sql)?;
+                let mapped = stmt.query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                    ))
+                })?;
+                mapped.filter_map(|r| r.ok()).collect()
+            };
+            for (svc, enc_acc, enc_ref, fallback_acc, fallback_ref) in &rows {
+                // Decode whatever is currently in the main columns
+                let cur_access  = crate::security::decrypt_token(enc_acc);
+                let cur_refresh = crate::security::decrypt_token(enc_ref);
+                // Prefer main column if non-empty, else fall back to the *_fallback column
+                let real_access  = if !cur_access.is_empty()  { cur_access  } else { crate::security::decrypt_token(fallback_acc) };
+                let real_refresh = if !cur_refresh.is_empty() { cur_refresh } else { crate::security::decrypt_token(fallback_ref) };
+                // Skip sentinel values that were never real tokens
+                let real_access  = if real_access.starts_with('[')  { String::new() } else { real_access };
+                let real_refresh = if real_refresh.starts_with('[') { String::new() } else { real_refresh };
+                if real_access.is_empty() && real_refresh.is_empty() { continue; }
+                let new_enc_access  = crate::security::encrypt_token(&real_access);
+                let new_enc_refresh = crate::security::encrypt_token(&real_refresh);
+                tx.execute(
+                    "UPDATE credentials SET access_token=?1, refresh_token=?2 WHERE service=?3",
+                    rusqlite::params![new_enc_access, new_enc_refresh, svc],
+                ).ok();
+            }
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (5, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
+    // ── Migration 6: extend calendar_events with richer fields ──────────────
+    if current_version < 6 {
+        let tx = conn.unchecked_transaction()?;
+        ensure_column(&tx, "calendar_events", "end_time",    "TEXT")?;
+        ensure_column(&tx, "calendar_events", "description", "TEXT")?;
+        ensure_column(&tx, "calendar_events", "location",    "TEXT")?;
+        ensure_column(&tx, "calendar_events", "is_all_day",  "INTEGER NOT NULL DEFAULT 0")?;
+        ensure_column(&tx, "calendar_events", "source",      "TEXT NOT NULL DEFAULT 'gcal'")?;
+        // Backfill source for events that were already custom_ or cal_ prefix
+        tx.execute(
+            "UPDATE calendar_events SET source='custom' WHERE id LIKE 'custom_%'", []
+        ).ok();
+        tx.execute(
+            "UPDATE calendar_events SET source='email' WHERE id LIKE 'cal_%'", []
+        ).ok();
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (6, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
+    // ── Migration 7: add recurrence_rule to reminders ───────────────────────
+    if current_version < 7 {
+        let tx = conn.unchecked_transaction()?;
+        ensure_column(&tx, "reminders", "recurrence_rule", "TEXT NOT NULL DEFAULT 'none'")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (7, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
     // ── Future migrations: add a new `if current_version < N` block here ─────
-    // Example:
-    // if current_version < 3 {
-    //     conn.execute_batch("ALTER TABLE decisions ADD COLUMN context TEXT;")?;
-    //     conn.execute("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, ?1)",
-    //         rusqlite::params![now_iso()])?;
-    // }
 
     Ok(())
 }
@@ -764,93 +867,111 @@ pub fn update_status_and_draft(conn: &Connection, id: &str, status: &str, draft:
 }
 
 pub fn save_credentials(conn: &Connection, creds: &GmailCredentials) -> Result<()> {
-    // Store both tokens in keychain
-    if !creds.refresh_token.is_empty() && creds.refresh_token != "[KEYCHAIN_ENCLAVE]" {
-        crate::security::store_secure_token(&creds.service, &creds.refresh_token).ok();
-    }
-    let access_key = format!("{}_access", creds.service);
-    if !creds.access_token.is_empty() && creds.access_token != "[KEYCHAIN_ENCLAVE_ACCESS]" {
-        crate::security::store_secure_token(&access_key, &creds.access_token).ok();
-    }
+    // Resolve real tokens — incoming value may be a sentinel if the caller
+    // reconstructed a GmailCredentials from a half-read DB row.
+    let real_refresh = if creds.refresh_token.starts_with('[') || creds.refresh_token.is_empty() {
+        // Recover from existing encrypted DB column
+        let stored: String = conn.query_row(
+            "SELECT COALESCE(refresh_token,'') FROM credentials WHERE service=?1",
+            rusqlite::params![&creds.service],
+            |r| r.get(0),
+        ).unwrap_or_default();
+        crate::security::decrypt_token(&stored)
+    } else {
+        creds.refresh_token.clone()
+    };
+
+    let real_access = if creds.access_token.starts_with('[') || creds.access_token.is_empty() {
+        let stored: String = conn.query_row(
+            "SELECT COALESCE(access_token,'') FROM credentials WHERE service=?1",
+            rusqlite::params![&creds.service],
+            |r| r.get(0),
+        ).unwrap_or_default();
+        crate::security::decrypt_token(&stored)
+    } else {
+        creds.access_token.clone()
+    };
+
+    // Encrypt before writing to DB
+    let enc_refresh = crate::security::encrypt_token(&real_refresh);
+    let enc_access  = crate::security::encrypt_token(&real_access);
+
     conn.execute(
         "INSERT INTO credentials (service, access_token, refresh_token, expires_at, email)
          VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(service) DO UPDATE SET
-            access_token=excluded.access_token,
-            refresh_token=excluded.refresh_token,
-            expires_at=excluded.expires_at,
-            email=excluded.email",
-        params![creds.service, "[KEYCHAIN_ENCLAVE_ACCESS]", "[KEYCHAIN_ENCLAVE]", creds.expires_at, creds.email],
+            access_token  = excluded.access_token,
+            refresh_token = excluded.refresh_token,
+            expires_at    = excluded.expires_at,
+            email         = excluded.email",
+        params![creds.service, enc_access, enc_refresh, creds.expires_at, creds.email],
     )?;
     Ok(())
 }
 
 pub fn get_credentials(conn: &Connection, service: &str) -> Result<Option<GmailCredentials>> {
-    let mut stmt = conn.prepare("SELECT service, access_token, refresh_token, expires_at, email FROM credentials WHERE service = ?1")?;
+    let mut stmt = conn.prepare(
+        "SELECT service, access_token, refresh_token, expires_at, email
+         FROM credentials WHERE service = ?1"
+    )?;
     let mut rows = stmt.query(params![service])?;
     if let Some(row) = rows.next()? {
         let service_key: String = row.get(0)?;
-        let db_access: String = row.get(1)?;
-        let db_refresh: String = row.get(2)?;
-        let access_key = format!("{}_access", service_key);
-        let secure_access = if db_access == "[KEYCHAIN_ENCLAVE_ACCESS]" {
-            crate::security::retrieve_secure_token(&access_key).ok().flatten().unwrap_or(db_access)
-        } else {
-            db_access
-        };
-        let secure_refresh = crate::security::retrieve_secure_token(&service_key).ok().flatten().unwrap_or(db_refresh);
-
+        let enc_access:  String = row.get(1)?;
+        let enc_refresh: String = row.get(2)?;
+        let access  = crate::security::decrypt_token(&enc_access);
+        let refresh = crate::security::decrypt_token(&enc_refresh);
+        if refresh.is_empty() {
+            eprintln!("[Credentials] WARNING: refresh token for {} empty after decrypt — needs re-auth", service_key);
+        }
         Ok(Some(GmailCredentials {
             service: service_key,
-            access_token: secure_access,
-            refresh_token: secure_refresh,
+            access_token: access,
+            refresh_token: refresh,
             expires_at: row.get(3)?,
             email: row.get(4)?,
         }))
+    } else if service == "gmail" {
+        // Try the first gmail:email@... entry
+        let all = get_all_gmail_credentials(conn)?;
+        Ok(all.into_iter().next())
     } else {
-        if service == "gmail" {
-            let all = get_all_gmail_credentials(conn)?;
-            Ok(all.into_iter().next())
-        } else {
-            Ok(None)
-        }
+        Ok(None)
     }
 }
 
 pub fn get_all_gmail_credentials(conn: &Connection) -> Result<Vec<GmailCredentials>> {
-    let mut stmt = conn.prepare("SELECT service, access_token, refresh_token, expires_at, email FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'")?;
+    let mut stmt = conn.prepare(
+        "SELECT service, access_token, refresh_token, expires_at, email
+         FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'"
+    )?;
     let rows = stmt.query_map([], |row| {
         let service_key: String = row.get(0)?;
-        let db_access: String = row.get(1)?;
-        let db_refresh: String = row.get(2)?;
-        let access_key = format!("{}_access", service_key);
-        let secure_access = if db_access == "[KEYCHAIN_ENCLAVE_ACCESS]" {
-            crate::security::retrieve_secure_token(&access_key).ok().flatten().unwrap_or(db_access)
-        } else {
-            db_access
-        };
-        let secure_refresh = crate::security::retrieve_secure_token(&service_key).ok().flatten().unwrap_or(db_refresh);
-
+        let enc_access:  String = row.get(1)?;
+        let enc_refresh: String = row.get(2)?;
+        let access  = crate::security::decrypt_token(&enc_access);
+        let refresh = crate::security::decrypt_token(&enc_refresh);
         Ok(GmailCredentials {
             service: service_key,
-            access_token: secure_access,
-            refresh_token: secure_refresh,
+            access_token: access,
+            refresh_token: refresh,
             expires_at: row.get(3)?,
             email: row.get(4)?,
         })
     })?;
 
     let mut list = Vec::new();
-    for r in rows {
-        list.push(r?);
+    for r in rows { list.push(r?); }
+
+    // Drop rows with empty refresh tokens — they cause invalid_grant and can't be used
+    let valid: Vec<_> = list.into_iter().filter(|c| !c.refresh_token.is_empty()).collect();
+    if valid.is_empty() {
+        eprintln!("[Credentials] No valid Gmail credentials — user needs to re-authenticate.");
     }
-    Ok(list)
+    Ok(valid)
 }
 
 pub fn delete_credentials(conn: &Connection, service: &str) -> Result<()> {
-    crate::security::delete_secure_token(service).ok();
-    let access_key = format!("{}_access", service);
-    crate::security::delete_secure_token(&access_key).ok();
     conn.execute("DELETE FROM credentials WHERE service = ?1", params![service])?;
     Ok(())
 }
@@ -859,19 +980,16 @@ pub fn delete_gmail_credentials(conn: &Connection, email: Option<&str>) -> Resul
     match email {
         Some(e) => {
             let key = format!("gmail:{}", e);
-            crate::security::delete_secure_token(&key).ok();
-            let access_key = format!("{}_access", key);
-            crate::security::delete_secure_token(&access_key).ok();
-            conn.execute("DELETE FROM credentials WHERE service = ?1 OR email = ?2", params![key, e])?;
+            conn.execute(
+                "DELETE FROM credentials WHERE service = ?1 OR email = ?2",
+                params![key, e],
+            )?;
         }
         None => {
-            let all = get_all_gmail_credentials(conn).unwrap_or_default();
-            for c in &all {
-                crate::security::delete_secure_token(&c.service).ok();
-                let access_key = format!("{}_access", c.service);
-                crate::security::delete_secure_token(&access_key).ok();
-            }
-            conn.execute("DELETE FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'", [])?;
+            conn.execute(
+                "DELETE FROM credentials WHERE service = 'gmail' OR service LIKE 'gmail:%'",
+                [],
+            )?;
         }
     }
     Ok(())
@@ -921,41 +1039,92 @@ pub fn get_sender_history(conn: &Connection, sender: &str, limit: usize) -> Resu
 
 
 pub fn get_synced_calendar_events(conn: &Connection) -> Result<Vec<SyncedCalendarEvent>> {
-    let mut stmt = conn.prepare("SELECT id, queue_item_id, event_id, summary, event_date, created_at FROM calendar_events ORDER BY created_at DESC")?;
+    // Fetch upcoming + recent events; prune anything more than 30 days in the past
+    let mut stmt = conn.prepare(
+        "SELECT id, queue_item_id, event_id, summary, event_date,
+                end_time, description, location,
+                COALESCE(is_all_day, 0), COALESCE(source, 'gcal'), created_at
+         FROM calendar_events
+         WHERE event_date >= datetime('now', '-30 days')
+            OR source = 'custom'
+         ORDER BY event_date ASC"
+    )?;
     let event_iter = stmt.query_map([], |row| {
+        let is_all_day_int: i32 = row.get(8)?;
         Ok(SyncedCalendarEvent {
-            id: row.get(0)?,
+            id:            row.get(0)?,
             queue_item_id: row.get(1)?,
-            event_id: row.get(2)?,
-            summary: row.get(3)?,
-            event_date: row.get(4)?,
-            created_at: row.get(5)?,
+            event_id:      row.get(2)?,
+            summary:       row.get(3)?,
+            event_date:    row.get(4)?,
+            end_time:      row.get(5)?,
+            description:   row.get(6)?,
+            location:      row.get(7)?,
+            is_all_day:    is_all_day_int != 0,
+            source:        row.get(9)?,
+            created_at:    row.get(10)?,
         })
     })?;
-
     let mut events = Vec::new();
-    for event in event_iter {
-        events.push(event?);
-    }
+    for event in event_iter { events.push(event?); }
     Ok(events)
 }
 
+/// Upsert a calendar event — updates title/time/description if the event already exists
+/// (replaces the old INSERT OR IGNORE which left stale data forever).
 pub fn record_calendar_event(conn: &Connection, evt: &SyncedCalendarEvent) -> Result<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO calendar_events (id, queue_item_id, event_id, summary, event_date, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![evt.id, evt.queue_item_id, evt.event_id, evt.summary, evt.event_date, evt.created_at],
+        "INSERT INTO calendar_events
+             (id, queue_item_id, event_id, summary, event_date, end_time,
+              description, location, is_all_day, source, created_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+         ON CONFLICT(id) DO UPDATE SET
+             summary     = excluded.summary,
+             event_date  = excluded.event_date,
+             end_time    = excluded.end_time,
+             description = excluded.description,
+             location    = excluded.location,
+             is_all_day  = excluded.is_all_day,
+             source      = excluded.source",
+        params![
+            evt.id, evt.queue_item_id, evt.event_id, evt.summary,
+            evt.event_date, evt.end_time, evt.description, evt.location,
+            if evt.is_all_day { 1 } else { 0 }, evt.source, evt.created_at
+        ],
     )?;
     Ok(())
 }
 
-pub fn is_calendar_event_synced(conn: &Connection, queue_item_id: &str) -> Result<bool> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM calendar_events WHERE queue_item_id = ?1",
-        params![queue_item_id],
-        |r| r.get(0),
+/// Persist a custom (manually-added) calendar event created from the frontend.
+/// Custom events are kept permanently (never pruned by the 30-day window).
+pub fn record_custom_calendar_event(conn: &Connection, evt: &SyncedCalendarEvent) -> Result<()> {
+    conn.execute(
+        "INSERT INTO calendar_events
+             (id, queue_item_id, event_id, summary, event_date, end_time,
+              description, location, is_all_day, source, created_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'custom',?10)
+         ON CONFLICT(id) DO UPDATE SET
+             summary    = excluded.summary,
+             event_date = excluded.event_date,
+             end_time   = excluded.end_time,
+             description= excluded.description,
+             location   = excluded.location",
+        params![
+            evt.id, evt.queue_item_id, evt.event_id, evt.summary,
+            evt.event_date, evt.end_time, evt.description, evt.location,
+            if evt.is_all_day { 1 } else { 0 }, evt.created_at
+        ],
     )?;
-    Ok(count > 0)
+    Ok(())
+}
+
+/// Delete a custom event by ID (only custom events can be deleted from the frontend).
+pub fn delete_custom_calendar_event(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM calendar_events WHERE id = ?1 AND source = 'custom'",
+        params![id],
+    )?;
+    Ok(())
 }
 
 // ─── Analytics: Response Time Tracking ──────────────────────────────────────
@@ -1123,33 +1292,42 @@ pub struct Reminder {
     pub status: String,
     pub created_at: String,
     pub triggered_at: Option<String>,
+    /// How often to re-fire: "none" | "daily" | "every_2_days" | "weekly" | "weekdays"
+    #[serde(default = "default_recurrence")]
+    pub recurrence_rule: String,
 }
+
+fn default_recurrence() -> String { "none".to_string() }
 
 pub fn create_reminder(conn: &Connection, reminder: &Reminder) -> Result<()> {
     conn.execute(
-        "INSERT INTO reminders (id, item_id, reminder_date, message, status, created_at, triggered_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![reminder.id, reminder.item_id, reminder.reminder_date, reminder.message, reminder.status, reminder.created_at, reminder.triggered_at],
+        "INSERT INTO reminders (id, item_id, reminder_date, message, status, created_at, triggered_at, recurrence_rule)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![reminder.id, reminder.item_id, reminder.reminder_date, reminder.message,
+                reminder.status, reminder.created_at, reminder.triggered_at,
+                reminder.recurrence_rule],
     )?;
     Ok(())
 }
 
 pub fn get_pending_reminders(conn: &Connection) -> Result<Vec<Reminder>> {
     let mut stmt = conn.prepare(
-        "SELECT id, item_id, reminder_date, message, status, created_at, triggered_at
+        "SELECT id, item_id, reminder_date, message, status, created_at, triggered_at,
+                COALESCE(recurrence_rule,'none')
          FROM reminders
          WHERE status = 'pending' AND datetime(reminder_date) <= datetime('now')
          ORDER BY reminder_date"
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(Reminder {
-            id: row.get(0)?,
-            item_id: row.get(1)?,
-            reminder_date: row.get(2)?,
-            message: row.get(3)?,
-            status: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "pending".into()),
-            created_at: row.get(5)?,
-            triggered_at: row.get(6)?,
+            id:               row.get(0)?,
+            item_id:          row.get(1)?,
+            reminder_date:    row.get(2)?,
+            message:          row.get(3)?,
+            status:           row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "pending".into()),
+            created_at:       row.get(5)?,
+            triggered_at:     row.get(6)?,
+            recurrence_rule:  row.get(7)?,
         })
     })?;
     let mut list = Vec::new();
@@ -1239,20 +1417,22 @@ pub fn mark_reminder_triggered(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn get_reminders(conn: &Connection) -> Result<Vec<Reminder>> {
     let mut stmt = conn.prepare(
-        "SELECT id, item_id, reminder_date, message, status, created_at, triggered_at
+        "SELECT id, item_id, reminder_date, message, status, created_at, triggered_at,
+                COALESCE(recurrence_rule,'none')
          FROM reminders
          WHERE status = 'pending'
          ORDER BY reminder_date",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(Reminder {
-            id: row.get(0)?,
-            item_id: row.get(1)?,
-            reminder_date: row.get(2)?,
-            message: row.get(3)?,
-            status: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "pending".into()),
-            created_at: row.get(5)?,
-            triggered_at: row.get(6)?,
+            id:              row.get(0)?,
+            item_id:         row.get(1)?,
+            reminder_date:   row.get(2)?,
+            message:         row.get(3)?,
+            status:          row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "pending".into()),
+            created_at:      row.get(5)?,
+            triggered_at:    row.get(6)?,
+            recurrence_rule: row.get(7)?,
         })
     })?;
     let mut list = Vec::new();

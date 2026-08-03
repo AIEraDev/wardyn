@@ -2083,16 +2083,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "keyring"
-version = "3.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
-dependencies = [
- "log",
- "zeroize",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4909,13 +4899,13 @@ dependencies = [
  "base64 0.22.1",
  "dotenvy",
  "futures-util",
- "keyring",
  "lazy_static",
  "open",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

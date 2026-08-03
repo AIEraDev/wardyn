@@ -1,4 +1,4 @@
-name: "Release Build & Auto-Updater Publish"
+name: Release
 
 on:
   push:
@@ -6,22 +6,19 @@ on:
       - "v*"
   workflow_dispatch:
 
-jobs:
-  publish-tauri:
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: "macos-latest"
-            args: "--target universal-apple-darwin"
-          - platform: "windows-latest"
-            args: ""
-          - platform: "ubuntu-22.04"
-            args: ""
+permissions:
+  contents: write
 
-    runs-on: ${{ matrix.platform }}
+jobs:
+  # ── Job 1: Create the GitHub Release first ────────────────────────────────
+  # All three platform builds upload to this single release.
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.id }}
+      release_upload_url: ${{ steps.create-release.outputs.upload_url }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,38 +26,144 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "22"
+
+      - name: Resolve version
+        id: get_version
+        shell: bash
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(node -p "require('./package.json').version")
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.VERSION }}
+          release_name: "Wardyn v${{ steps.get_version.outputs.VERSION }}"
+          body: |
+            ## Wardyn v${{ steps.get_version.outputs.VERSION }}
+
+            **Local-first AI chief-of-staff for your inbox, calendar, and daily brief.**
+
+            ## Downloads
+
+            | Platform | File |
+            |---|---|
+            | macOS (Apple Silicon + Intel) | `.dmg` |
+            | Windows | `.msi` |
+            | Linux | `.AppImage` |
+
+            ## Installation
+
+            ### macOS
+            Download the `.dmg`, drag Wardyn to `/Applications`.
+            Right-click → Open on first launch to bypass Gatekeeper.
+
+            ### Windows
+            Run the `.msi` installer. If SmartScreen blocks it, click **More info → Run anyway**.
+
+            ### Linux
+            ```bash
+            chmod +x Wardyn*.AppImage && ./Wardyn*.AppImage
+            ```
+
+            ## Setup
+            Wardyn requires your own Google OAuth credentials.
+            Go to **Settings → OAuth Credentials** after first launch.
+          draft: true
+          prerelease: false
+
+  # ── Job 2: Build per platform and upload to the release ──────────────────
+  build-release:
+    name: Build ${{ matrix.platform }}
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - platform: windows-latest
+            args: ""
+            rust_targets: ""
+          - platform: ubuntu-24.04
+            args: ""
+            rust_targets: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
           cache: "npm"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri"
 
       - name: Install Linux build dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-24.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file
 
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build & Publish Tauri Application
-        uses: tauri-apps/tauri-action@v0.5
+      - name: Build and upload release artifacts
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signing keys for the auto-updater — these are the only secrets needed.
-          # OAuth credentials are NOT baked into the binary. Users supply their own
-          # via Settings → OAuth Credentials (stored locally in SQLite).
+          # Ed25519 signing keys for the auto-updater.
+          # OAuth credentials are never baked into the binary —
+          # users supply their own via Settings → OAuth Credentials.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: v__VERSION__
-          releaseName: "Wardyn v__VERSION__"
-          releaseBody: "Wardyn Desktop v__VERSION__. Bring your own OAuth credentials via Settings → OAuth Credentials."
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           updaterJsonKeepUniversal: true
           args: ${{ matrix.args }}
+
+  # ── Job 3: Publish the draft release once all builds succeed ─────────────
+  publish-release:
+    name: Publish Release
+    needs: [create-release, build-release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publish release
+        uses: eregon/publish-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          release_id: ${{ needs.create-release.outputs.release_id }}

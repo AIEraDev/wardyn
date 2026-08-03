@@ -6,12 +6,10 @@ import {
   IconClock,
   IconRefresh,
   IconBell,
-  IconBellOff,
   IconPlus,
   IconTrash,
   IconExternalLink,
   IconAlertTriangle,
-  IconFilter,
   IconLoader2,
   IconMapPin,
   IconChevronDown,
@@ -21,7 +19,7 @@ import {
   IconRepeat,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
-import { SyncedCalendarEvent, CalendarIntent } from "../types/queue";
+import { SyncedCalendarEvent } from "../types/queue";
 
 // ─── Reminder timing options ──────────────────────────────────────────────────
 const REMINDER_OPTIONS: { label: string; minutes: number }[] = [

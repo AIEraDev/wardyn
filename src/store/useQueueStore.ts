@@ -1734,6 +1734,8 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
     }
   },
+
+  fetchMorningBrief: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
         set({ morningBriefLoading: true });

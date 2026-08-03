@@ -353,7 +353,7 @@ export const ChannelsTab: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => handleConnect("gmail")}
-                                  disabled={gmailSyncStatus === "connecting"}
+                                  disabled={connecting === "gmail"}
                                   className="mt-1.5 font-mono text-[10px] text-[#4A8FC2] hover:underline cursor-pointer bg-transparent border-0 p-0 disabled:opacity-50"
                                 >
                                   → Re-authenticate Gmail

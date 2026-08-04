@@ -561,49 +561,10 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 
   getMorningHelperStatus: async (): Promise<boolean> => {
-    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        return await invoke<boolean>("get_morning_helper_status");
-      } catch {
-        return false;
-      }
-    }
     return false;
   },
-
-  enableMorningHelper: async () => {
-    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("enable_morning_helper");
-        get().showStatusMessage(
-          "success",
-          "Morning notifications enabled — fires at 8 AM daily.",
-        );
-      } catch (err: any) {
-        get().showStatusMessage(
-          "error",
-          `Failed to enable: ${err?.toString()}`,
-        );
-      }
-    }
-  },
-
-  disableMorningHelper: async () => {
-    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("disable_morning_helper");
-        get().showStatusMessage("info", "Morning notifications disabled.");
-      } catch (err: any) {
-        get().showStatusMessage(
-          "error",
-          `Failed to disable: ${err?.toString()}`,
-        );
-      }
-    }
-  },
+  enableMorningHelper: async () => {},
+  disableMorningHelper: async () => {},
 
   showStatusMessage: (type: StatusMessageType, text: string) => {
     set({

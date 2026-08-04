@@ -17,7 +17,6 @@ pub mod planner;
 pub mod active_life;
 pub mod tray;
 pub mod research;
-pub mod morning_helper;
 
 
 
@@ -201,19 +200,19 @@ fn diagnose_gmail_credentials(state: State<'_, DbState>) -> Result<Vec<String>, 
 /// Returns whether the morning LaunchAgent is installed.
 #[tauri::command]
 fn get_morning_helper_status() -> bool {
-    morning_helper::is_installed()
+    false
 }
 
 /// Disable the morning LaunchAgent (user toggles off in Settings).
 #[tauri::command]
 fn disable_morning_helper() -> Result<(), String> {
-    morning_helper::uninstall()
+    Ok(())
 }
 
 /// Re-enable the morning LaunchAgent after it was disabled.
 #[tauri::command]
 fn enable_morning_helper() -> Result<(), String> {
-    morning_helper::install_or_update().map(|_| ())
+    Ok(())
 }
 
 #[tauri::command]
@@ -1759,16 +1758,6 @@ pub fn run() {
 
             // ── Setup tray icon ──────────────────────────────────────────────
             tray::setup_tray(app)?;
-
-            // ── Install / update morning LaunchAgent ─────────────────────────
-            {
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(3));
-                    if let Err(e) = morning_helper::install_or_update() {
-                        eprintln!("[MorningHelper] Install error: {}", e);
-                    }
-                });
-            }
 
             // ── Register window focus-loss handler (hide on blur) ────────────
             if let Some(window) = app.get_webview_window("main") {

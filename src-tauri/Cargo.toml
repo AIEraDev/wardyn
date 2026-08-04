@@ -10,10 +10,6 @@ default-run = "wardyn-desktop"
 name = "wardyn-desktop"
 path = "src/main.rs"
 
-[[bin]]
-name = "wardyn_morning"
-path = "src/bin/wardyn_morning.rs"
-
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }
 
@@ -36,6 +32,5 @@ dotenvy = "0.15"
 sha2 = "0.10"
 lazy_static = "1.5"
 futures-util = "0.3"
-libc = "0.2"
 
 

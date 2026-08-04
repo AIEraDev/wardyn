@@ -445,20 +445,9 @@ export const SettingsTab: React.FC = () => {
     cancelOllamaModelInstall,
     checkGmailStatus,
     showStatusMessage,
-    getMorningHelperStatus,
-    enableMorningHelper,
-    disableMorningHelper,
   } = useQueueStore();
 
   const t = useTranslation();
-
-  // Morning helper toggle state
-  const [morningEnabled, setMorningEnabled] = useState<boolean | null>(null);
-  const [morningWorking, setMorningWorking] = useState(false);
-
-  useEffect(() => {
-    getMorningHelperStatus().then(setMorningEnabled);
-  }, []);
 
   const [vaultInput, setVaultInput] = useState(vaultPath || "");
   const [vaultSaved, setVaultSaved] = useState(false);
@@ -1158,64 +1147,6 @@ export const SettingsTab: React.FC = () => {
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Morning Notifications (LaunchAgent) */}
-      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-[#181E27] text-[#E8A23D] border border-[#242B35]">
-              <IconBell size={18} />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-[#F0F4F8]">
-                Morning Notifications
-              </p>
-              <p className="text-xs text-[#9AA4B2]">
-                Daily 8 AM brief — quote, learning topic &amp; pending
-                reminders. Fires even when Wardyn is closed.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            disabled={morningWorking || morningEnabled === null}
-            onClick={async () => {
-              setMorningWorking(true);
-              if (morningEnabled) {
-                await disableMorningHelper();
-                setMorningEnabled(false);
-              } else {
-                await enableMorningHelper();
-                setMorningEnabled(true);
-              }
-              setMorningWorking(false);
-            }}
-            className={`font-mono text-xs px-3 py-1 rounded-md font-medium transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 ${
-              morningEnabled
-                ? "bg-[rgba(52,211,153,0.15)] text-[#34D399] border border-[rgba(52,211,153,0.3)]"
-                : "bg-[#181E27] text-[#7A8492] border border-[#242B35]"
-            }`}
-          >
-            {morningWorking ? (
-              <>
-                <IconLoader2 size={12} className="animate-spin" /> Working…
-              </>
-            ) : morningEnabled === null ? (
-              "Checking…"
-            ) : morningEnabled ? (
-              "Enabled"
-            ) : (
-              "Disabled"
-            )}
-          </button>
-        </div>
-        {morningEnabled && (
-          <p className="font-mono text-[10px] text-[#4A5568]">
-            ✓ LaunchAgent installed — fires at 08:00 daily via macOS launchd.
-            Log: ~/Library/Logs/Wardyn/wardyn_morning.log
-          </p>
-        )}
       </div>
 
       {/* GitHub Auto-Update Channel Card */}

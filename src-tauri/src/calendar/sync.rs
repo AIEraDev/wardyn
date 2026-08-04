@@ -459,13 +459,49 @@ pub async fn sync_calendar_deadlines(
         }
     }
 
-    // ── 3. Prune old gcal entries beyond 30 days ──────────────────────────────
+    // ── 3. Prune stale calendar entries ──────────────────────────────────────
     {
         if let Ok(conn) = conn_mutex.lock() {
+            // Remove gcal events older than 30 days
             conn.execute(
                 "DELETE FROM calendar_events
                  WHERE source = 'gcal'
                    AND event_date < datetime('now', '-30 days')",
+                [],
+            ).ok();
+
+            // Remove email-sourced calendar events whose parent email was deleted
+            // (e.g. after clear_gmail_cache). The queue_item_id for email events
+            // is the original queue_items.id — if it's gone, the event is orphaned.
+            conn.execute(
+                "DELETE FROM calendar_events
+                 WHERE source = 'email'
+                   AND queue_item_id NOT LIKE 'life_%'
+                   AND queue_item_id NOT LIKE 'task_%'
+                   AND queue_item_id NOT LIKE 'mem_%'
+                   AND queue_item_id NOT LIKE 'dec_%'
+                   AND queue_item_id NOT IN (SELECT id FROM queue_items)",
+                [],
+            ).ok();
+
+            // Remove pending reminders for orphaned calendar events
+            conn.execute(
+                "DELETE FROM reminders
+                 WHERE status = 'pending'
+                   AND item_id LIKE 'calrem_%'
+                   AND REPLACE(item_id, 'calrem_mem_', '')
+                       NOT IN (SELECT id FROM calendar_events)
+                   AND item_id NOT IN (
+                       SELECT 'calrem_' || id FROM calendar_events
+                   )",
+                [],
+            ).ok();
+
+            // Remove triggered reminders older than 30 days (log-only, no value)
+            conn.execute(
+                "DELETE FROM reminders
+                 WHERE status = 'triggered'
+                   AND datetime(triggered_at) < datetime('now', '-30 days')",
                 [],
             ).ok();
         }

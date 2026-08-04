@@ -413,6 +413,29 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         tx.commit()?;
     }
 
+    // ── Migration 10: unique index on reminders to prevent exact duplicates ──
+    // Prevents two reminders for the same item firing at the exact same time,
+    // which could happen if sync runs overlap or user saves a reminder twice.
+    if current_version < 10 {
+        let tx = conn.unchecked_transaction()?;
+        // Deduplicate any existing exact duplicates before adding the index
+        tx.execute_batch("
+            DELETE FROM reminders
+            WHERE rowid NOT IN (
+                SELECT MIN(rowid)
+                FROM reminders
+                GROUP BY item_id, reminder_date
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_reminders_item_date
+                ON reminders(item_id, reminder_date);
+        ")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (10, ?1)",
+            rusqlite::params![now_iso()],
+        )?;
+        tx.commit()?;
+    }
+
     // ── Migration 8: UNIQUE constraint on habit_completions ──────────────────
     // Prevents duplicate completions from double-taps / race conditions.
     // Uses CREATE UNIQUE INDEX instead of ALTER TABLE so it is safe to run
@@ -836,6 +859,16 @@ pub fn get_queue_item_by_id(conn: &Connection, id: &str) -> Result<Option<QueueI
 }
 
 pub fn get_all_queue_items(conn: &Connection) -> Result<Vec<QueueItem>> {
+    // Emails older than 90 days that are already handled (sent/skipped/approved)
+    // are auto-pruned here to prevent unbounded growth.
+    conn.execute(
+        "DELETE FROM queue_items
+         WHERE source = 'gmail'
+           AND status IN ('sent','skipped','approved','edited')
+           AND datetime(created_at) < datetime('now','-90 days')",
+        [],
+    ).ok();
+
     let mut stmt = conn.prepare(
         "SELECT id, source, kind, sender, preview, draft_text, status, flagged, confidence, created_at, updated_at, thread_id, message_id, urgency,
                 COALESCE(needs_reply, 1), COALESCE(triage_status, 'active')
@@ -1361,7 +1394,9 @@ fn default_recurrence() -> String { "none".to_string() }
 
 pub fn create_reminder(conn: &Connection, reminder: &Reminder) -> Result<()> {
     conn.execute(
-        "INSERT INTO reminders (id, item_id, reminder_date, message, status, created_at, triggered_at, recurrence_rule)
+        // INSERT OR IGNORE: the UNIQUE index on (item_id, reminder_date) means
+        // an identical reminder is silently dropped rather than causing an error.
+        "INSERT OR IGNORE INTO reminders (id, item_id, reminder_date, message, status, created_at, triggered_at, recurrence_rule)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![reminder.id, reminder.item_id, reminder.reminder_date, reminder.message,
                 reminder.status, reminder.created_at, reminder.triggered_at,

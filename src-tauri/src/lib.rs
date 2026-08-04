@@ -477,21 +477,17 @@ fn get_calendar_events_command(state: State<'_, DbState>) -> Result<Vec<SyncedCa
 }
 
 /// Update the reminder timing for a calendar event (replaces any existing reminder).
+/// Uses a transaction so the DELETE + INSERT are atomic — no duplicate reminders
+/// can be created even if the user clicks "Save Reminder" twice quickly.
 #[tauri::command]
 fn set_calendar_reminder_command(
-    event_id: String,  // the calendar_events.id value (e.g. "gcal_xxx" or "custom_xxx")
+    event_id: String,
     event_summary: String,
     event_date: String,
-    minutes_before: i64,  // 0 = at time, 15, 60, 1440 (1 day), etc.
+    minutes_before: i64,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-
-    // Remove any existing pending reminder for this event
-    conn.execute(
-        "DELETE FROM reminders WHERE item_id = ?1 AND status = 'pending'",
-        rusqlite::params![event_id],
-    ).ok();
 
     let event_secs = db::iso_to_unix_secs(&event_date)
         .ok_or_else(|| format!("Invalid event_date: {}", event_date))?;
@@ -502,7 +498,6 @@ fn set_calendar_reminder_command(
 
     let remind_secs = (event_secs - minutes_before * 60).max(now_secs + 5);
 
-    // Build ISO string for reminder_date
     let remind_iso = {
         let s = remind_secs % 60;
         let m = (remind_secs / 60) % 60;
@@ -513,15 +508,24 @@ fn set_calendar_reminder_command(
     };
 
     let timing_label = match minutes_before {
-        0    => "at event time".to_string(),
+        0       => "at event time".to_string(),
         1..=59  => format!("{} minutes before", minutes_before),
-        60   => "1 hour before".to_string(),
-        1440 => "1 day before".to_string(),
-        _    => format!("{} minutes before", minutes_before),
+        60      => "1 hour before".to_string(),
+        1440    => "1 day before".to_string(),
+        _       => format!("{} minutes before", minutes_before),
     };
 
+    // Use a deterministic ID so any re-save of the same event is idempotent
+    let reminder_id = format!("calrem_user_{}", event_id);
+
+    // Atomic: delete old + insert new in one transaction
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM reminders WHERE item_id = ?1 AND status = 'pending'",
+        rusqlite::params![event_id],
+    ).ok();
     let reminder = db::Reminder {
-        id:              format!("calrem_{}_{}", event_id, db::now_iso().replace(':', "-")),
+        id:              reminder_id,
         item_id:         event_id,
         reminder_date:   remind_iso,
         message:         format!("⏰ {} — {}", event_summary, timing_label),
@@ -530,7 +534,8 @@ fn set_calendar_reminder_command(
         triggered_at:    None,
         recurrence_rule: "none".into(),
     };
-    db::create_reminder(&conn, &reminder).map_err(|e| e.to_string())
+    db::create_reminder(&tx, &reminder).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1179,14 +1184,35 @@ fn clear_gmail_cache_command(
         "DELETE FROM queue_items WHERE source='gmail'"
     };
     let rows = conn.execute(sql, []).map_err(|e| e.to_string())? as i64;
-    // Also clean up orphaned analytics/reminders for deleted items
+
+    // Cascade: remove orphaned analytics and reminders
     conn.execute(
         "DELETE FROM response_analytics WHERE queue_item_id NOT IN (SELECT id FROM queue_items)",
         [],
     ).ok();
     conn.execute(
-        "DELETE FROM reminders WHERE item_id NOT IN (SELECT id FROM queue_items)
-         AND item_id NOT LIKE 'life:%'",
+        "DELETE FROM reminders
+         WHERE item_id NOT IN (SELECT id FROM queue_items)
+           AND item_id NOT LIKE 'life:%'
+           AND item_id NOT LIKE 'proj_%'
+           AND item_id NOT LIKE 'task_%'
+           AND item_id NOT LIKE 'mem_%'
+           AND item_id NOT LIKE 'dec_%'",
+        [],
+    ).ok();
+    // Remove calendar events that were auto-created from emails now deleted
+    conn.execute(
+        "DELETE FROM calendar_events
+         WHERE source = 'email'
+           AND queue_item_id LIKE 'cal_%'
+           AND REPLACE(queue_item_id, 'cal_', '') NOT IN (SELECT id FROM queue_items)",
+        [],
+    ).ok();
+    // Remove already-triggered reminders older than 30 days
+    conn.execute(
+        "DELETE FROM reminders
+         WHERE status = 'triggered'
+           AND datetime(triggered_at) < datetime('now', '-30 days')",
         [],
     ).ok();
     Ok(rows)

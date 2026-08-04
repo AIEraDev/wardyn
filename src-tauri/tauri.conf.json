@@ -54,9 +54,6 @@
     "macOS": {
       "entitlements": "Entitlements.plist",
       "infoPlist": "Info.plist"
-    },
-    "resources": {
-      "resources/wardyn_morning": "wardyn_morning"
     }
   }
 }

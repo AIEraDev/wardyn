@@ -151,12 +151,13 @@ jobs:
           cargo build --manifest-path src-tauri/Cargo.toml \
             --bin wardyn_morning --target aarch64-apple-darwin --release
 
-          echo "Creating universal binary via lipo (overwrites placeholder)..."
+          echo "Creating universal binary via lipo into src-tauri/resources/..."
           lipo -create \
             src-tauri/target/x86_64-apple-darwin/release/wardyn_morning \
             src-tauri/target/aarch64-apple-darwin/release/wardyn_morning \
             -output src-tauri/resources/wardyn_morning
-          echo "Universal binary ready: $(file src-tauri/resources/wardyn_morning)"
+          chmod +x src-tauri/resources/wardyn_morning
+          echo "Universal binary: $(file src-tauri/resources/wardyn_morning)"
 
       - name: Build and upload release artifacts
         uses: tauri-apps/tauri-action@v0

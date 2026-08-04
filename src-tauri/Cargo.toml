@@ -5,6 +5,14 @@ description = "Wardyn Desktop Application"
 authors = ["Wardyn"]
 edition = "2021"
 
+[[bin]]
+name = "wardyn-desktop"
+path = "src/main.rs"
+
+[[bin]]
+name = "wardyn_morning"
+path = "src/bin/wardyn_morning.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }
 

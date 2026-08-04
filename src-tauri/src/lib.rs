@@ -17,6 +17,7 @@ pub mod planner;
 pub mod active_life;
 pub mod tray;
 pub mod research;
+pub mod morning_helper;
 
 
 
@@ -166,11 +167,11 @@ fn diagnose_gmail_credentials(state: State<'_, DbState>) -> Result<Vec<String>, 
         .as_secs() as i64;
 
     let rows: Vec<String> = stmt.query_map([], |row| {
-        let service:     String       = row.get(0)?;
+        let service:     String         = row.get(0)?;
         let email:       Option<String> = row.get(1)?;
-        let expires_at:  i64          = row.get(2)?;
-        let enc_access:  String       = row.get(3)?;
-        let enc_refresh: String       = row.get(4)?;
+        let expires_at:  i64            = row.get(2)?;
+        let enc_access:  String         = row.get(3)?;
+        let enc_refresh: String         = row.get(4)?;
         Ok((service, email, expires_at, enc_access, enc_refresh))
     })
     .map_err(|e| e.to_string())?
@@ -195,6 +196,28 @@ fn diagnose_gmail_credentials(state: State<'_, DbState>) -> Result<Vec<String>, 
         return Ok(vec!["No Gmail credentials found in database — not connected.".to_string()]);
     }
     Ok(rows)
+}
+
+/// Returns whether the morning LaunchAgent is installed.
+#[tauri::command]
+fn get_morning_helper_status() -> bool {
+    morning_helper::is_installed()
+}
+
+/// Disable the morning LaunchAgent (user toggles off in Settings).
+#[tauri::command]
+fn disable_morning_helper() -> Result<(), String> {
+    morning_helper::uninstall()
+}
+
+/// Re-enable the morning LaunchAgent after it was disabled.
+#[tauri::command]
+fn enable_morning_helper() -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .to_string();
+    morning_helper::install_or_update(&exe).map(|_| ())
 }
 
 #[tauri::command]
@@ -1741,6 +1764,23 @@ pub fn run() {
             // ── Setup tray icon ──────────────────────────────────────────────
             tray::setup_tray(app)?;
 
+            // ── Install / update morning LaunchAgent ─────────────────────────
+            // Runs in a background thread so it never blocks app startup.
+            // Safe to call on every launch — fully idempotent.
+            {
+                let exe = std::env::current_exe()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                std::thread::spawn(move || {
+                    // Delay slightly so the main window has time to appear first
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    if let Err(e) = morning_helper::install_or_update(&exe) {
+                        eprintln!("[MorningHelper] Install error: {}", e);
+                    }
+                });
+            }
+
             // ── Register window focus-loss handler (hide on blur) ────────────
             if let Some(window) = app.get_webview_window("main") {
                 let win = window.clone();
@@ -1908,7 +1948,10 @@ pub fn run() {
             get_social_posts_command,
             update_social_post_status_command,
             delete_social_post_command,
-            diagnose_gmail_credentials
+            diagnose_gmail_credentials,
+            get_morning_helper_status,
+            disable_morning_helper,
+            enable_morning_helper
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

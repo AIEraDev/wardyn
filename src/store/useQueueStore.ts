@@ -140,6 +140,9 @@ interface QueueStore {
   checkAutoStartStatus: () => Promise<void>;
   toggleAutoStart: (enable: boolean) => Promise<void>;
   setSyncInterval: (minutes: number) => void;
+  getMorningHelperStatus: () => Promise<boolean>;
+  enableMorningHelper: () => Promise<void>;
+  disableMorningHelper: () => Promise<void>;
   showStatusMessage: (type: StatusMessageType, text: string) => void;
   clearStatusMessage: () => void;
   fetchItems: () => Promise<void>;
@@ -555,6 +558,51 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   setSyncInterval: (minutes: number) => {
     const safe = Math.max(5, Math.min(minutes, 1440)); // clamp: 5min–24h
     set({ syncIntervalMinutes: safe });
+  },
+
+  getMorningHelperStatus: async (): Promise<boolean> => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        return await invoke<boolean>("get_morning_helper_status");
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  },
+
+  enableMorningHelper: async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("enable_morning_helper");
+        get().showStatusMessage(
+          "success",
+          "Morning notifications enabled — fires at 8 AM daily.",
+        );
+      } catch (err: any) {
+        get().showStatusMessage(
+          "error",
+          `Failed to enable: ${err?.toString()}`,
+        );
+      }
+    }
+  },
+
+  disableMorningHelper: async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("disable_morning_helper");
+        get().showStatusMessage("info", "Morning notifications disabled.");
+      } catch (err: any) {
+        get().showStatusMessage(
+          "error",
+          `Failed to disable: ${err?.toString()}`,
+        );
+      }
+    }
   },
 
   showStatusMessage: (type: StatusMessageType, text: string) => {

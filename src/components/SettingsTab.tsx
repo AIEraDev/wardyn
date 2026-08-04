@@ -445,9 +445,20 @@ export const SettingsTab: React.FC = () => {
     cancelOllamaModelInstall,
     checkGmailStatus,
     showStatusMessage,
+    getMorningHelperStatus,
+    enableMorningHelper,
+    disableMorningHelper,
   } = useQueueStore();
 
   const t = useTranslation();
+
+  // Morning helper toggle state
+  const [morningEnabled, setMorningEnabled] = useState<boolean | null>(null);
+  const [morningWorking, setMorningWorking] = useState(false);
+
+  useEffect(() => {
+    getMorningHelperStatus().then(setMorningEnabled);
+  }, []);
 
   const [vaultInput, setVaultInput] = useState(vaultPath || "");
   const [vaultSaved, setVaultSaved] = useState(false);
@@ -500,7 +511,8 @@ export const SettingsTab: React.FC = () => {
   }, []);
 
   const handleDisconnectLinkedIn = async () => {
-    if (!confirm("Disconnect LinkedIn? This will revoke your access token.")) return;
+    if (!confirm("Disconnect LinkedIn? This will revoke your access token."))
+      return;
     setDisconnectingLinkedIn(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -544,8 +556,10 @@ export const SettingsTab: React.FC = () => {
     if (!url.trim()) return "";
     try {
       const parsed = new URL(url.trim());
-      if (!parsed.protocol.startsWith("http")) return "URL must start with https:// or http://";
-      if (!parsed.hostname.includes(".")) return "URL must have a valid domain (e.g. example.com)";
+      if (!parsed.protocol.startsWith("http"))
+        return "URL must start with https:// or http://";
+      if (!parsed.hostname.includes("."))
+        return "URL must have a valid domain (e.g. example.com)";
       return "";
     } catch {
       return "Invalid URL — use format: https://example.com/feed.xml";
@@ -1146,6 +1160,64 @@ export const SettingsTab: React.FC = () => {
         </div>
       </div>
 
+      {/* Morning Notifications (LaunchAgent) */}
+      <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-[#181E27] text-[#E8A23D] border border-[#242B35]">
+              <IconBell size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#F0F4F8]">
+                Morning Notifications
+              </p>
+              <p className="text-xs text-[#9AA4B2]">
+                Daily 8 AM brief — quote, learning topic &amp; pending
+                reminders. Fires even when Wardyn is closed.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={morningWorking || morningEnabled === null}
+            onClick={async () => {
+              setMorningWorking(true);
+              if (morningEnabled) {
+                await disableMorningHelper();
+                setMorningEnabled(false);
+              } else {
+                await enableMorningHelper();
+                setMorningEnabled(true);
+              }
+              setMorningWorking(false);
+            }}
+            className={`font-mono text-xs px-3 py-1 rounded-md font-medium transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 ${
+              morningEnabled
+                ? "bg-[rgba(52,211,153,0.15)] text-[#34D399] border border-[rgba(52,211,153,0.3)]"
+                : "bg-[#181E27] text-[#7A8492] border border-[#242B35]"
+            }`}
+          >
+            {morningWorking ? (
+              <>
+                <IconLoader2 size={12} className="animate-spin" /> Working…
+              </>
+            ) : morningEnabled === null ? (
+              "Checking…"
+            ) : morningEnabled ? (
+              "Enabled"
+            ) : (
+              "Disabled"
+            )}
+          </button>
+        </div>
+        {morningEnabled && (
+          <p className="font-mono text-[10px] text-[#4A5568]">
+            ✓ LaunchAgent installed — fires at 08:00 daily via macOS launchd.
+            Log: ~/Library/Logs/Wardyn/wardyn_morning.log
+          </p>
+        )}
+      </div>
+
       {/* GitHub Auto-Update Channel Card */}
       <div className="p-5 rounded-xl bg-[#151A21] border border-[#242B35] space-y-3">
         <div className="flex items-center justify-between">
@@ -1269,12 +1341,15 @@ export const SettingsTab: React.FC = () => {
           {/* Google */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <p className="font-mono text-[10px] text-[#7A8492] uppercase">Google OAuth App</p>
-              {credStatus.hasGoogleClientId && credStatus.hasGoogleClientSecret && (
-                <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.1)] text-[#34D399] border border-[rgba(52,211,153,0.25)]">
-                  ✓ Configured
-                </span>
-              )}
+              <p className="font-mono text-[10px] text-[#7A8492] uppercase">
+                Google OAuth App
+              </p>
+              {credStatus.hasGoogleClientId &&
+                credStatus.hasGoogleClientSecret && (
+                  <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.1)] text-[#34D399] border border-[rgba(52,211,153,0.25)]">
+                    ✓ Configured
+                  </span>
+                )}
             </div>
             <div className="text-[10px] text-[#5D6A7A] font-mono mb-1">
               Create a project → OAuth 2.0 Client ID → Desktop app type → add{" "}
@@ -1285,7 +1360,11 @@ export const SettingsTab: React.FC = () => {
               type="text"
               value={googleClientId}
               onChange={(e) => setGoogleClientId(e.target.value)}
-              placeholder={credStatus.hasGoogleClientId ? "✓ Stored — enter new value to replace" : "your-client-id.apps.googleusercontent.com"}
+              placeholder={
+                credStatus.hasGoogleClientId
+                  ? "✓ Stored — enter new value to replace"
+                  : "your-client-id.apps.googleusercontent.com"
+              }
               className={`w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border focus:outline-none focus:border-[#4A8FC2] ${credStatus.hasGoogleClientId && !googleClientId ? "border-[rgba(52,211,153,0.3)] placeholder-[#34D399]" : "border-[#242B35]"}`}
             />
             <div className="relative">
@@ -1293,7 +1372,11 @@ export const SettingsTab: React.FC = () => {
                 type={showGoogleSecret ? "text" : "password"}
                 value={googleClientSecret}
                 onChange={(e) => setGoogleClientSecret(e.target.value)}
-                placeholder={credStatus.hasGoogleClientSecret ? "✓ Stored — enter new value to replace" : "Google Client Secret"}
+                placeholder={
+                  credStatus.hasGoogleClientSecret
+                    ? "✓ Stored — enter new value to replace"
+                    : "Google Client Secret"
+                }
                 className={`w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 pr-9 rounded-lg border focus:outline-none focus:border-[#4A8FC2] ${credStatus.hasGoogleClientSecret && !googleClientSecret ? "border-[rgba(52,211,153,0.3)] placeholder-[#34D399]" : "border-[#242B35]"}`}
               />
               <button
@@ -1301,7 +1384,11 @@ export const SettingsTab: React.FC = () => {
                 onClick={() => setShowGoogleSecret((v) => !v)}
                 className="absolute right-2.5 top-2 text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
               >
-                {showGoogleSecret ? <IconEyeOff size={14} /> : <IconEye size={14} />}
+                {showGoogleSecret ? (
+                  <IconEyeOff size={14} />
+                ) : (
+                  <IconEye size={14} />
+                )}
               </button>
             </div>
           </div>
@@ -1309,7 +1396,9 @@ export const SettingsTab: React.FC = () => {
           {/* LinkedIn */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <p className="font-mono text-[10px] text-[#7A8492] uppercase">LinkedIn OAuth App</p>
+              <p className="font-mono text-[10px] text-[#7A8492] uppercase">
+                LinkedIn OAuth App
+              </p>
               <div className="flex items-center gap-2">
                 {credStatus.hasLinkedinToken && (
                   <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.1)] text-[#34D399] border border-[rgba(52,211,153,0.25)]">
@@ -1330,14 +1419,20 @@ export const SettingsTab: React.FC = () => {
             </div>
             <div className="text-[10px] text-[#5D6A7A] font-mono mb-1">
               Create app → Products: Sign In with LinkedIn → add{" "}
-              <span className="text-[#4A8FC2]">http://localhost:14220/callback</span>{" "}
+              <span className="text-[#4A8FC2]">
+                http://localhost:14220/callback
+              </span>{" "}
               as redirect URI (same port as Google)
             </div>
             <input
               type="text"
               value={linkedinClientId}
               onChange={(e) => setLinkedinClientId(e.target.value)}
-              placeholder={credStatus.hasLinkedinClientId ? "✓ Stored — enter new value to replace" : "LinkedIn Client ID"}
+              placeholder={
+                credStatus.hasLinkedinClientId
+                  ? "✓ Stored — enter new value to replace"
+                  : "LinkedIn Client ID"
+              }
               className={`w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border focus:outline-none focus:border-[#4A8FC2] ${credStatus.hasLinkedinClientId && !linkedinClientId ? "border-[rgba(52,211,153,0.3)] placeholder-[#34D399]" : "border-[#242B35]"}`}
             />
             <div className="relative">
@@ -1345,7 +1440,11 @@ export const SettingsTab: React.FC = () => {
                 type={showLinkedinSecret ? "text" : "password"}
                 value={linkedinClientSecret}
                 onChange={(e) => setLinkedinClientSecret(e.target.value)}
-                placeholder={credStatus.hasLinkedinClientSecret ? "✓ Stored — enter new value to replace" : "LinkedIn Client Secret"}
+                placeholder={
+                  credStatus.hasLinkedinClientSecret
+                    ? "✓ Stored — enter new value to replace"
+                    : "LinkedIn Client Secret"
+                }
                 className={`w-full bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 pr-9 rounded-lg border focus:outline-none focus:border-[#4A8FC2] ${credStatus.hasLinkedinClientSecret && !linkedinClientSecret ? "border-[rgba(52,211,153,0.3)] placeholder-[#34D399]" : "border-[#242B35]"}`}
               />
               <button
@@ -1353,7 +1452,11 @@ export const SettingsTab: React.FC = () => {
                 onClick={() => setShowLinkedinSecret((v) => !v)}
                 className="absolute right-2.5 top-2 text-[#7A8492] hover:text-[#F0F4F8] cursor-pointer"
               >
-                {showLinkedinSecret ? <IconEyeOff size={14} /> : <IconEye size={14} />}
+                {showLinkedinSecret ? (
+                  <IconEyeOff size={14} />
+                ) : (
+                  <IconEye size={14} />
+                )}
               </button>
             </div>
           </div>
@@ -1449,7 +1552,10 @@ export const SettingsTab: React.FC = () => {
           onSubmit={async (e) => {
             e.preventDefault();
             const urlErr = validateFeedUrl(newFeedUrl);
-            if (urlErr) { setFeedUrlError(urlErr); return; }
+            if (urlErr) {
+              setFeedUrlError(urlErr);
+              return;
+            }
             if (!newFeedTitle.trim() || !newFeedUrl.trim()) return;
             setFeedUrlError("");
             setAddingFeed(true);
@@ -1475,17 +1581,22 @@ export const SettingsTab: React.FC = () => {
             value={newFeedUrl}
             onChange={(e) => {
               setNewFeedUrl(e.target.value);
-              if (feedUrlError) setFeedUrlError(validateFeedUrl(e.target.value));
+              if (feedUrlError)
+                setFeedUrlError(validateFeedUrl(e.target.value));
             }}
             onBlur={(e) => setFeedUrlError(validateFeedUrl(e.target.value))}
             placeholder="Feed URL (https://paulgraham.com/rss.html)"
             className={`flex-1 bg-[#181E27] text-xs text-[#F0F4F8] font-mono px-3 py-2 rounded-lg border focus:outline-none transition-colors ${
-              feedUrlError ? "border-red-500/60 focus:border-red-500" : "border-[#242B35] focus:border-[#4A8FC2]"
+              feedUrlError
+                ? "border-red-500/60 focus:border-red-500"
+                : "border-[#242B35] focus:border-[#4A8FC2]"
             }`}
             required
           />
           {feedUrlError && (
-            <p className="absolute top-full left-0 mt-1 text-[10px] text-red-400 font-mono">{feedUrlError}</p>
+            <p className="absolute top-full left-0 mt-1 text-[10px] text-red-400 font-mono">
+              {feedUrlError}
+            </p>
           )}
           <button
             type="submit"

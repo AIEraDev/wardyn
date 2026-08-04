@@ -13,6 +13,7 @@ import {
   IconRefresh,
   IconClock,
   IconBug,
+  IconUnlink,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 
@@ -37,6 +38,7 @@ export const ChannelsTab: React.FC = () => {
     lastGmailSync,
     syncGmail,
     diagnoseGmailCredentials,
+    showStatusMessage,
   } = useQueueStore();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -52,6 +54,11 @@ export const ChannelsTab: React.FC = () => {
   // Credential diagnostic state
   const [diagRunning, setDiagRunning] = useState(false);
   const [diagResults, setDiagResults] = useState<string[] | null>(null);
+
+  // LinkedIn disconnect state
+  const [disconnectingLinkedIn, setDisconnectingLinkedIn] = useState(false);
+  const [showLinkedInDisconnectConfirm, setShowLinkedInDisconnectConfirm] =
+    useState(false);
 
   useEffect(() => {
     const checkCreds = async () => {
@@ -82,6 +89,28 @@ export const ChannelsTab: React.FC = () => {
     // Always refresh Gmail connection state on mount
     checkGmailStatus();
   }, [checkGmailStatus]);
+
+  const handleDisconnectLinkedIn = async () => {
+    setShowLinkedInDisconnectConfirm(false);
+    setDisconnectingLinkedIn(true);
+    try {
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("disconnect_linkedin_command");
+      }
+      // Update both channel status and clear account label
+      disconnectChannel("linkedin");
+      showStatusMessage("success", "LinkedIn disconnected and token revoked.");
+    } catch (err: any) {
+      showStatusMessage(
+        "error",
+        "Failed to disconnect LinkedIn: " +
+          (err?.toString() ?? "unknown error"),
+      );
+    } finally {
+      setDisconnectingLinkedIn(false);
+    }
+  };
 
   const handleConnect = async (channelId: string) => {
     setErrors((e) => ({ ...e, [channelId]: "" }));
@@ -531,10 +560,20 @@ export const ChannelsTab: React.FC = () => {
                       </span>
                       <button
                         type="button"
-                        onClick={() => disconnectChannel("linkedin")}
-                        className="font-mono text-[11px] text-[#E8A23D] hover:underline cursor-pointer"
+                        onClick={() => setShowLinkedInDisconnectConfirm(true)}
+                        disabled={disconnectingLinkedIn}
+                        className="font-mono text-[11px] text-[#E8A23D] hover:text-[#EF4444] flex items-center gap-1 cursor-pointer disabled:opacity-50 bg-transparent border-0 p-0 transition-colors"
                       >
-                        Disconnect
+                        {disconnectingLinkedIn ? (
+                          <>
+                            <IconLoader2 size={12} className="animate-spin" />{" "}
+                            Revoking…
+                          </>
+                        ) : (
+                          <>
+                            <IconUnlink size={12} /> Disconnect
+                          </>
+                        )}
                       </button>
                     </div>
                   ) : (
@@ -561,6 +600,47 @@ export const ChannelsTab: React.FC = () => {
           );
         })}
       </div>
+      {/* LinkedIn disconnect confirmation modal */}
+      {showLinkedInDisconnectConfirm && (
+        <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-[#0F1520] rounded-2xl border border-[#242B35] shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] flex items-center justify-center shrink-0">
+                <IconUnlink size={18} className="text-[#EF4444]" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#F0F4F8]">
+                  Disconnect LinkedIn
+                </p>
+                <p className="text-[11px] text-[#7A8492] mt-0.5">
+                  This action is reversible — you can reconnect at any time.
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-[#9AA4B2] leading-relaxed">
+              Your LinkedIn access token will be revoked and removed from local
+              storage. Your OAuth Client ID and Secret will remain saved for
+              future reconnection.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowLinkedInDisconnectConfirm(false)}
+                className="flex-1 px-4 py-2 rounded-xl bg-[#181E27] border border-[#242B35] text-[#9AA4B2] text-xs font-medium cursor-pointer hover:bg-[#1E2530] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDisconnectLinkedIn}
+                className="flex-1 px-4 py-2 rounded-xl bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.35)] text-[#EF4444] text-xs font-semibold cursor-pointer hover:bg-[rgba(239,68,68,0.25)] transition-colors flex items-center justify-center gap-1.5"
+              >
+                <IconUnlink size={13} /> Yes, Disconnect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

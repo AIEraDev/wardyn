@@ -21,6 +21,8 @@ import {
   IconDatabase,
   IconAlertTriangle,
   IconShield,
+  IconUnlink,
+  IconX,
 } from "@tabler/icons-react";
 import { OllamaSetupModal } from "./OllamaSetupModal";
 
@@ -471,37 +473,45 @@ export const SettingsTab: React.FC = () => {
   });
 
   const [disconnectingLinkedIn, setDisconnectingLinkedIn] = useState(false);
+  const [showLinkedInDisconnectModal, setShowLinkedInDisconnectModal] =
+    useState(false);
+  const [clearingCreds, setClearingCreds] = useState<
+    "google" | "linkedin" | null
+  >(null);
+  const [showClearCredsConfirm, setShowClearCredsConfirm] = useState<
+    "google" | "linkedin" | null
+  >(null);
+
+  const refreshCredStatus = async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const status = await invoke<{
+          has_google_client_id: boolean;
+          has_google_client_secret: boolean;
+          has_linkedin_client_id: boolean;
+          has_linkedin_client_secret: boolean;
+          has_linkedin_token: boolean;
+        }>("get_oauth_credentials_command");
+        setCredStatus({
+          hasGoogleClientId: status.has_google_client_id,
+          hasGoogleClientSecret: status.has_google_client_secret,
+          hasLinkedinClientId: status.has_linkedin_client_id,
+          hasLinkedinClientSecret: status.has_linkedin_client_secret,
+          hasLinkedinToken: status.has_linkedin_token,
+        });
+      } catch (e) {
+        console.warn("Failed to load OAuth credential status:", e);
+      }
+    }
+  };
 
   useEffect(() => {
-    const loadOAuthCreds = async () => {
-      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-        try {
-          const { invoke } = await import("@tauri-apps/api/core");
-          const status = await invoke<{
-            has_google_client_id: boolean;
-            has_google_client_secret: boolean;
-            has_linkedin_client_id: boolean;
-            has_linkedin_client_secret: boolean;
-            has_linkedin_token: boolean;
-          }>("get_oauth_credentials_command");
-          setCredStatus({
-            hasGoogleClientId: status.has_google_client_id,
-            hasGoogleClientSecret: status.has_google_client_secret,
-            hasLinkedinClientId: status.has_linkedin_client_id,
-            hasLinkedinClientSecret: status.has_linkedin_client_secret,
-            hasLinkedinToken: status.has_linkedin_token,
-          });
-        } catch (e) {
-          console.warn("Failed to load OAuth credential status:", e);
-        }
-      }
-    };
-    loadOAuthCreds();
+    refreshCredStatus();
   }, []);
 
   const handleDisconnectLinkedIn = async () => {
-    if (!confirm("Disconnect LinkedIn? This will revoke your access token."))
-      return;
+    setShowLinkedInDisconnectModal(false);
     setDisconnectingLinkedIn(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -512,6 +522,26 @@ export const SettingsTab: React.FC = () => {
       showStatusMessage("error", "Failed to disconnect LinkedIn.");
     } finally {
       setDisconnectingLinkedIn(false);
+    }
+  };
+
+  const handleClearOAuthCredentials = async (
+    service: "google" | "linkedin",
+  ) => {
+    setShowClearCredsConfirm(null);
+    setClearingCreds(service);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("clear_oauth_credentials_command", { service });
+      await refreshCredStatus();
+      showStatusMessage(
+        "success",
+        `${service === "google" ? "Google" : "LinkedIn"} OAuth credentials removed.`,
+      );
+    } catch (e) {
+      showStatusMessage("error", "Failed to clear credentials.");
+    } finally {
+      setClearingCreds(null);
     }
   };
 
@@ -528,6 +558,13 @@ export const SettingsTab: React.FC = () => {
           linkedinClientId: linkedinClientId.trim(),
           linkedinClientSecret: linkedinClientSecret.trim(),
         });
+        // Clear inputs after save so they don't linger as plaintext
+        setGoogleClientId("");
+        setGoogleClientSecret("");
+        setLinkedinClientId("");
+        setLinkedinClientSecret("");
+        // Refresh presence flags so badges update immediately
+        await refreshCredStatus();
         setOauthSaved(true);
         setTimeout(() => setOauthSaved(false), 2500);
       } catch (e) {
@@ -1275,12 +1312,31 @@ export const SettingsTab: React.FC = () => {
               <p className="font-mono text-[10px] text-[#7A8492] uppercase">
                 Google OAuth App
               </p>
-              {credStatus.hasGoogleClientId &&
-                credStatus.hasGoogleClientSecret && (
-                  <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.1)] text-[#34D399] border border-[rgba(52,211,153,0.25)]">
-                    ✓ Configured
-                  </span>
+              <div className="flex items-center gap-2">
+                {credStatus.hasGoogleClientId &&
+                  credStatus.hasGoogleClientSecret && (
+                    <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[rgba(52,211,153,0.1)] text-[#34D399] border border-[rgba(52,211,153,0.25)]">
+                      ✓ Configured
+                    </span>
+                  )}
+                {(credStatus.hasGoogleClientId ||
+                  credStatus.hasGoogleClientSecret) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowClearCredsConfirm("google")}
+                    disabled={clearingCreds === "google"}
+                    title="Delete stored Google credentials"
+                    className="font-mono text-[9px] px-2 py-0.5 rounded bg-[rgba(239,68,68,0.08)] text-[#EF4444] border border-[rgba(239,68,68,0.2)] hover:bg-[rgba(239,68,68,0.18)] transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {clearingCreds === "google" ? (
+                      <IconLoader2 size={9} className="animate-spin" />
+                    ) : (
+                      <IconTrash size={9} />
+                    )}
+                    Delete Credentials
+                  </button>
                 )}
+              </div>
             </div>
             <div className="text-[10px] text-[#5D6A7A] font-mono mb-1">
               Create a project → OAuth 2.0 Client ID → Desktop app type → add{" "}
@@ -1339,11 +1395,33 @@ export const SettingsTab: React.FC = () => {
                 {credStatus.hasLinkedinToken && (
                   <button
                     type="button"
-                    onClick={handleDisconnectLinkedIn}
+                    onClick={() => setShowLinkedInDisconnectModal(true)}
                     disabled={disconnectingLinkedIn}
-                    className="font-mono text-[9px] px-2 py-0.5 rounded bg-[rgba(239,68,68,0.1)] text-[#EF4444] border border-[rgba(239,68,68,0.25)] hover:bg-[rgba(239,68,68,0.2)] transition-colors cursor-pointer disabled:opacity-50"
+                    className="font-mono text-[9px] px-2 py-0.5 rounded bg-[rgba(239,68,68,0.08)] text-[#EF4444] border border-[rgba(239,68,68,0.2)] hover:bg-[rgba(239,68,68,0.18)] transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
                   >
+                    {disconnectingLinkedIn ? (
+                      <IconLoader2 size={9} className="animate-spin" />
+                    ) : (
+                      <IconUnlink size={9} />
+                    )}
                     {disconnectingLinkedIn ? "Revoking…" : "Disconnect"}
+                  </button>
+                )}
+                {(credStatus.hasLinkedinClientId ||
+                  credStatus.hasLinkedinClientSecret) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowClearCredsConfirm("linkedin")}
+                    disabled={clearingCreds === "linkedin"}
+                    title="Delete stored LinkedIn credentials"
+                    className="font-mono text-[9px] px-2 py-0.5 rounded bg-[rgba(232,162,61,0.08)] text-[#E8A23D] border border-[rgba(232,162,61,0.2)] hover:bg-[rgba(232,162,61,0.18)] transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {clearingCreds === "linkedin" ? (
+                      <IconLoader2 size={9} className="animate-spin" />
+                    ) : (
+                      <IconTrash size={9} />
+                    )}
+                    Delete Credentials
                   </button>
                 )}
               </div>
@@ -1588,6 +1666,114 @@ export const SettingsTab: React.FC = () => {
 
       {/* ── Data Management ── */}
       <DataManagementSection />
+
+      {/* LinkedIn disconnect confirmation modal */}
+      {showLinkedInDisconnectModal && (
+        <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-[#0F1520] rounded-2xl border border-[#242B35] shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] flex items-center justify-center shrink-0">
+                  <IconUnlink size={18} className="text-[#EF4444]" />
+                </div>
+                <p className="text-sm font-semibold text-[#F0F4F8]">
+                  Disconnect LinkedIn
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLinkedInDisconnectModal(false)}
+                className="text-[#4A5568] hover:text-[#9AA4B2] cursor-pointer bg-transparent border-0 p-1"
+              >
+                <IconX size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-[#9AA4B2] leading-relaxed">
+              Your LinkedIn access token will be revoked via LinkedIn's API and
+              removed from local storage. Your OAuth Client ID and Secret are
+              kept — you can reconnect at any time without re-entering them.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowLinkedInDisconnectModal(false)}
+                className="flex-1 px-4 py-2 rounded-xl bg-[#181E27] border border-[#242B35] text-[#9AA4B2] text-xs font-medium cursor-pointer hover:bg-[#1E2530] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDisconnectLinkedIn}
+                className="flex-1 px-4 py-2 rounded-xl bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.35)] text-[#EF4444] text-xs font-semibold cursor-pointer hover:bg-[rgba(239,68,68,0.25)] transition-colors flex items-center justify-center gap-1.5"
+              >
+                <IconUnlink size={13} /> Revoke & Disconnect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete OAuth credentials confirmation modal */}
+      {showClearCredsConfirm && (
+        <div className="fixed inset-0 z-[400] bg-black/70 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-[#0F1520] rounded-2xl border border-[#242B35] shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.3)] flex items-center justify-center shrink-0">
+                  <IconTrash size={18} className="text-[#EF4444]" />
+                </div>
+                <p className="text-sm font-semibold text-[#F0F4F8]">
+                  Delete{" "}
+                  {showClearCredsConfirm === "google" ? "Google" : "LinkedIn"}{" "}
+                  Credentials
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowClearCredsConfirm(null)}
+                className="text-[#4A5568] hover:text-[#9AA4B2] cursor-pointer bg-transparent border-0 p-1"
+              >
+                <IconX size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-[#9AA4B2] leading-relaxed">
+              {showClearCredsConfirm === "google"
+                ? "This will delete your stored Google Client ID and Secret. Gmail will stop syncing until you re-enter new credentials."
+                : "This will delete your stored LinkedIn Client ID and Secret. You'll need to re-enter them to reconnect LinkedIn in the future."}
+            </p>
+            {showClearCredsConfirm === "linkedin" &&
+              credStatus.hasLinkedinToken && (
+                <div className="flex items-start gap-2 bg-[rgba(232,162,61,0.07)] border border-[rgba(232,162,61,0.2)] rounded-lg px-3 py-2">
+                  <IconAlertTriangle
+                    size={12}
+                    className="text-[#E8A23D] mt-0.5 shrink-0"
+                  />
+                  <p className="text-[11px] text-[#E8A23D] leading-snug">
+                    Your active LinkedIn session will also be disconnected.
+                  </p>
+                </div>
+              )}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowClearCredsConfirm(null)}
+                className="flex-1 px-4 py-2 rounded-xl bg-[#181E27] border border-[#242B35] text-[#9AA4B2] text-xs font-medium cursor-pointer hover:bg-[#1E2530] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleClearOAuthCredentials(showClearCredsConfirm)
+                }
+                className="flex-1 px-4 py-2 rounded-xl bg-[rgba(239,68,68,0.15)] border border-[rgba(239,68,68,0.35)] text-[#EF4444] text-xs font-semibold cursor-pointer hover:bg-[rgba(239,68,68,0.25)] transition-colors flex items-center justify-center gap-1.5"
+              >
+                <IconTrash size={13} /> Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ollama Setup Modal */}
       {setupTarget && (

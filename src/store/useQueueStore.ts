@@ -1388,6 +1388,16 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
                 : c,
             ),
           }));
+        } else {
+          // No token in DB — ensure the channel shows disconnected
+          set({ linkedInAccount: null });
+          set((state) => ({
+            channels: state.channels.map((c) =>
+              c.id === "linkedin"
+                ? { ...c, status: "disconnected", accountLabel: undefined }
+                : c,
+            ),
+          }));
         }
       } catch {
         // LinkedIn not connected — non-fatal

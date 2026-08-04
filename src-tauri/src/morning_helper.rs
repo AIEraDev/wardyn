@@ -1,78 +1,72 @@
 /// LaunchAgent installer for the Wardyn morning helper.
 ///
-/// Strategy A (externalBin): wardyn_morning is bundled inside
-/// Wardyn.app/Contents/MacOS/ alongside the main executable.
-/// Tauri handles the universal lipo merge via externalBin.
-///
-/// Path resolution: current_exe().parent() / wardyn_morning
+/// macOS-only. All public functions compile to no-ops on Windows and Linux
+/// so the codebase builds cleanly on all platforms.
 
-use std::path::PathBuf;
+// ── No-op stubs for non-macOS platforms ──────────────────────────────────────
 
-const PLIST_LABEL: &str = "com.wardyn.morning";
-const HOUR: u32 = 8;
-const MINUTE: u32 = 0;
+#[cfg(not(target_os = "macos"))]
+pub fn install_or_update() -> Result<bool, String> { Ok(false) }
+#[cfg(not(target_os = "macos"))]
+pub fn uninstall() -> Result<(), String> { Ok(()) }
+#[cfg(not(target_os = "macos"))]
+pub fn is_installed() -> bool { false }
 
-// ─── Paths ────────────────────────────────────────────────────────────────────
+// ── macOS implementation ──────────────────────────────────────────────────────
 
-fn launch_agents_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join("Library").join("LaunchAgents")
-}
+#[cfg(target_os = "macos")]
+mod macos_impl {
+    use std::path::PathBuf;
 
-fn plist_path() -> PathBuf {
-    launch_agents_dir().join(format!("{}.plist", PLIST_LABEL))
-}
+    const PLIST_LABEL: &str = "com.wardyn.morning";
+    const HOUR: u32 = 8;
+    const MINUTE: u32 = 0;
 
-/// Resolve the helper binary path at runtime.
-/// Checks three locations in priority order:
-///   1. Wardyn.app/Contents/MacOS/wardyn_morning  (externalBin / same dir)
-///   2. Wardyn.app/Contents/Resources/wardyn_morning (resources bundle)
-///   3. <exe_dir>/wardyn_morning (dev build — target/debug/)
-fn resolve_helper_path() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let macos_dir = exe.parent()?;
+    fn launch_agents_dir() -> PathBuf {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(home).join("Library").join("LaunchAgents")
+    }
 
-    // 1. Same directory as main executable (externalBin or dev)
-    let candidate = macos_dir.join("wardyn_morning");
-    if candidate.exists() { return Some(candidate); }
+    fn plist_path() -> PathBuf {
+        launch_agents_dir().join(format!("{}.plist", PLIST_LABEL))
+    }
 
-    // 2. ../Resources/ (Tauri resources bundle inside .app)
-    let resources_dir = macos_dir.parent()?.join("Resources");
-    let candidate2 = resources_dir.join("wardyn_morning");
-    if candidate2.exists() { return Some(candidate2); }
+    fn resolve_helper_path() -> Option<PathBuf> {
+        let exe = std::env::current_exe().ok()?;
+        let macos_dir = exe.parent()?;
+        // 1. Same dir as main exe (dev build or externalBin)
+        let p = macos_dir.join("wardyn_morning");
+        if p.exists() { return Some(p); }
+        // 2. ../Resources/ (Tauri resources bundle)
+        let p2 = macos_dir.parent()?.join("Resources").join("wardyn_morning");
+        if p2.exists() { return Some(p2); }
+        None
+    }
 
-    None
-}
+    fn db_path() -> PathBuf {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("com.wardyn.desktop")
+            .join("wardyn.db")
+    }
 
-/// DB path — same location the main app uses.
-fn db_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home)
-        .join("Library")
-        .join("Application Support")
-        .join("com.wardyn.desktop")
-        .join("wardyn.db")
-}
-
-// ─── Plist ────────────────────────────────────────────────────────────────────
-
-fn plist_content(binary: &str, db: &str, log_dir: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+    fn plist_content(binary: &str, db: &str, log_dir: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>{label}</string>
-
     <key>ProgramArguments</key>
     <array>
         <string>{binary}</string>
         <string>--db-path</string>
         <string>{db}</string>
     </array>
-
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -80,120 +74,115 @@ fn plist_content(binary: &str, db: &str, log_dir: &str) -> String {
         <key>Minute</key>
         <integer>{minute}</integer>
     </dict>
-
     <key>RunAtLoad</key>
     <false/>
-
     <key>StandardOutPath</key>
     <string>{log_dir}/wardyn_morning.log</string>
     <key>StandardErrorPath</key>
     <string>{log_dir}/wardyn_morning.log</string>
-
     <key>KeepAlive</key>
     <false/>
-
     <key>ThrottleInterval</key>
     <integer>3600</integer>
 </dict>
 </plist>
 "#,
-        label   = PLIST_LABEL,
-        binary  = binary,
-        db      = db,
-        hour    = HOUR,
-        minute  = MINUTE,
-        log_dir = log_dir,
-    )
-}
+            label   = PLIST_LABEL,
+            binary  = binary,
+            db      = db,
+            hour    = HOUR,
+            minute  = MINUTE,
+            log_dir = log_dir,
+        )
+    }
 
-// ─── launchctl bootstrap / bootout ───────────────────────────────────────────
+    fn gui_target() -> String {
+        // getuid() is Unix-only — this mod is only compiled on macOS
+        let uid = unsafe { libc::getuid() };
+        format!("gui/{}", uid)
+    }
 
-fn gui_target() -> String {
-    let uid = unsafe { libc::getuid() };
-    format!("gui/{}", uid)
-}
+    fn launchctl_bootstrap(plist: &str) -> bool {
+        let gui = gui_target();
+        std::process::Command::new("launchctl")
+            .args(["bootstrap", &gui, plist])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
 
-fn launchctl_load(plist: &str) -> bool {
-    // Modern launchctl (macOS 10.11+): bootstrap gui/$UID
-    let gui = gui_target();
-    let status = std::process::Command::new("launchctl")
-        .args(["bootstrap", &gui, plist])
-        .status();
-    matches!(status, Ok(s) if s.success())
-}
+    fn launchctl_bootout(plist: &str) {
+        let gui = gui_target();
+        std::process::Command::new("launchctl")
+            .args(["bootout", &gui, plist])
+            .output()
+            .ok();
+    }
 
-fn launchctl_unload(plist: &str) {
-    let gui = gui_target();
-    std::process::Command::new("launchctl")
-        .args(["bootout", &gui, plist])
-        .output()
-        .ok();
-}
+    pub fn install_or_update() -> Result<bool, String> {
+        let helper = match resolve_helper_path() {
+            Some(p) => p,
+            None => {
+                eprintln!(
+                    "[MorningHelper] wardyn_morning binary not found. \
+                     Run scripts/setup-morning-helper.sh to build it."
+                );
+                return Ok(false);
+            }
+        };
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+        let binary_str = helper.to_str()
+            .ok_or("Helper path is not valid UTF-8")?
+            .to_string();
+        let db_str = db_path().to_str()
+            .ok_or("DB path is not valid UTF-8")?
+            .to_string();
 
-/// Install or update the LaunchAgent. Idempotent — safe to call on every launch.
-pub fn install_or_update() -> Result<bool, String> {
-    let helper = match resolve_helper_path() {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "[MorningHelper] wardyn_morning binary not found next to main executable. \
-                 Run `cargo build --bin wardyn_morning` to build it."
-            );
-            return Ok(false);
+        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let log_dir = std::path::PathBuf::from(&home)
+            .join("Library").join("Logs").join("Wardyn");
+        std::fs::create_dir_all(&log_dir).ok();
+        let log_dir_str = log_dir.to_str().unwrap_or("/tmp").to_string();
+
+        let new_plist = plist_content(&binary_str, &db_str, &log_dir_str);
+        let plist = plist_path();
+        let existing = std::fs::read_to_string(&plist).unwrap_or_default();
+        if existing == new_plist { return Ok(false); }
+
+        std::fs::create_dir_all(launch_agents_dir())
+            .map_err(|e| format!("Cannot create LaunchAgents dir: {}", e))?;
+        std::fs::write(&plist, &new_plist)
+            .map_err(|e| format!("Cannot write plist: {}", e))?;
+
+        let plist_str = plist.to_str().unwrap_or("");
+        launchctl_bootout(plist_str);
+        if launchctl_bootstrap(plist_str) {
+            eprintln!("[MorningHelper] LaunchAgent installed — fires at {:02}:{:02} AM daily", HOUR, MINUTE);
+            Ok(true)
+        } else {
+            Err("launchctl bootstrap failed".into())
         }
-    };
-
-    let binary_str = helper.to_str()
-        .ok_or("Helper path is not valid UTF-8")?
-        .to_string();
-
-    let db_str = db_path().to_str()
-        .ok_or("DB path is not valid UTF-8")?
-        .to_string();
-
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let log_dir = PathBuf::from(&home).join("Library").join("Logs").join("Wardyn");
-    std::fs::create_dir_all(&log_dir).ok();
-    let log_dir_str = log_dir.to_str().unwrap_or("/tmp").to_string();
-
-    let new_plist = plist_content(&binary_str, &db_str, &log_dir_str);
-    let plist = plist_path();
-
-    let existing = std::fs::read_to_string(&plist).unwrap_or_default();
-    if existing == new_plist {
-        return Ok(false); // already current
     }
 
-    std::fs::create_dir_all(launch_agents_dir())
-        .map_err(|e| format!("Cannot create LaunchAgents dir: {}", e))?;
-    std::fs::write(&plist, &new_plist)
-        .map_err(|e| format!("Cannot write plist: {}", e))?;
+    pub fn uninstall() -> Result<(), String> {
+        let plist = plist_path();
+        if plist.exists() {
+            launchctl_bootout(plist.to_str().unwrap_or(""));
+            std::fs::remove_file(&plist)
+                .map_err(|e| format!("Cannot remove plist: {}", e))?;
+        }
+        Ok(())
+    }
 
-    let plist_str = plist.to_str().unwrap_or("");
-    launchctl_unload(plist_str); // remove old registration, ignore error
-    if launchctl_load(plist_str) {
-        eprintln!("[MorningHelper] LaunchAgent installed — fires at {:02}:{:02} AM daily", HOUR, MINUTE);
-        Ok(true)
-    } else {
-        Err("launchctl bootstrap failed — check Console.app for details".into())
+    pub fn is_installed() -> bool {
+        plist_path().exists()
     }
 }
 
-/// Remove the LaunchAgent.
-pub fn uninstall() -> Result<(), String> {
-    let plist = plist_path();
-    if plist.exists() {
-        launchctl_unload(plist.to_str().unwrap_or(""));
-        std::fs::remove_file(&plist)
-            .map_err(|e| format!("Cannot remove plist: {}", e))?;
-        eprintln!("[MorningHelper] LaunchAgent removed.");
-    }
-    Ok(())
-}
-
-/// Returns true if the LaunchAgent plist exists.
-pub fn is_installed() -> bool {
-    plist_path().exists()
-}
+// Re-export macOS functions at module level
+#[cfg(target_os = "macos")]
+pub fn install_or_update() -> Result<bool, String> { macos_impl::install_or_update() }
+#[cfg(target_os = "macos")]
+pub fn uninstall() -> Result<(), String> { macos_impl::uninstall() }
+#[cfg(target_os = "macos")]
+pub fn is_installed() -> bool { macos_impl::is_installed() }

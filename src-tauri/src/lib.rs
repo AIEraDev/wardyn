@@ -213,11 +213,7 @@ fn disable_morning_helper() -> Result<(), String> {
 /// Re-enable the morning LaunchAgent after it was disabled.
 #[tauri::command]
 fn enable_morning_helper() -> Result<(), String> {
-    let exe = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .to_string_lossy()
-        .to_string();
-    morning_helper::install_or_update(&exe).map(|_| ())
+    morning_helper::install_or_update().map(|_| ())
 }
 
 #[tauri::command]
@@ -1765,17 +1761,10 @@ pub fn run() {
             tray::setup_tray(app)?;
 
             // ── Install / update morning LaunchAgent ─────────────────────────
-            // Runs in a background thread so it never blocks app startup.
-            // Safe to call on every launch — fully idempotent.
             {
-                let exe = std::env::current_exe()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
                 std::thread::spawn(move || {
-                    // Delay slightly so the main window has time to appear first
                     std::thread::sleep(std::time::Duration::from_secs(3));
-                    if let Err(e) = morning_helper::install_or_update(&exe) {
+                    if let Err(e) = morning_helper::install_or_update() {
                         eprintln!("[MorningHelper] Install error: {}", e);
                     }
                 });

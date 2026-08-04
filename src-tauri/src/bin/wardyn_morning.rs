@@ -18,8 +18,15 @@ use std::process::Command;
 
 // ─── DB Path Resolution ───────────────────────────────────────────────────────
 
-fn db_path() -> PathBuf {
-    // macOS: ~/Library/Application Support/com.wardyn.desktop/wardyn.db
+fn db_path_from_args() -> PathBuf {
+    // Accept --db-path <path> argument from the LaunchAgent plist
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(pos) = args.iter().position(|a| a == "--db-path") {
+        if let Some(p) = args.get(pos + 1) {
+            return PathBuf::from(p);
+        }
+    }
+    // Fallback: default macOS location
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(home)
         .join("Library")
@@ -353,7 +360,7 @@ fn send_morning_brief(conn: &Connection, today: &str) {
 // ─── Entry Point ─────────────────────────────────────────────────────────────
 
 fn main() {
-    let path = db_path();
+    let path = db_path_from_args();
     if !path.exists() {
         eprintln!("[MorningHelper] DB not found at {:?} — app not set up yet", path);
         std::process::exit(0);
@@ -367,8 +374,10 @@ fn main() {
         }
     };
 
-    // WAL mode for safe concurrent access with the main app
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;").ok();
+    // WAL + busy_timeout so we don't crash if the main app is writing at 8 AM
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;"
+    ).ok();
 
     let today = today_str();
 

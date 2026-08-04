@@ -36,5 +36,6 @@ dotenvy = "0.15"
 sha2 = "0.10"
 lazy_static = "1.5"
 futures-util = "0.3"
+libc = "0.2"
 
 

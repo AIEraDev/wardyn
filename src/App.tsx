@@ -99,6 +99,9 @@ export default function App() {
   const fetchCalendarIntelligence = useQueueStore(
     (state) => state.fetchCalendarIntelligence,
   );
+  const syncMemoriesCalendar = useQueueStore(
+    (state) => state.syncMemoriesCalendar,
+  );
   const syncLinkedInTimeline = useQueueStore(
     (state) => state.syncLinkedInTimeline,
   );
@@ -135,8 +138,11 @@ export default function App() {
   const fetchSocialPosts = useQueueStore((state) => state.fetchSocialPosts);
 
   const [modelAlertDismissed, setModelAlertDismissed] = useState(() => {
-    try { return localStorage.getItem("wardyn.modelAlertDismissed") === "true"; }
-    catch { return false; }
+    try {
+      return localStorage.getItem("wardyn.modelAlertDismissed") === "true";
+    } catch {
+      return false;
+    }
   });
 
   // Silent background update check on startup (non-blocking, notifies user if available)
@@ -173,6 +179,8 @@ export default function App() {
       await fetchCalendarEvents();
       // Load smart intelligence decisions (fast, rule-based, no network)
       fetchCalendarIntelligence().catch(console.error);
+      // Scan memories, projects, tasks for calendar-worthy items (local, no token)
+      syncMemoriesCalendar().catch(console.error);
       await syncLinkedInTimeline();
 
       // AI model presence check & background download listener (must run early)
@@ -219,10 +227,12 @@ export default function App() {
     initBootSentinel();
 
     // Re-sync calendar every 15 minutes while app is open so new invites appear
-    const calendarPollId = setInterval(() => {
-      useQueueStore.getState().syncCalendarDeadlines().catch(console.error);
-    }, 15 * 60 * 1000);
-
+    const calendarPollId = setInterval(
+      () => {
+        useQueueStore.getState().syncCalendarDeadlines().catch(console.error);
+      },
+      15 * 60 * 1000,
+    );
 
     // Listen for notification click events safely
     const setupNotificationListener = async () => {
@@ -299,6 +309,8 @@ export default function App() {
         // Calendar sync piggybacks on the same interval — non-blocking
         syncCalendarDeadlines().catch(console.error);
       }
+      // Re-scan memories/projects every interval (fast, local, no token)
+      syncMemoriesCalendar().catch(console.error);
       await syncLinkedInTimeline();
     }, intervalMs);
 
@@ -324,6 +336,7 @@ export default function App() {
     syncIntervalMinutes,
     syncGmail,
     syncCalendarDeadlines,
+    syncMemoriesCalendar,
     syncLinkedInTimeline,
     checkPendingReminders,
     checkOllamaModels,
@@ -380,11 +393,15 @@ export default function App() {
           onGoToSettings={() => {
             setActiveTab("settings");
             setModelAlertDismissed(true);
-            try { localStorage.setItem("wardyn.modelAlertDismissed", "true"); } catch {}
+            try {
+              localStorage.setItem("wardyn.modelAlertDismissed", "true");
+            } catch {}
           }}
           onDismiss={() => {
             setModelAlertDismissed(true);
-            try { localStorage.setItem("wardyn.modelAlertDismissed", "true"); } catch {}
+            try {
+              localStorage.setItem("wardyn.modelAlertDismissed", "true");
+            } catch {}
           }}
         />
       )}

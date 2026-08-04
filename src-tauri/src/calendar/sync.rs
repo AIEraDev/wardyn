@@ -475,3 +475,322 @@ pub async fn sync_calendar_deadlines(
     let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
     db::get_synced_calendar_events(&conn).map_err(|e| e.to_string())
 }
+
+// ─── Memory & Project → Calendar sync ────────────────────────────────────────
+
+/// Scans the user's memories, life events, tasks, decisions, and active projects
+/// and auto-creates calendar events + reminders for anything with a future date
+/// or an ongoing daily focus target.
+///
+/// This runs independently of the Gmail sync — it doesn't need a Google OAuth
+/// token and works entirely from local DB data.
+pub fn sync_memories_and_projects(conn_mutex: &std::sync::Mutex<Connection>) -> Result<usize, String> {
+    let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+    let today = db::now_iso();
+    let today_str = &today[..10];
+    let tz = system_tz_offset();
+    let mut created = 0usize;
+
+    // ── 1. Life Events ────────────────────────────────────────────────────────
+    let life_events: Vec<(String, String, String, Option<String>)> = conn
+        .prepare(
+            "SELECT id, title, intent, event_date
+             FROM life_events
+             WHERE status = 'active'
+             ORDER BY created_at DESC LIMIT 20",
+        )
+        .and_then(|mut s| {
+            s.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        })
+        .unwrap_or_default();
+
+    for (id, title, intent, event_date) in &life_events {
+        if let Some(intent_val) = intelligence::analyse_life_event(
+            id, title, intent, event_date.as_deref()
+        ) {
+            let already = conn.query_row(
+                "SELECT COUNT(*) FROM calendar_events WHERE queue_item_id = ?1",
+                rusqlite::params![intent_val.source_id],
+                |r| r.get::<_, i64>(0),
+            ).unwrap_or(0);
+            if already > 0 { continue; }
+
+            let date_str = intent_val.event_date.as_deref()
+                .unwrap_or(today_str);
+            let start_time = format!("{}T09:00:00{}", &date_str[..10.min(date_str.len())], tz);
+            let end_time   = format!("{}T10:00:00{}", &date_str[..10.min(date_str.len())], tz);
+
+            let record = SyncedCalendarEvent {
+                id:            format!("mem_{}", intent_val.source_id),
+                queue_item_id: intent_val.source_id.clone(),
+                event_id:      format!("local_mem_{}", id),
+                summary:       intent_val.event_title.clone(),
+                event_date:    start_time.clone(),
+                end_time:      Some(end_time),
+                description:   Some(intent_val.reason.clone()),
+                location:      None,
+                is_all_day:    false,
+                source:        "email".into(), // treated as a local non-gcal event
+                created_at:    db::now_iso(),
+            };
+            db::record_calendar_event(&conn, &record).ok();
+            schedule_event_reminder(
+                &conn,
+                &record,
+                &intent_val.recurrence_rule,
+                intent_val.reminder_lead_minutes,
+            );
+            created += 1;
+        }
+    }
+
+    // ── 2. Tasks with due dates ───────────────────────────────────────────────
+    let tasks: Vec<(String, String, String, Option<String>)> = conn
+        .prepare(
+            "SELECT id, title, priority, due_date
+             FROM tasks
+             WHERE status IN ('pending','in_progress')
+               AND due_date IS NOT NULL
+               AND due_date >= ?1
+             ORDER BY due_date ASC LIMIT 30",
+        )
+        .and_then(|mut s| {
+            s.query_map(rusqlite::params![today_str], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?.unwrap_or_else(|| "medium".into()),
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        })
+        .unwrap_or_default();
+
+    for (id, title, priority, due_date) in &tasks {
+        if let Some(intent_val) = intelligence::analyse_task(
+            id, title, priority, due_date.as_deref()
+        ) {
+            let already = conn.query_row(
+                "SELECT COUNT(*) FROM calendar_events WHERE queue_item_id = ?1",
+                rusqlite::params![intent_val.source_id],
+                |r| r.get::<_, i64>(0),
+            ).unwrap_or(0);
+            if already > 0 { continue; }
+
+            let date_str = intent_val.event_date.as_deref().unwrap_or(today_str);
+            let start_time = format!("{}T09:00:00{}", &date_str[..10.min(date_str.len())], tz);
+            let end_time   = format!("{}T10:00:00{}", &date_str[..10.min(date_str.len())], tz);
+
+            let record = SyncedCalendarEvent {
+                id:            format!("mem_{}", intent_val.source_id),
+                queue_item_id: intent_val.source_id.clone(),
+                event_id:      format!("local_task_{}", id),
+                summary:       intent_val.event_title.clone(),
+                event_date:    start_time.clone(),
+                end_time:      Some(end_time),
+                description:   Some(intent_val.reason.clone()),
+                location:      None,
+                is_all_day:    false,
+                source:        "email".into(),
+                created_at:    db::now_iso(),
+            };
+            db::record_calendar_event(&conn, &record).ok();
+            schedule_event_reminder(
+                &conn,
+                &record,
+                &intent_val.recurrence_rule,
+                intent_val.reminder_lead_minutes,
+            );
+            created += 1;
+        }
+    }
+
+    // ── 3. Knowledge items with embedded dates ────────────────────────────────
+    let knowledge: Vec<(String, String, Option<String>, Option<String>)> = conn
+        .prepare(
+            "SELECT id, content, summary, tags
+             FROM knowledge_items
+             ORDER BY created_at DESC LIMIT 50",
+        )
+        .and_then(|mut s| {
+            s.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        })
+        .unwrap_or_default();
+
+    for (id, content, summary, tags_raw) in &knowledge {
+        let tags: Vec<String> = serde_json::from_str(
+            tags_raw.as_deref().unwrap_or("[]")
+        ).unwrap_or_default();
+
+        if let Some(intent_val) = intelligence::analyse_knowledge_item(
+            id, content, summary.as_deref(), &tags
+        ) {
+            let already = conn.query_row(
+                "SELECT COUNT(*) FROM calendar_events WHERE queue_item_id = ?1",
+                rusqlite::params![intent_val.source_id],
+                |r| r.get::<_, i64>(0),
+            ).unwrap_or(0);
+            if already > 0 { continue; }
+
+            let date_str = intent_val.event_date.as_deref().unwrap_or(today_str);
+            let start_time = format!("{}T09:00:00{}", &date_str[..10.min(date_str.len())], tz);
+            let end_time   = format!("{}T10:00:00{}", &date_str[..10.min(date_str.len())], tz);
+
+            let record = SyncedCalendarEvent {
+                id:            format!("mem_{}", intent_val.source_id),
+                queue_item_id: intent_val.source_id.clone(),
+                event_id:      format!("local_mem_{}", id),
+                summary:       intent_val.event_title.clone(),
+                event_date:    start_time.clone(),
+                end_time:      Some(end_time),
+                description:   Some(content.chars().take(200).collect::<String>()),
+                location:      None,
+                is_all_day:    false,
+                source:        "email".into(),
+                created_at:    db::now_iso(),
+            };
+            db::record_calendar_event(&conn, &record).ok();
+            schedule_event_reminder(
+                &conn,
+                &record,
+                &intent_val.recurrence_rule,
+                intent_val.reminder_lead_minutes,
+            );
+            created += 1;
+        }
+    }
+
+    // ── 4. Decisions with follow-up dates ─────────────────────────────────────
+    let decisions: Vec<(String, String, String)> = conn
+        .prepare(
+            "SELECT id, decision, rationale
+             FROM decisions
+             ORDER BY created_at DESC LIMIT 20",
+        )
+        .and_then(|mut s| {
+            s.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        })
+        .unwrap_or_default();
+
+    for (id, decision, rationale) in &decisions {
+        if let Some(intent_val) = intelligence::analyse_decision(id, decision, rationale) {
+            let already = conn.query_row(
+                "SELECT COUNT(*) FROM calendar_events WHERE queue_item_id = ?1",
+                rusqlite::params![intent_val.source_id],
+                |r| r.get::<_, i64>(0),
+            ).unwrap_or(0);
+            if already > 0 { continue; }
+
+            let date_str = intent_val.event_date.as_deref().unwrap_or(today_str);
+            let start_time = format!("{}T10:00:00{}", &date_str[..10.min(date_str.len())], tz);
+            let end_time   = format!("{}T11:00:00{}", &date_str[..10.min(date_str.len())], tz);
+
+            let record = SyncedCalendarEvent {
+                id:            format!("mem_{}", intent_val.source_id),
+                queue_item_id: intent_val.source_id.clone(),
+                event_id:      format!("local_dec_{}", id),
+                summary:       intent_val.event_title.clone(),
+                event_date:    start_time.clone(),
+                end_time:      Some(end_time),
+                description:   Some(format!("{} — {}", decision, rationale)),
+                location:      None,
+                is_all_day:    false,
+                source:        "email".into(),
+                created_at:    db::now_iso(),
+            };
+            db::record_calendar_event(&conn, &record).ok();
+            schedule_event_reminder(
+                &conn,
+                &record,
+                &intent_val.recurrence_rule,
+                intent_val.reminder_lead_minutes,
+            );
+            created += 1;
+        }
+    }
+
+    // ── 5. Active projects — daily focus reminders ───────────────────────────
+    let projects: Vec<(String, String, i64, i64)> = conn
+        .prepare(
+            "SELECT ap.id, ap.name, ap.daily_target_minutes,
+                    COALESCE(SUM(ptl.minutes_spent), 0) as today_mins
+             FROM active_projects ap
+             LEFT JOIN project_time_logs ptl
+               ON ptl.project_id = ap.id AND ptl.session_date = ?1
+             WHERE ap.status = 'active'
+             GROUP BY ap.id
+             ORDER BY ap.last_worked_at DESC LIMIT 10",
+        )
+        .and_then(|mut s| {
+            s.query_map(rusqlite::params![today_str], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        })
+        .unwrap_or_default();
+
+    for (id, name, daily_target, today_mins) in &projects {
+        if let Some(intent_val) = intelligence::analyse_project_daily_focus(
+            id, name, *daily_target, *today_mins
+        ) {
+            // Project reminders use source_id that changes per day — check only
+            // whether there's already a pending reminder for this project today
+            let reminder_id = format!("projrem_{}_{}", id, today_str);
+            let already = conn.query_row(
+                "SELECT COUNT(*) FROM reminders WHERE id = ?1",
+                rusqlite::params![reminder_id],
+                |r| r.get::<_, i64>(0),
+            ).unwrap_or(0);
+            if already > 0 { continue; }
+
+            // Schedule a 9 AM reminder for tomorrow morning (recurrence: weekdays)
+            let date_str = intent_val.event_date.as_deref().unwrap_or(today_str);
+            let remind_iso = format!("{}T09:00:00Z", &date_str[..10.min(date_str.len())]);
+
+            let reminder = db::Reminder {
+                id:              reminder_id,
+                item_id:         format!("proj_{}", id),
+                reminder_date:   remind_iso,
+                message:         format!("🏗️ Focus on {} today — {} min target", name, daily_target),
+                status:          "pending".into(),
+                created_at:      db::now_iso(),
+                triggered_at:    None,
+                recurrence_rule: intent_val.recurrence_rule.clone(),
+            };
+            db::create_reminder(&conn, &reminder).ok();
+            created += 1;
+        }
+    }
+
+    eprintln!("[MemorySync] Created {} calendar entries/reminders from memories & projects", created);
+    Ok(created)
+}

@@ -462,3 +462,271 @@ pub fn next_reminder_date(recurrence_rule: &str, from_secs: i64) -> Option<Strin
     let s = next_secs % 60;
     Some(format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, h, mn, s))
 }
+
+// ─── Memory & Project Intent Analysis ────────────────────────────────────────
+//
+// These functions mirror analyse_email() but work on the user's own stored
+// data — life events, tasks, knowledge items, and decisions — rather than
+// incoming emails. Together they form the "memories → calendar" pipeline.
+
+/// A source-agnostic calendar intent produced from non-email data.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MemoryCalendarIntent {
+    /// Unique source ID used as the calendar_events.queue_item_id dedup key
+    pub source_id:   String,
+    /// "life_event" | "task" | "knowledge" | "decision" | "project"
+    pub source_type: String,
+    pub event_title:           String,
+    pub event_date:            Option<String>,
+    pub recurrence_rule:       String,
+    pub reminder_lead_minutes: i64,
+    pub reason:                String,
+}
+
+// ── Life Events ───────────────────────────────────────────────────────────────
+
+/// Maps a `life_events` row into a calendar intent.
+/// `intent` is one of: event_prep | study_plan | project_kickoff |
+///                     habit_goal | deadline | travel
+pub fn analyse_life_event(
+    id: &str,
+    title: &str,
+    intent: &str,
+    event_date: Option<&str>,
+) -> Option<MemoryCalendarIntent> {
+    // Only actionable intents go to calendar
+    let (prefix, recurrence, lead_mins, reason): (&str, &str, i64, &str) = match intent {
+        "deadline"        => ("⏰ Deadline:", "daily",  1440, "Life-event deadline — daily reminders until date"),
+        "event_prep"      => ("📅 Prep:",     "daily",   480, "Preparation period starts — daily reminders"),
+        "study_plan"      => ("📚 Study:",    "weekdays", 60, "Study session — weekday reminders"),
+        "project_kickoff" => ("🚀 Kickoff:",  "none",    60,  "Project kickoff event"),
+        "travel"          => ("✈️ Travel:",   "daily",  1440, "Travel event — daily reminders leading up"),
+        "habit_goal"      => ("🎯 Goal:",     "daily",     0, "Daily habit goal reminder"),
+        _ => return None,
+    };
+
+    let date = event_date
+        .map(|d| d.to_string())
+        .or_else(|| None); // life_events already store a clean date
+
+    let title_trunc = if title.chars().count() > 60 {
+        let end = title.char_indices().nth(57).map(|(i, _)| i).unwrap_or(title.len());
+        format!("{}...", &title[..end])
+    } else {
+        title.to_string()
+    };
+
+    Some(MemoryCalendarIntent {
+        source_id:             format!("life_{}", id),
+        source_type:           "life_event".into(),
+        event_title:           format!("{} {}", prefix, title_trunc),
+        event_date:            date,
+        recurrence_rule:       recurrence.into(),
+        reminder_lead_minutes: lead_mins,
+        reason:                reason.into(),
+    })
+}
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+
+/// Maps a `tasks` row with a due_date into a calendar intent.
+pub fn analyse_task(
+    id: &str,
+    title: &str,
+    priority: &str,
+    due_date: Option<&str>,
+) -> Option<MemoryCalendarIntent> {
+    // Only tasks with a due date get a calendar event
+    let date = due_date?.to_string();
+
+    // Skip if already past
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    if let Some(event_secs) = db::iso_to_unix_secs(&date) {
+        if event_secs < now_secs - 86400 { return None; } // more than 1 day past
+    }
+
+    let (recurrence, lead_mins) = match priority {
+        "high"   => ("daily", 1440i64), // remind daily, 1 day before
+        "medium" => ("none",   480i64), // 8 hours before
+        _        => ("none",    60i64), // 1 hour before
+    };
+
+    let reason = format!("{}-priority task due — added to calendar", priority);
+
+    let title_trunc = if title.chars().count() > 60 {
+        let end = title.char_indices().nth(57).map(|(i, _)| i).unwrap_or(title.len());
+        format!("{}...", &title[..end])
+    } else {
+        title.to_string()
+    };
+
+    Some(MemoryCalendarIntent {
+        source_id:             format!("task_{}", id),
+        source_type:           "task".into(),
+        event_title:           format!("✅ Task: {}", title_trunc),
+        event_date:            Some(date),
+        recurrence_rule:       recurrence.into(),
+        reminder_lead_minutes: lead_mins,
+        reason,
+    })
+}
+
+// ── Knowledge Items ───────────────────────────────────────────────────────────
+
+/// Scans a knowledge item's content for embedded dates/deadlines and creates
+/// a calendar intent if a future date is found.
+pub fn analyse_knowledge_item(
+    id: &str,
+    content: &str,
+    summary: Option<&str>,
+    tags: &[String],
+) -> Option<MemoryCalendarIntent> {
+    // Only create events if the content mentions a deadline/date keyword
+    let lower = content.to_lowercase();
+    let has_temporal = lower.contains("deadline") || lower.contains("due by")
+        || lower.contains("expires") || lower.contains("by ")
+        || lower.contains("submit") || lower.contains("register by")
+        || lower.contains("application") || lower.contains("exam")
+        || lower.contains("certification") || lower.contains("renewal");
+
+    if !has_temporal { return None; }
+
+    // Try to extract a date from the content
+    let event_date = extract_date_from_text(content)?;
+
+    // Skip past dates
+    let now_str = {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let d = (secs / 86400) as u64;
+        let (y, m, dd) = db::days_to_ymd(d);
+        format!("{:04}-{:02}-{:02}", y, m, dd)
+    };
+    if event_date < now_str { return None; }
+
+    // Build a readable title from summary or first 50 chars of content
+    let display = summary.unwrap_or(content);
+    let title_trunc = if display.chars().count() > 55 {
+        let end = display.char_indices().nth(52).map(|(i, _)| i).unwrap_or(display.len());
+        format!("{}...", &display[..end])
+    } else {
+        display.to_string()
+    };
+
+    let tag_label = if !tags.is_empty() {
+        format!(" [{}]", tags.first().map(|s| s.as_str()).unwrap_or(""))
+    } else {
+        String::new()
+    };
+
+    Some(MemoryCalendarIntent {
+        source_id:             format!("mem_{}", id),
+        source_type:           "knowledge".into(),
+        event_title:           format!("🧠 Memory{}: {}", tag_label, title_trunc),
+        event_date:            Some(event_date),
+        recurrence_rule:       "daily".into(), // remind daily as the date approaches
+        reminder_lead_minutes: 1440,
+        reason:                "Knowledge item mentions a future deadline or date".into(),
+    })
+}
+
+// ── Decisions ─────────────────────────────────────────────────────────────────
+
+/// Creates a follow-up reminder for a decision if the rationale mentions
+/// a review date or follow-up timeframe.
+pub fn analyse_decision(
+    id: &str,
+    decision: &str,
+    rationale: &str,
+) -> Option<MemoryCalendarIntent> {
+    let combined = format!("{} {}", decision, rationale);
+
+    // Only schedule if rationale explicitly mentions a review/follow-up time
+    let lower = combined.to_lowercase();
+    let has_review = lower.contains("review") || lower.contains("follow up")
+        || lower.contains("revisit") || lower.contains("check back")
+        || lower.contains("in ") || lower.contains("by ");
+
+    if !has_review { return None; }
+
+    let event_date = extract_date_from_text(&combined)?;
+
+    // Skip past dates
+    let now_str = {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let d = (secs / 86400) as u64;
+        let (y, m, dd) = db::days_to_ymd(d);
+        format!("{:04}-{:02}-{:02}", y, m, dd)
+    };
+    if event_date < now_str { return None; }
+
+    let decision_trunc = if decision.chars().count() > 50 {
+        let end = decision.char_indices().nth(47).map(|(i, _)| i).unwrap_or(decision.len());
+        format!("{}...", &decision[..end])
+    } else {
+        decision.to_string()
+    };
+
+    Some(MemoryCalendarIntent {
+        source_id:             format!("dec_{}", id),
+        source_type:           "decision".into(),
+        event_title:           format!("🔄 Review: {}", decision_trunc),
+        event_date:            Some(event_date),
+        recurrence_rule:       "none".into(),
+        reminder_lead_minutes: 60,
+        reason:                "Decision rationale mentions a follow-up or review date".into(),
+    })
+}
+
+// ── Projects ──────────────────────────────────────────────────────────────────
+
+/// Creates a daily focus reminder for an active project.
+/// No explicit deadline needed — fires every morning at 9 AM as a
+/// "work on X today" nudge based on the daily target.
+pub fn analyse_project_daily_focus(
+    id: &str,
+    name: &str,
+    daily_target_minutes: i64,
+    today_minutes: i64,
+) -> Option<MemoryCalendarIntent> {
+    // Skip if today's target is already met
+    if today_minutes >= daily_target_minutes { return None; }
+    if daily_target_minutes <= 0 { return None; }
+
+    // Fire tomorrow morning (9 AM) as an all-day-style focus reminder
+    let tomorrow_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64 + 86400;
+    let d = (tomorrow_secs / 86400) as u64;
+    let (y, m, dd) = db::days_to_ymd(d);
+    let event_date = format!("{:04}-{:02}-{:02}", y, m, dd);
+
+    let h = daily_target_minutes / 60;
+    let min = daily_target_minutes % 60;
+    let target_label = if h > 0 && min > 0 {
+        format!("{}h {}m", h, min)
+    } else if h > 0 {
+        format!("{}h", h)
+    } else {
+        format!("{}m", min)
+    };
+
+    Some(MemoryCalendarIntent {
+        source_id:             format!("proj_{}", id),
+        source_type:           "project".into(),
+        event_title:           format!("🏗️ Focus: {} ({})", name, target_label),
+        event_date:            Some(event_date),
+        recurrence_rule:       "weekdays".into(), // remind every weekday
+        reminder_lead_minutes: 0, // fire at 9 AM on the day
+        reason:                format!("Active project — {} daily target not yet met today", target_label),
+    })
+}

@@ -206,6 +206,7 @@ interface QueueStore {
   ) => Promise<void>;
   fetchCalendarIntelligence: () => Promise<void>;
   pushItemToCalendar: (itemId: string) => Promise<void>;
+  syncMemoriesCalendar: () => Promise<void>;
 
   // Analytics State
   analyticsWeeklyData: WeeklyAnalytics[];
@@ -422,9 +423,23 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   activeTab: (() => {
     try {
       const saved = localStorage.getItem("wardyn.activeTab") as TabType | null;
-      const valid: TabType[] = ["today","active-life","messages","content","research","analytics","productivity","deadlines","memory","channels","settings"];
+      const valid: TabType[] = [
+        "today",
+        "active-life",
+        "messages",
+        "content",
+        "research",
+        "analytics",
+        "productivity",
+        "deadlines",
+        "memory",
+        "channels",
+        "settings",
+      ];
       return saved && valid.includes(saved) ? saved : "today";
-    } catch { return "today"; }
+    } catch {
+      return "today";
+    }
   })() as TabType,
   isLoading: false,
   error: null,
@@ -482,7 +497,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
 
   setActiveTab: (tab: TabType) => {
     set({ activeTab: tab });
-    try { localStorage.setItem("wardyn.activeTab", tab); } catch {}
+    try {
+      localStorage.setItem("wardyn.activeTab", tab);
+    } catch {}
   },
 
   setLinkedInCadence: (cadence: PostCadence) => {
@@ -1753,6 +1770,25 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
   },
 
+  syncMemoriesCalendar: async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const count = await invoke<number>("sync_memories_calendar_command");
+        if (count > 0) {
+          // Refresh the calendar events list so new entries appear immediately
+          await get().fetchCalendarEvents();
+          get().showStatusMessage(
+            "success",
+            `${count} calendar event${count !== 1 ? "s" : ""} auto-created from your memories & projects.`,
+          );
+        }
+      } catch (err) {
+        console.error("syncMemoriesCalendar error:", err);
+      }
+    }
+  },
+
   fetchMorningBrief: async () => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       try {
@@ -2202,7 +2238,13 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === id
-              ? { ...t, title, description: description ?? null, due_date: dueDate ?? null, priority: priority as Task["priority"] }
+              ? {
+                  ...t,
+                  title,
+                  description: description ?? null,
+                  due_date: dueDate ?? null,
+                  priority: priority as Task["priority"],
+                }
               : t,
           ),
         }));
@@ -2907,14 +2949,18 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     try {
       const raw = localStorage.getItem("wardyn.searchHistory");
       return raw ? (JSON.parse(raw) as string[]) : [];
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   })(),
 
   savedResultUrls: (() => {
     try {
       const raw = localStorage.getItem("wardyn.savedResultUrls");
       return raw ? (JSON.parse(raw) as string[]) : [];
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   })(),
 
   addSearchHistory: (query: string) => {
@@ -2924,13 +2970,17 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         query,
         ...state.searchHistory.filter((q) => q !== query),
       ].slice(0, 20);
-      try { localStorage.setItem("wardyn.searchHistory", JSON.stringify(next)); } catch {}
+      try {
+        localStorage.setItem("wardyn.searchHistory", JSON.stringify(next));
+      } catch {}
       return { searchHistory: next };
     });
   },
 
   clearSearchHistory: () => {
-    try { localStorage.removeItem("wardyn.searchHistory"); } catch {}
+    try {
+      localStorage.removeItem("wardyn.searchHistory");
+    } catch {}
     set({ searchHistory: [] });
   },
 
@@ -2939,7 +2989,9 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       const next = state.savedResultUrls.includes(url)
         ? state.savedResultUrls.filter((u) => u !== url)
         : [...state.savedResultUrls, url];
-      try { localStorage.setItem("wardyn.savedResultUrls", JSON.stringify(next)); } catch {}
+      try {
+        localStorage.setItem("wardyn.savedResultUrls", JSON.stringify(next));
+      } catch {}
       return { savedResultUrls: next };
     });
   },

@@ -418,6 +418,14 @@ async fn sync_calendar_deadlines_command(state: State<'_, DbState>) -> Result<Ve
     calendar::sync::sync_calendar_deadlines(&state.0).await
 }
 
+/// Scan memories, life events, tasks, decisions, and active projects and
+/// auto-create calendar events + reminders for anything with a future date.
+/// This runs locally — no Google Calendar token needed.
+#[tauri::command]
+fn sync_memories_calendar_command(state: State<'_, DbState>) -> Result<usize, String> {
+    calendar::sync::sync_memories_and_projects(&state.0)
+}
+
 #[tauri::command]
 fn add_custom_calendar_event_command(
     id: String,
@@ -1785,6 +1793,7 @@ pub fn run() {
             cancel_model_install_command,
             delete_ollama_model_command,
             sync_calendar_deadlines_command,
+            sync_memories_calendar_command,
             add_custom_calendar_event_command,
             delete_custom_calendar_event_command,
             get_calendar_events_command,

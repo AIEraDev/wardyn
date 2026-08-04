@@ -34,12 +34,16 @@ mod macos_impl {
     fn resolve_helper_path() -> Option<PathBuf> {
         let exe = std::env::current_exe().ok()?;
         let macos_dir = exe.parent()?;
-        // 1. Same dir as main exe (dev build or externalBin)
+        // 1. Same dir as main exe (dev build)
         let p = macos_dir.join("wardyn_morning");
         if p.exists() { return Some(p); }
-        // 2. ../Resources/ (Tauri resources bundle)
-        let p2 = macos_dir.parent()?.join("Resources").join("wardyn_morning");
+        // 2. ../Resources/wardyn_morning (Tauri resources — root placement)
+        let resources = macos_dir.parent()?.join("Resources");
+        let p2 = resources.join("wardyn_morning");
         if p2.exists() { return Some(p2); }
+        // 3. ../Resources/helper/wardyn_morning (subdirectory placement)
+        let p3 = resources.join("helper").join("wardyn_morning");
+        if p3.exists() { return Some(p3); }
         None
     }
 

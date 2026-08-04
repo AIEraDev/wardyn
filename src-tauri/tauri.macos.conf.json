@@ -1,7 +1,7 @@
 {
   "bundle": {
     "resources": [
-      "resources/wardyn_morning"
+      "helper/wardyn_morning"
     ]
   }
 }

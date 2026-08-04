@@ -142,25 +142,32 @@ jobs:
 
       - name: Build wardyn_morning sidecar (macOS universal — both arches)
         if: matrix.platform == 'macos-latest'
-        working-directory: src-tauri
-        run: |
-          mkdir -p binaries
-          echo "Building for x86_64 (Intel)..."
-          cargo build --bin wardyn_morning --target x86_64-apple-darwin --release
-          cp target/x86_64-apple-darwin/release/wardyn_morning binaries/wardyn_morning-x86_64-apple-darwin
-
-          echo "Building for aarch64 (Apple Silicon)..."
-          cargo build --bin wardyn_morning --target aarch64-apple-darwin --release
-          cp target/aarch64-apple-darwin/release/wardyn_morning binaries/wardyn_morning-aarch64-apple-darwin
-
-      - name: Build wardyn_morning sidecar (non-macOS stub)
-        if: matrix.platform != 'macos-latest'
-        shell: bash
         run: |
           mkdir -p src-tauri/binaries
-          # Create empty stub files so Tauri's build.rs validation passes.
-          # wardyn_morning is macOS-only — these stubs are never bundled or used.
-          touch src-tauri/binaries/wardyn_morning-x86_64-pc-windows-msvc
+          echo "Building for x86_64 (Intel)..."
+          cargo build --manifest-path src-tauri/Cargo.toml \
+            --bin wardyn_morning --target x86_64-apple-darwin --release
+          cp src-tauri/target/x86_64-apple-darwin/release/wardyn_morning \
+            src-tauri/binaries/wardyn_morning-x86_64-apple-darwin
+
+          echo "Building for aarch64 (Apple Silicon)..."
+          cargo build --manifest-path src-tauri/Cargo.toml \
+            --bin wardyn_morning --target aarch64-apple-darwin --release
+          cp src-tauri/target/aarch64-apple-darwin/release/wardyn_morning \
+            src-tauri/binaries/wardyn_morning-aarch64-apple-darwin
+
+      - name: Stub wardyn_morning sidecar (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries
+          # Empty stub — wardyn_morning is macOS-only; stub satisfies Tauri's build.rs check
+          New-Item -Force -Path "src-tauri/binaries/wardyn_morning-x86_64-pc-windows-msvc" -ItemType File
+
+      - name: Stub wardyn_morning sidecar (Linux)
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          mkdir -p src-tauri/binaries
           touch src-tauri/binaries/wardyn_morning-x86_64-unknown-linux-gnu
 
       - name: Build and upload release artifacts

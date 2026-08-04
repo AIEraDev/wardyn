@@ -55,8 +55,8 @@
       "entitlements": "Entitlements.plist",
       "infoPlist": "Info.plist"
     },
-    "externalBin": [
-      "binaries/wardyn_morning"
-    ]
+    "resources": {
+      "resources/wardyn_morning": "wardyn_morning"
+    }
   }
 }

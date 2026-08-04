@@ -24,13 +24,24 @@ fn plist_path() -> PathBuf {
 }
 
 /// Resolve the helper binary path at runtime.
-/// In a bundled .app:  Wardyn.app/Contents/MacOS/wardyn_morning
-/// In dev builds:      target/debug/wardyn_morning (next to wardyn-desktop)
+/// Checks three locations in priority order:
+///   1. Wardyn.app/Contents/MacOS/wardyn_morning  (externalBin / same dir)
+///   2. Wardyn.app/Contents/Resources/wardyn_morning (resources bundle)
+///   3. <exe_dir>/wardyn_morning (dev build — target/debug/)
 fn resolve_helper_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?;
-    let candidate = dir.join("wardyn_morning");
-    if candidate.exists() { Some(candidate) } else { None }
+    let macos_dir = exe.parent()?;
+
+    // 1. Same directory as main executable (externalBin or dev)
+    let candidate = macos_dir.join("wardyn_morning");
+    if candidate.exists() { return Some(candidate); }
+
+    // 2. ../Resources/ (Tauri resources bundle inside .app)
+    let resources_dir = macos_dir.parent()?.join("Resources");
+    let candidate2 = resources_dir.join("wardyn_morning");
+    if candidate2.exists() { return Some(candidate2); }
+
+    None
 }
 
 /// DB path — same location the main app uses.

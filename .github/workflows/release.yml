@@ -143,32 +143,20 @@ jobs:
       - name: Build wardyn_morning sidecar (macOS universal — both arches)
         if: matrix.platform == 'macos-latest'
         run: |
-          mkdir -p src-tauri/binaries
-          echo "Building for x86_64 (Intel)..."
+          echo "Building wardyn_morning for x86_64 (Intel)..."
           cargo build --manifest-path src-tauri/Cargo.toml \
             --bin wardyn_morning --target x86_64-apple-darwin --release
-          cp src-tauri/target/x86_64-apple-darwin/release/wardyn_morning \
-            src-tauri/binaries/wardyn_morning-x86_64-apple-darwin
 
-          echo "Building for aarch64 (Apple Silicon)..."
+          echo "Building wardyn_morning for aarch64 (Apple Silicon)..."
           cargo build --manifest-path src-tauri/Cargo.toml \
             --bin wardyn_morning --target aarch64-apple-darwin --release
-          cp src-tauri/target/aarch64-apple-darwin/release/wardyn_morning \
-            src-tauri/binaries/wardyn_morning-aarch64-apple-darwin
 
-      - name: Stub wardyn_morning sidecar (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path src-tauri/binaries
-          # Empty stub — wardyn_morning is macOS-only; stub satisfies Tauri's build.rs check
-          New-Item -Force -Path "src-tauri/binaries/wardyn_morning-x86_64-pc-windows-msvc" -ItemType File
-
-      - name: Stub wardyn_morning sidecar (Linux)
-        if: matrix.platform == 'ubuntu-24.04'
-        run: |
-          mkdir -p src-tauri/binaries
-          touch src-tauri/binaries/wardyn_morning-x86_64-unknown-linux-gnu
+          echo "Creating universal binary via lipo (overwrites placeholder)..."
+          lipo -create \
+            src-tauri/target/x86_64-apple-darwin/release/wardyn_morning \
+            src-tauri/target/aarch64-apple-darwin/release/wardyn_morning \
+            -output src-tauri/resources/wardyn_morning
+          echo "Universal binary ready: $(file src-tauri/resources/wardyn_morning)"
 
       - name: Build and upload release artifacts
         uses: tauri-apps/tauri-action@v0

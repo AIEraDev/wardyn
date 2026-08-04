@@ -1,3 +1,7 @@
 
 # Morning helper pre-built binaries (built by CI / local setup script)
 binaries/wardyn_morning-*
+
+# Morning helper — replaced by CI/setup script with the real binary
+# The placeholder (empty file) IS tracked; the real executable is not.
+# Use 'git update-index --assume-unchanged src-tauri/resources/wardyn_morning' locally

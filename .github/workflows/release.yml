@@ -18,6 +18,7 @@ jobs:
     outputs:
       release_id: ${{ steps.create-release.outputs.id }}
       release_upload_url: ${{ steps.create-release.outputs.upload_url }}
+      app_version: ${{ steps.get_version.outputs.VERSION }}
 
     steps:
       - name: Checkout repository
@@ -141,13 +142,16 @@ jobs:
         run: npm ci
 
       - name: Build and upload release artifacts
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
+          # tagName is required so latest.json uses versioned download URLs
+          # instead of /releases/latest/download/ which breaks the updater
+          tagName: v${{ needs.create-release.outputs.app_version }}
           updaterJsonKeepUniversal: true
           args: ${{ matrix.args }}
 

@@ -1844,6 +1844,7 @@ pub fn run() {
             fetch_linkedin_timeline_command,
             sync_gmail_messages,
             disconnect_gmail,
+            diagnose_gmail_credentials,
             process_item_with_ollama,
             record_voice_edit_command,
             get_installed_ollama_models_command,

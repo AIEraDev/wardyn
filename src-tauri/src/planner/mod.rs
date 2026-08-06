@@ -26,11 +26,20 @@ fn new_id(prefix: &str) -> String {
 }
 
 fn add_days_to_iso(base_iso: &str, days: i64) -> Option<String> {
+    add_days_to_iso_with_hour(base_iso, days, "09:30")
+}
+
+fn add_days_to_iso_with_hour(base_iso: &str, days: i64, hour: &str) -> Option<String> {
     let base_secs = iso_to_unix_secs(&format!("{}T12:00:00Z", base_iso))?;
     let target_secs = base_secs + days * 86400;
     if target_secs < 0 { return None; }
     let (y, m, d) = db::days_to_ymd((target_secs / 86400) as u64);
-    Some(format!("{:04}-{:02}-{:02}T08:00:00Z", y, m, d))
+    let time_suffix = if hour.contains(':') {
+        format!("{}T{}:00Z", &base_iso[..0], hour)
+    } else {
+        "T09:30:00Z".to_string()
+    };
+    Some(format!("{:04}-{:02}-{:02}{}", y, m, d, time_suffix))
 }
 
 fn today_date() -> String {
@@ -122,10 +131,13 @@ pub fn create_life_plan(
     db::insert_life_event(&conn, &event_id, &plan.title, raw_input, &plan.intent, plan.event_date.as_deref())
         .map_err(|e| e.to_string())?;
 
+    let user_profile = db::get_user_behavior_profile(&conn);
+    let start_hour = &user_profile.work_start_hour;
+
     for task in &plan.tasks {
         let task_id = new_id("lt");
         let due_date = plan.event_date.as_deref()
-            .and_then(|b| add_days_to_iso(b, task.due_offset_days));
+            .and_then(|b| add_days_to_iso_with_hour(b, task.due_offset_days, start_hour));
 
         db::insert_life_task(&conn, &task_id, &event_id, &task.title,
             task.description.as_deref(), due_date.as_deref(), &task.priority)
@@ -136,7 +148,7 @@ pub fn create_life_plan(
                 let rs = ds - 86400;
                 if rs > 0 {
                     let rd = db::days_to_ymd((rs / 86400) as u64);
-                    let rdate = format!("{:04}-{:02}-{:02}T08:00:00Z", rd.0, rd.1, rd.2);
+                    let rdate = format!("{:04}-{:02}-{:02}T{}:00Z", rd.0, rd.1, rd.2, start_hour);
                     let msg = format!("Reminder: due tomorrow — {}", task.title);
                     let rid = new_id("rem");
                     // Use "life:<task_id>" so the UI can distinguish from email-linked reminders

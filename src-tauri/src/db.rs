@@ -553,6 +553,7 @@ pub struct UserBehaviorProfile {
     pub morning_routine_type: String, // "executive_strategy" (default) or "deep_coding"
     pub peak_focus_hours: String,     // "afternoon" (default), "morning", "evening"
     pub interest_priority: String,    // "industry_and_market" (default), "pure_tech"
+    pub work_start_hour: String,      // "09:30" (default)
 }
 
 pub fn get_user_behavior_profile(conn: &Connection) -> UserBehaviorProfile {
@@ -568,11 +569,16 @@ pub fn get_user_behavior_profile(conn: &Connection) -> UserBehaviorProfile {
         .ok()
         .flatten()
         .unwrap_or_else(|| "industry_and_market".to_string());
+    let work_start_hour = get_app_setting(conn, "work_start_hour")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "09:30".to_string());
 
     UserBehaviorProfile {
         morning_routine_type,
         peak_focus_hours,
         interest_priority,
+        work_start_hour,
     }
 }
 

@@ -165,13 +165,10 @@ pub fn compute_interest_profile(conn: &Connection) -> HashMap<String, f64> {
 
 pub fn reweight_feed_items(conn: &Connection) -> Result<(), String> {
     let profile = compute_interest_profile(conn);
-    if profile.is_empty() {
-        return Ok(());
-    }
-
+    let user_profile = db::get_user_behavior_profile(conn);
+    
     let items = db::get_recent_feed_items(conn, 72, 100).map_err(|e| e.to_string())?;
 
-    // Wrap all updates in a single transaction — avoids 100 separate autocommits
     conn.execute("BEGIN", []).ok();
     for item in items {
         let mut relevance: f64 = 0.0;
@@ -180,6 +177,14 @@ pub fn reweight_feed_items(conn: &Connection) -> Result<(), String> {
         for (tag, weight) in &profile {
             if text_lower.contains(tag) {
                 relevance += weight;
+            }
+        }
+
+        // Apply dynamic behavior profile bonus
+        if user_profile.morning_routine_type == "executive_strategy" {
+            let is_news_or_brief = item.source == "hackernews" || item.source == "arxiv" || item.source == "devto" || item.source.contains("rss");
+            if is_news_or_brief {
+                relevance += 1.5;
             }
         }
 

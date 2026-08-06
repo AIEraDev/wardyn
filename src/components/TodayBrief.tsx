@@ -44,6 +44,8 @@ export const TodayBrief: React.FC = () => {
     dailyHabits,
     toggleHabitComplete,
     fetchDailyHabits,
+    userBehaviorProfile,
+    setUserBehaviorSetting,
   } = useQueueStore();
 
   const localeMap: Record<string, string> = {
@@ -262,6 +264,52 @@ export const TodayBrief: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Personal Routine Adaptation Bar ── */}
+      <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#0E1318] border border-[#1D2535] flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] font-bold text-[#7A8492] uppercase tracking-wider">
+            Routine Mode:
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const next =
+                userBehaviorProfile.morning_routine_type === "executive_strategy"
+                  ? "deep_coding"
+                  : "executive_strategy";
+              setUserBehaviorSetting("morning_routine_type", next);
+            }}
+            className={`font-mono text-[10px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+              userBehaviorProfile.morning_routine_type === "executive_strategy"
+                ? "bg-[rgba(74,143,194,0.15)] text-[#4A8FC2] border-[rgba(74,143,194,0.3)] font-bold"
+                : "bg-[rgba(155,89,182,0.15)] text-[#9B59B6] border-[rgba(155,89,182,0.3)] font-bold"
+            }`}
+          >
+            {userBehaviorProfile.morning_routine_type === "executive_strategy" ? (
+              <>💼 Executive Strategy (No Morning Coding)</>
+            ) : (
+              <>💻 Technical Deep Work</>
+            )}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-[#7A8492]">Peak Focus:</span>
+          <button
+            type="button"
+            onClick={() => {
+              const hours = ["afternoon", "evening", "morning"];
+              const currentIdx = hours.indexOf(userBehaviorProfile.peak_focus_hours);
+              const next = hours[(currentIdx + 1) % hours.length];
+              setUserBehaviorSetting("peak_focus_hours", next);
+            }}
+            className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#151A21] border border-[#242B35] text-[#34D399] hover:border-[rgba(52,211,153,0.3)] transition-colors cursor-pointer"
+          >
+            ☀️ {userBehaviorProfile.peak_focus_hours.toUpperCase()}
+          </button>
+        </div>
+      </div>
 
       {/* ── Morning Intelligence Brief ── */}
       <div className="rounded-xl border border-[rgba(74,143,194,0.25)] bg-gradient-to-br from-[#0E1420] to-[#141B24] overflow-hidden">

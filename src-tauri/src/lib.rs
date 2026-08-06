@@ -142,10 +142,8 @@ async fn push_item_to_calendar_command(
 
     let intent = crate::calendar::intelligence::analyse_email(&item);
 
-    if intent.should_add_to_calendar || true {
-        // Force push regardless of should_add_to_calendar when explicitly requested
-        calendar::sync::sync_calendar_deadlines(&state.0).await.ok();
-    }
+    // Force push calendar sync when explicitly requested
+    calendar::sync::sync_calendar_deadlines(&state.0).await.ok();
 
     Ok(intent)
 }

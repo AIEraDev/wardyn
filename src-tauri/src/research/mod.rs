@@ -323,13 +323,13 @@ fn parse_ddg_html(html: &str) -> Vec<SearchResult> {
         }
 
         let title = extract_between(remaining, ">", "</a>")
-            .map(|t| strip_html_tags(t))
+            .map(strip_html_tags)
             .unwrap_or_default();
 
         let snippet = if let Some(snip_pos) = remaining.find("result__snippet") {
             let snip_section = &remaining[snip_pos..];
             extract_between(snip_section, ">", "</a>")
-                .map(|s| strip_html_tags(s))
+                .map(strip_html_tags)
                 .unwrap_or_default()
         } else {
             String::new()

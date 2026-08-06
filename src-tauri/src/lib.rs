@@ -683,8 +683,12 @@ fn stop_speech_command() {
 // ─── Research / Web Search Commands ──────────────────────────────────────────
 
 #[tauri::command]
-async fn web_search_command(query: String) -> Result<research::SearchResponse, String> {
-    research::web_search(&query).await
+async fn web_search_command(
+    query: String,
+    category: Option<String>,
+    sort_by: Option<String>,
+) -> Result<research::SearchResponse, String> {
+    research::web_search(&query, category.as_deref(), sort_by.as_deref()).await
 }
 
 #[tauri::command]
@@ -702,6 +706,18 @@ fn get_vault_path_command(state: State<'_, DbState>) -> Result<Option<String>, S
 fn set_vault_path_command(path: String, state: State<'_, DbState>) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     db::set_app_setting(&conn, "vault_path", &path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_user_behavior_profile_command(state: State<'_, DbState>) -> Result<db::UserBehaviorProfile, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(db::get_user_behavior_profile(&conn))
+}
+
+#[tauri::command]
+fn set_user_behavior_setting_command(key: String, value: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::set_app_setting(&conn, &key, &value).map_err(|e| e.to_string())
 }
 
 // ─── User-provided OAuth Credentials ─────────────────────────────────────────
@@ -1926,10 +1942,11 @@ pub fn run() {
             get_social_posts_command,
             update_social_post_status_command,
             delete_social_post_command,
-            diagnose_gmail_credentials,
             get_morning_helper_status,
             disable_morning_helper,
-            enable_morning_helper
+            enable_morning_helper,
+            get_user_behavior_profile_command,
+            set_user_behavior_setting_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

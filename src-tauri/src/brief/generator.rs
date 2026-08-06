@@ -31,8 +31,9 @@ pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) ->
 
     // Gather context: top feed items + pending email count + flagged items + calendar + personal memory
     let (feed_items, pending_count, flagged_count, calendar_count, knowledge_items, recent_decisions,
-         pending_tasks, life_events_upcoming, engagement_today_mins) = {
+         pending_tasks, life_events_upcoming, engagement_today_mins, user_profile) = {
         let conn = conn_mutex.lock().map_err(|e| e.to_string())?;
+        let profile = db::get_user_behavior_profile(&conn);
         let feeds = db::get_recent_feed_items(&conn, 24, 10).unwrap_or_default();
         let items = db::get_all_queue_items(&conn).unwrap_or_default();
         // Only count emails that genuinely need a reply — exclude informational/suppressed
@@ -51,7 +52,6 @@ pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) ->
 
         // ── NEW: pending tasks (overdue + due today/tomorrow) ────────────────
         let tasks: Vec<(String, String, String)> = {
-            let _today_str = today.to_string();
             let tomorrow_str = {
                 use crate::db::days_to_ymd;
                 let secs = std::time::SystemTime::now()
@@ -113,7 +113,7 @@ pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) ->
             |row| row.get(0),
         ).unwrap_or(0);
 
-        (feeds, pending, flagged, cal, knowledge, decisions, tasks, life_events, eng_mins)
+        (feeds, pending, flagged, cal, knowledge, decisions, tasks, life_events, eng_mins, profile)
     };
 
 
@@ -177,10 +177,18 @@ pub async fn get_or_generate_brief(conn_mutex: &std::sync::Mutex<Connection>) ->
         "No urgent flagged items.".into()
     };
 
-    let system_prompt = format!(
-        r#"You are Wardyn, a personal intelligence assistant synthesizing a morning executive brief.
+    let routine_instruction = if user_profile.morning_routine_type == "executive_strategy" {
+        "Note: The user does NOT start their day coding in the morning. Tailor the morning brief for executive clarity, strategic planning, email & decision triage, calendar alignment, and high-level market/industry trends first."
+    } else {
+        "Note: The user prefers starting with deep technical focus in the morning. Highlight top code updates, engineering tasks, and technical documentation first."
+    };
 
-Generate a structured, concise Morning Intelligence Brief using the context below. Use markdown-like formatting with emoji section headers. Be specific and actionable — no generic filler. Reference the user's personal context, tasks, and life events where relevant.
+    let system_prompt = format!(
+        r#"You are Wardyn, a personal chief-of-staff synthesizing a morning executive brief.
+
+{}
+
+Generate a structured, concise Morning Intelligence Brief using the context below. Use markdown formatting with emoji section headers. Be specific and actionable — no generic filler. Reference the user's personal context, tasks, and life events where relevant. Format links using markdown [Title](URL).
 
 CONTEXT:
 - Pending messages awaiting your reply: {}
@@ -188,15 +196,17 @@ CONTEXT:
 - Calendar events synced: {}
 {}{}{}
 {}
-TECHNICAL FEED (last 24h — ranked by signal):
+TRENDING & INDUSTRY FEEDS (last 24h — ranked across HackerNews, GitHub, ArXiv, Dev.to, RSS):
 
 {}
 
 OUTPUT FORMAT (use exactly these sections):
-⚡ PRIORITY ACTIONS (include any overdue tasks and urgent emails)
-📅 CALENDAR & DEADLINES (include life events and calendar)
-📚 TECHNICAL PULSE (top 3-5 items worth reading, with one-line "why it matters")
-💡 PATTERN / INSIGHT (one sharp observation synthesizing today's signal and the user's current work)"#,
+⚡ PRIORITY ACTIONS (focus on critical decisions, urgent communications, and top strategic priorities for today)
+📅 CALENDAR & DEADLINES (include schedule, meetings, and life events)
+🔥 OVERALL TRENDING (top 2-3 industry trends, market movements, or AI breakthroughs with clickable links [Title](URL))
+📚 KNOWLEDGE & READS (top 3-4 high-signal articles/papers worth reading during morning review with markdown links [Title](URL))
+💡 PATTERN / INSIGHT (one sharp executive observation synthesizing today's signal and strategic direction)"#,
+        routine_instruction,
         pending_count, flagged_notice, calendar_count,
         personal_section, tasks_section, life_section,
         focus_line, feed_section
@@ -264,12 +274,16 @@ fn generate_fallback_brief(
         "No urgent flagged items.".into()
     };
 
-    let feed_lines: String = feeds.iter().take(5).enumerate().map(|(i, f)| {
-        format!("{}. [{}] {}\n", i + 1, f.source.to_uppercase(), f.title)
+    let trending_lines: String = feeds.iter().take(3).enumerate().map(|(i, f)| {
+        format!("{}. [{}] [{}]({})\n", i + 1, f.source.to_uppercase(), f.title, f.url)
+    }).collect();
+
+    let tech_lines: String = feeds.iter().skip(3).take(3).enumerate().map(|(i, f)| {
+        format!("{}. [{}] [{}]({})\n", i + 1, f.source.to_uppercase(), f.title, f.url)
     }).collect();
 
     format!(
-        "⚡ PRIORITY ACTIONS\n{}\n{} message(s) awaiting your reply.\n\n📅 CALENDAR & DEADLINES\n{} event(s) synced.\n\n📚 TECHNICAL PULSE\n{}\n💡 PATTERN / INSIGHT\nOllama model unavailable — connect a local model in Settings for full AI synthesis.",
-        urgency, pending, calendar, feed_lines
+        "⚡ PRIORITY ACTIONS\n{}\n{} message(s) awaiting your reply.\n\n📅 CALENDAR & DEADLINES\n{} event(s) synced.\n\n🔥 OVERALL TRENDING\n{}\n📚 TECHNICAL PULSE\n{}\n💡 PATTERN / INSIGHT\nOllama model unavailable — connect a local model in Settings for full AI synthesis.",
+        urgency, pending, calendar, trending_lines, tech_lines
     )
 }

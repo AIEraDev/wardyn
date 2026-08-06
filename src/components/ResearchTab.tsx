@@ -12,6 +12,11 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconRefresh,
+  IconBrandYcombinator,
+  IconBook,
+  IconCopy,
+  IconCalendar,
+  IconSortDescending,
 } from "@tabler/icons-react";
 import { useQueueStore } from "../store/useQueueStore";
 
@@ -22,6 +27,7 @@ interface SearchResult {
   url: string;
   snippet: string;
   source: string;
+  date?: string | null;
 }
 
 interface SearchResponse {
@@ -29,6 +35,9 @@ interface SearchResponse {
   query: string;
   source_used: string;
 }
+
+type SearchCategory = "all" | "web" | "tech" | "wiki" | "academic";
+type SortBy = "relevance" | "date";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -40,17 +49,41 @@ function domain(url: string) {
   }
 }
 
+function formatDate(dateStr?: string | null) {
+  if (!dateStr) return null;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
 function SourceBadge({ source }: { source: string }) {
-  const isWiki = source === "Wikipedia";
+  let badgeStyle = "bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] border-[rgba(74,143,194,0.25)]";
+  let icon = <IconWorld size={9} />;
+
+  if (source === "Wikipedia") {
+    badgeStyle = "bg-[rgba(155,89,182,0.15)] text-[#9B59B6] border-[rgba(155,89,182,0.3)]";
+    icon = <IconBrandWikipedia size={9} />;
+  } else if (source === "HackerNews") {
+    badgeStyle = "bg-[rgba(255,102,0,0.15)] text-[#FF6600] border-[rgba(255,102,0,0.3)]";
+    icon = <IconBrandYcombinator size={9} />;
+  } else if (source === "ArXiv") {
+    badgeStyle = "bg-[rgba(234,179,8,0.15)] text-[#EAB308] border-[rgba(234,179,8,0.3)]";
+    icon = <IconBook size={9} />;
+  }
+
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border ${
-        isWiki
-          ? "bg-[rgba(155,89,182,0.15)] text-[#9B59B6] border-[rgba(155,89,182,0.3)]"
-          : "bg-[rgba(74,143,194,0.12)] text-[#4A8FC2] border-[rgba(74,143,194,0.25)]"
-      }`}
+      className={`inline-flex items-center gap-1 text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border ${badgeStyle}`}
     >
-      {isWiki ? <IconBrandWikipedia size={9} /> : <IconWorld size={9} />}
+      {icon}
       {source}
     </span>
   );
@@ -68,6 +101,10 @@ function ResultCard({
   saved: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const formattedDate = formatDate(result.date);
+  const isLongSnippet = result.snippet && result.snippet.length > 160;
 
   const openUrl = async (url: string) => {
     try {
@@ -82,45 +119,60 @@ function ResultCard({
     }
   };
 
+  const copyUrl = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <div className="p-3.5 rounded-xl bg-[#0E1318] border border-[#1D2535] hover:border-[rgba(74,143,194,0.25)] transition-colors group">
+    <div className="p-3.5 rounded-xl bg-[#0E1318] border border-[#1D2535] hover:border-[rgba(74,143,194,0.3)] transition-all group">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          {/* Title row */}
-          <div className="flex items-start gap-2 mb-1">
+          {/* Title & Metadata row */}
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <SourceBadge source={result.source} />
             <span className="font-mono text-[10px] text-[#4A5568] truncate">
               {domain(result.url)}
             </span>
+            {formattedDate && (
+              <span className="font-mono text-[10px] text-[#7A8492] flex items-center gap-1 bg-[#151A21] px-1.5 py-0.5 rounded border border-[#242B35]">
+                <IconCalendar size={10} className="text-[#4A8FC2]" />
+                {formattedDate}
+              </span>
+            )}
           </div>
           <button
             type="button"
             onClick={() => openUrl(result.url)}
-            className="text-[13px] font-semibold text-[#E2E8F0] hover:text-[#4A8FC2] text-left leading-snug transition-colors cursor-pointer bg-transparent border-none p-0"
+            className="text-[13.5px] font-semibold text-[#E2E8F0] hover:text-[#4A8FC2] text-left leading-snug transition-colors cursor-pointer bg-transparent border-none p-0"
           >
             {result.title}
           </button>
           {/* Snippet */}
           {result.snippet && (
             <p
-              className={`mt-1 text-[11.5px] text-[#9AA4B2] leading-relaxed ${expanded ? "" : "line-clamp-2"}`}
+              className={`mt-1.5 text-[11.5px] text-[#9AA4B2] leading-relaxed transition-all ${
+                expanded ? "" : "line-clamp-2"
+              }`}
             >
               {result.snippet}
             </p>
           )}
-          {result.snippet && result.snippet.length > 120 && (
+          {/* Show More / Show Less Toggle — only visible when snippet is genuinely long */}
+          {isLongSnippet && (
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
-              className="mt-0.5 text-[10px] text-[#4A5568] hover:text-[#9AA4B2] flex items-center gap-0.5 cursor-pointer bg-transparent border-none p-0"
+              className="mt-1.5 text-[10.5px] text-[#4A8FC2] hover:text-[#5b9bd1] flex items-center gap-0.5 cursor-pointer bg-transparent border-none p-0 font-mono font-medium"
             >
               {expanded ? (
                 <>
-                  <IconChevronUp size={11} /> Less
+                  <IconChevronUp size={12} /> Show less
                 </>
               ) : (
                 <>
-                  <IconChevronDown size={11} /> More
+                  <IconChevronDown size={12} /> Show full snippet
                 </>
               )}
             </button>
@@ -132,10 +184,18 @@ function ResultCard({
           <button
             type="button"
             onClick={() => openUrl(result.url)}
-            title="Open in browser"
+            title="Open link"
             className="p-1.5 rounded-lg bg-[#151A21] border border-[#242B35] text-[#7A8492] hover:text-[#4A8FC2] hover:border-[rgba(74,143,194,0.4)] transition-colors cursor-pointer"
           >
             <IconExternalLink size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => copyUrl(result.url)}
+            title="Copy URL"
+            className="p-1.5 rounded-lg bg-[#151A21] border border-[#242B35] text-[#7A8492] hover:text-[#E2E8F0] transition-colors cursor-pointer"
+          >
+            {copied ? <IconCheck size={13} className="text-[#34D399]" /> : <IconCopy size={13} />}
           </button>
           <button
             type="button"
@@ -159,7 +219,6 @@ function ResultCard({
 // ─── AI Summary Panel ─────────────────────────────────────────────────────────
 
 function AISummaryPanel({
-  query: _query,
   results,
   summary,
   loading,
@@ -167,7 +226,6 @@ function AISummaryPanel({
   onSave,
   saved,
 }: {
-  query: string;
   results: SearchResult[];
   summary: string | null;
   loading: boolean;
@@ -183,7 +241,7 @@ function AISummaryPanel({
         <div className="flex items-center gap-2">
           <IconSparkles size={14} className="text-[#7C3AED]" />
           <span className="text-[11px] font-bold text-[#7C3AED] font-mono uppercase tracking-wider">
-            AI Research Summary
+            AI Research Synthesis
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -213,7 +271,7 @@ function AISummaryPanel({
             ) : (
               <IconRefresh size={11} />
             )}
-            {summary ? "Regenerate" : "Generate Summary"}
+            {summary ? "Regenerate" : "Generate AI Summary"}
           </button>
         </div>
       </div>
@@ -228,7 +286,7 @@ function AISummaryPanel({
             />
           ))}
           <p className="text-[10px] text-[#64748B] font-mono pt-1">
-            Ollama is synthesising results…
+            Local Ollama model is synthesising results…
           </p>
         </div>
       )}
@@ -239,8 +297,7 @@ function AISummaryPanel({
 
       {!summary && !loading && (
         <p className="text-[12px] text-[#4A5568] italic">
-          Click "Generate Summary" to get an AI-synthesised overview of all
-          results above.
+          Click "Generate AI Summary" to synthesize key insights and citations across all sources.
         </p>
       )}
     </div>
@@ -260,6 +317,8 @@ export const ResearchTab: React.FC = () => {
   } = useQueueStore();
 
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<SearchCategory>("all");
+  const [sortBy, setSortBy] = useState<SortBy>("relevance");
   const [searching, setSearching] = useState(false);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -271,7 +330,7 @@ export const ResearchTab: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const doSearch = useCallback(
-    async (q: string) => {
+    async (q: string, cat: SearchCategory = category, sort: SortBy = sortBy) => {
       const trimmed = q.trim();
       if (!trimmed) return;
       setSearching(true);
@@ -290,23 +349,39 @@ export const ResearchTab: React.FC = () => {
         const { invoke } = await import("@tauri-apps/api/core");
         const result = await invoke<SearchResponse>("web_search_command", {
           query: trimmed,
+          category: cat === "all" ? null : cat,
+          sortBy: sort,
         });
         setResponse(result);
-        addSearchHistory(trimmed); // persists across tab switches
+        addSearchHistory(trimmed);
       } catch (err: any) {
         setSearchError(
-          err?.message || "Search failed. Check your internet connection.",
+          err?.message || "Search failed. Check your network connection.",
         );
       } finally {
         setSearching(false);
       }
     },
-    [addSearchHistory],
+    [category, sortBy, addSearchHistory],
   );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     doSearch(query);
+  };
+
+  const handleCategoryChange = (cat: SearchCategory) => {
+    setCategory(cat);
+    if (query.trim()) {
+      doSearch(query, cat, sortBy);
+    }
+  };
+
+  const handleSortChange = (sort: SortBy) => {
+    setSortBy(sort);
+    if (query.trim()) {
+      doSearch(query, category, sort);
+    }
   };
 
   const handleSummarize = async () => {
@@ -322,7 +397,7 @@ export const ResearchTab: React.FC = () => {
       setSummary(text);
     } catch (err: any) {
       setSummary(
-        `Summary unavailable: ${err?.message || "Ollama not running"}`,
+        `Summary unavailable: ${err?.message || "Ollama model not running"}`,
       );
     } finally {
       setSummarizing(false);
@@ -330,7 +405,8 @@ export const ResearchTab: React.FC = () => {
   };
 
   const handleSaveResult = async (result: SearchResult) => {
-    const content = `${result.title}\n${result.snippet}`;
+    const dateLine = result.date ? `Date: ${result.date}\n` : "";
+    const content = `${result.title}\nSource: ${result.source}\n${dateLine}${result.snippet}`;
     await saveKnowledgeItem(content, result.url);
     toggleSavedResult(result.url);
   };
@@ -338,18 +414,26 @@ export const ResearchTab: React.FC = () => {
   const handleSaveSummary = async () => {
     if (!summary || !response) return;
     await saveKnowledgeItem(
-      `Research: ${response.query}\n\n${summary}`,
+      `Research Synthesis: ${response.query}\n\n${summary}`,
       undefined,
     );
     setSummarySaved(true);
   };
 
   const suggestions = [
-    "AI tools for productivity 2025",
-    "Best practices for remote work",
-    "Tauri vs Electron performance",
-    "Personal finance strategies",
-    "Latest LLM benchmarks",
+    "Rust vs Go concurrency model",
+    "Tauri v2 architecture & security",
+    "AI agents multi-modal workflows 2025",
+    "Local LLMs performance benchmarks",
+    "Dark radiation bound reheating paper",
+  ];
+
+  const categories: { id: SearchCategory; label: string; icon: React.ReactNode }[] = [
+    { id: "all", label: "All Sources", icon: <IconSparkles size={12} /> },
+    { id: "web", label: "Web (DDG)", icon: <IconWorld size={12} /> },
+    { id: "tech", label: "Tech (HackerNews)", icon: <IconBrandYcombinator size={12} /> },
+    { id: "wiki", label: "Wikipedia", icon: <IconBrandWikipedia size={12} /> },
+    { id: "academic", label: "Academic (ArXiv)", icon: <IconBook size={12} /> },
   ];
 
   return (
@@ -359,75 +443,127 @@ export const ResearchTab: React.FC = () => {
         <div>
           <h1 className="m-0 text-xl font-bold text-[#F0F4F8] flex items-center gap-2">
             <IconSearch size={20} className="text-[#4A8FC2]" />
-            Research
+            Research Engine
           </h1>
           <p className="m-0 mt-0.5 text-[11px] font-mono text-[#7A8492]">
-            Free web search via DuckDuckGo + Wikipedia — AI synthesis via local
-            Ollama
+            Multi-source search with publication dates & custom ranking (DuckDuckGo + Wikipedia + HackerNews + ArXiv)
           </p>
         </div>
         {response && (
-          <span className="font-mono text-[10px] bg-[rgba(74,143,194,0.1)] text-[#4A8FC2] px-2 py-1 rounded border border-[rgba(74,143,194,0.25)]">
-            {response.results.length} results · {response.source_used}
+          <span className="font-mono text-[10px] bg-[rgba(74,143,194,0.1)] text-[#4A8FC2] px-2.5 py-1 rounded-lg border border-[rgba(74,143,194,0.25)]">
+            {response.results.length} relevant results · {response.source_used}
           </span>
         )}
       </div>
 
-      {/* Search bar */}
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <div className="relative flex-1">
-          <IconSearch
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] pointer-events-none"
-          />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search anything — news, research, trends, how-to…"
-            className="w-full bg-[#0E1318] border border-[#1D2535] rounded-xl text-[#E2E8F0] text-sm
-              pl-9 pr-4 py-3 outline-none focus:border-[rgba(74,143,194,0.5)] transition-colors font-[inherit]"
-          />
-          {query && (
+      {/* Search bar & Category/Sort controls */}
+      <div className="flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <div className="relative flex-1">
+            <IconSearch
+              size={14}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#4A5568] pointer-events-none"
+            />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search anything — papers, news, technical docs, discussions..."
+              className="w-full bg-[#0E1318] border border-[#1D2535] rounded-xl text-[#E2E8F0] text-sm
+                pl-10 pr-4 py-3 outline-none focus:border-[rgba(74,143,194,0.5)] transition-colors font-[inherit]"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setResponse(null);
+                  setSummary(null);
+                  setSearchError(null);
+                  inputRef.current?.focus();
+                }}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#4A5568] hover:text-[#9AA4B2] cursor-pointer bg-transparent border-none"
+              >
+                <IconX size={14} />
+              </button>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={searching || !query.trim()}
+            className="px-5 py-3 rounded-xl bg-[#4A8FC2] text-black font-semibold text-sm
+              hover:bg-[#5b9bd1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed
+              flex items-center gap-2 cursor-pointer shrink-0"
+          >
+            {searching ? (
+              <>
+                <IconLoader2 size={15} className="animate-spin" /> Searching…
+              </>
+            ) : (
+              <>
+                <IconSearch size={15} /> Search
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* Category & Ranking Sort Bar */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          {/* Category Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleCategoryChange(cat.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all cursor-pointer border ${
+                  category === cat.id
+                    ? "bg-[rgba(74,143,194,0.15)] border-[rgba(74,143,194,0.4)] text-[#4A8FC2] font-bold"
+                    : "bg-[#0E1318] border-[#1D2535] text-[#7A8492] hover:text-[#C8D6E5] hover:border-[#242B35]"
+                }`}
+              >
+                {cat.icon}
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Sort By controls */}
+          <div className="flex items-center gap-1 bg-[#0E1318] p-1 rounded-lg border border-[#1D2535]">
+            <span className="text-[10px] text-[#4A5568] font-mono px-1.5 flex items-center gap-1">
+              <IconSortDescending size={12} /> Rank:
+            </span>
             <button
               type="button"
-              onClick={() => {
-                setQuery("");
-                setResponse(null);
-                setSummary(null);
-                setSearchError(null);
-                inputRef.current?.focus();
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#4A5568] hover:text-[#9AA4B2] cursor-pointer bg-transparent border-none"
+              onClick={() => handleSortChange("relevance")}
+              className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
+                sortBy === "relevance"
+                  ? "bg-[#181E27] text-[#4A8FC2] font-bold border border-[rgba(74,143,194,0.3)]"
+                  : "text-[#7A8492] hover:text-[#C8D6E5]"
+              }`}
             >
-              <IconX size={14} />
+              Relevance
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => handleSortChange("date")}
+              className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
+                sortBy === "date"
+                  ? "bg-[#181E27] text-[#34D399] font-bold border border-[rgba(52,211,153,0.3)]"
+                  : "text-[#7A8492] hover:text-[#C8D6E5]"
+              }`}
+            >
+              Newest Date
+            </button>
+          </div>
         </div>
-        <button
-          type="submit"
-          disabled={searching || !query.trim()}
-          className="px-5 py-3 rounded-xl bg-[#4A8FC2] text-black font-semibold text-sm
-            hover:bg-[#5b9bd1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed
-            flex items-center gap-2 cursor-pointer shrink-0"
-        >
-          {searching ? (
-            <>
-              <IconLoader2 size={15} className="animate-spin" /> Searching…
-            </>
-          ) : (
-            <>
-              <IconSearch size={15} /> Search
-            </>
-          )}
-        </button>
-      </form>
+      </div>
 
-      {/* Search history */}
+      {/* Recent searches */}
       {searchHistory.length > 0 && !response && !searching && (
         <div className="flex flex-wrap gap-1.5">
           <span className="text-[10px] text-[#4A5568] font-mono self-center">
-            Recent:
+            Recent searches:
           </span>
           {searchHistory.slice(0, 8).map((h) => (
             <button
@@ -455,88 +591,82 @@ export const ResearchTab: React.FC = () => {
         </div>
       )}
 
-      {/* Suggestions — shown on empty state */}
-      {!response &&
-        !searching &&
-        !searchError &&
-        searchHistory.length === 0 && (
-          <div className="flex flex-col gap-3 py-4">
-            <p className="text-[11px] text-[#4A5568] font-mono uppercase tracking-wider">
-              Try searching
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => {
-                    setQuery(s);
-                    doSearch(s);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-[#0E1318] border border-[#1D2535]
-                  text-[12px] text-[#9AA4B2] hover:text-[#E2E8F0] hover:border-[rgba(74,143,194,0.3)]
-                  hover:bg-[rgba(74,143,194,0.06)] transition-all cursor-pointer"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+      {/* Default Empty Suggestions State */}
+      {!response && !searching && !searchError && searchHistory.length === 0 && (
+        <div className="flex flex-col gap-4 py-2">
+          <p className="text-[11px] text-[#4A5568] font-mono uppercase tracking-wider">
+            Try searching
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => {
+                  setQuery(s);
+                  doSearch(s);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-[#0E1318] border border-[#1D2535]
+                text-[12px] text-[#9AA4B2] hover:text-[#E2E8F0] hover:border-[rgba(74,143,194,0.3)]
+                hover:bg-[rgba(74,143,194,0.06)] transition-all cursor-pointer"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
 
-            {/* Source info */}
-            <div className="mt-4 p-4 rounded-xl bg-[#0E1318] border border-[#1D2535] flex flex-col gap-2">
-              <p className="text-[11px] font-bold text-[#9AA4B2] font-mono uppercase tracking-wider">
-                How it works
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {[
-                  {
-                    icon: <IconWorld size={13} />,
-                    color: "#4A8FC2",
-                    title: "DuckDuckGo",
-                    desc: "Primary search — aggregates Google, Bing, and more. No API key, no tracking.",
-                  },
-                  {
-                    icon: <IconBrandWikipedia size={13} />,
-                    color: "#9B59B6",
-                    title: "Wikipedia",
-                    desc: "Fallback for research queries. Structured factual data from open encyclopedia.",
-                  },
-                  {
-                    icon: <IconSparkles size={13} />,
-                    color: "#7C3AED",
-                    title: "Ollama AI Summary",
-                    desc: "Summarises results locally using your installed model. No data leaves your machine.",
-                  },
-                  {
-                    icon: <IconBookmark size={13} />,
-                    color: "#34D399",
-                    title: "Save to Memory",
-                    desc: "Any result or AI summary can be saved to your knowledge vault for future reference.",
-                  },
-                ].map((item) => (
-                  <div key={item.title} className="flex items-start gap-2.5">
-                    <span
-                      style={{ color: item.color }}
-                      className="mt-0.5 shrink-0"
-                    >
-                      {item.icon}
-                    </span>
-                    <div>
-                      <span className="text-[11px] font-semibold text-[#C8D6E5]">
-                        {item.title} —{" "}
-                      </span>
-                      <span className="text-[11px] text-[#7A8492]">
-                        {item.desc}
-                      </span>
+          {/* Multi-source feature cards */}
+          <div className="mt-2 p-4 rounded-xl bg-[#0E1318] border border-[#1D2535] flex flex-col gap-3">
+            <p className="text-[11px] font-bold text-[#9AA4B2] font-mono uppercase tracking-wider">
+              Research Pipeline Features
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[
+                {
+                  icon: <IconCalendar size={14} />,
+                  color: "#34D399",
+                  title: "Publication & Creation Dates",
+                  desc: "Every item displays its published date from ArXiv, HackerNews, and Wikipedia.",
+                },
+                {
+                  icon: <IconSortDescending size={14} />,
+                  color: "#4A8FC2",
+                  title: "Date & Relevance Ranking",
+                  desc: "Toggle between relevance scoring and newest-first chronological sorting.",
+                },
+                {
+                  icon: <IconChevronDown size={14} />,
+                  color: "#A78BFA",
+                  title: "Full Snippet Expansion",
+                  desc: "Click 'Show full snippet' to read full scientific abstracts without artificial cutoff.",
+                },
+                {
+                  icon: <IconSparkles size={14} />,
+                  color: "#7C3AED",
+                  title: "Ollama Synthesis",
+                  desc: "Synthesizes multi-source findings into a 3-sentence executive summary.",
+                },
+              ].map((item) => (
+                <div key={item.title} className="p-3 rounded-lg bg-[#151A21] border border-[#1F2633] flex items-start gap-2.5">
+                  <span style={{ color: item.color }} className="mt-0.5 shrink-0">
+                    {item.icon}
+                  </span>
+                  <div>
+                    <div className="text-[12px] font-semibold text-[#E2E8F0]">
+                      {item.title}
+                    </div>
+                    <div className="text-[11px] text-[#7A8492] mt-0.5 leading-snug">
+                      {item.desc}
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-      {/* Loading skeleton */}
+      {/* Loading Skeleton */}
       {searching && (
         <div className="flex flex-col gap-3">
           {[1, 2, 3, 4].map((i) => (
@@ -553,7 +683,7 @@ export const ResearchTab: React.FC = () => {
         </div>
       )}
 
-      {/* Error */}
+      {/* Error message */}
       {searchError && (
         <div className="p-4 rounded-xl bg-[rgba(239,68,68,0.08)] border border-[rgba(239,68,68,0.25)] text-[#EF4444] text-sm flex items-center gap-2">
           <IconX size={15} className="shrink-0" />
@@ -561,12 +691,11 @@ export const ResearchTab: React.FC = () => {
         </div>
       )}
 
-      {/* Results */}
+      {/* Search Results Display */}
       {response && !searching && (
         <div className="flex flex-col gap-3">
-          {/* AI Summary at top */}
+          {/* AI Research Synthesis at the top */}
           <AISummaryPanel
-            query={response.query}
             results={response.results}
             summary={summary}
             loading={summarizing}
@@ -575,10 +704,10 @@ export const ResearchTab: React.FC = () => {
             saved={summarySaved}
           />
 
-          {/* Result cards */}
+          {/* Results List */}
           {response.results.length === 0 ? (
-            <div className="p-6 rounded-xl bg-[#0E1318] border border-[#1D2535] text-center text-[#7A8492] text-sm">
-              No results found for "{response.query}". Try different keywords.
+            <div className="p-8 rounded-xl bg-[#0E1318] border border-[#1D2535] text-center text-[#7A8492] text-sm">
+              No relevant results found for "{response.query}".
             </div>
           ) : (
             response.results.map((r, i) => (

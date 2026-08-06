@@ -548,6 +548,34 @@ pub fn set_app_setting(conn: &Connection, key: &str, value: &str) -> Result<()> 
     Ok(())
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct UserBehaviorProfile {
+    pub morning_routine_type: String, // "executive_strategy" (default) or "deep_coding"
+    pub peak_focus_hours: String,     // "afternoon" (default), "morning", "evening"
+    pub interest_priority: String,    // "industry_and_market" (default), "pure_tech"
+}
+
+pub fn get_user_behavior_profile(conn: &Connection) -> UserBehaviorProfile {
+    let morning_routine_type = get_app_setting(conn, "morning_routine_type")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "executive_strategy".to_string());
+    let peak_focus_hours = get_app_setting(conn, "peak_focus_hours")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "afternoon".to_string());
+    let interest_priority = get_app_setting(conn, "interest_priority")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "industry_and_market".to_string());
+
+    UserBehaviorProfile {
+        morning_routine_type,
+        peak_focus_hours,
+        interest_priority,
+    }
+}
+
 
 // ─── Feed Interactions & Weekly Reviews ─────────────────────────────────────
 

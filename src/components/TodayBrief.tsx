@@ -72,6 +72,7 @@ export const TodayBrief: React.FC = () => {
       checkGmailStatus();
       syncCalendarDeadlines();
       useQueueStore.getState().fetchTasks();
+      useQueueStore.getState().fetchUserBehaviorProfile();
     }, 300);
 
     // Re-check whenever the window regains visibility (user opens from tray)

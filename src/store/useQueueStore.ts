@@ -35,6 +35,12 @@ import {
 
 export type PostCadence = "daily" | "every_2_days" | "weekly" | "manual";
 
+export interface UserBehaviorProfile {
+  morning_routine_type: string;
+  peak_focus_hours: string;
+  interest_priority: string;
+}
+
 const INITIAL_CHANNELS: ChannelConfig[] = [
   {
     id: "gmail",
@@ -261,6 +267,11 @@ interface QueueStore {
   fetchVaultPath: () => Promise<void>;
   setVaultPath: (path: string) => Promise<void>;
 
+  // User Behavior Adaptation Profile
+  userBehaviorProfile: UserBehaviorProfile;
+  fetchUserBehaviorProfile: () => Promise<void>;
+  setUserBehaviorSetting: (key: string, value: string) => Promise<void>;
+
   // Phase E & F: Custom RSS Feeds & Deep Reader
   customFeeds: CustomFeed[];
   fetchCustomFeeds: () => Promise<void>;
@@ -469,6 +480,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   weeklyReviewLoading: false,
   isPlayingAudio: false,
   vaultPath: null,
+  userBehaviorProfile: {
+    morning_routine_type: "executive_strategy",
+    peak_focus_hours: "afternoon",
+    interest_priority: "industry_and_market",
+  },
   customFeeds: [],
   responseAnalytics: [],
   categoryResponseTimes: [],
@@ -2024,6 +2040,39 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
         set({ vaultPath: path });
       } catch (err) {
         console.error("Set vault path error:", err);
+      }
+    }
+  },
+
+  fetchUserBehaviorProfile: async () => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const profile = await invoke<UserBehaviorProfile>(
+          "get_user_behavior_profile_command",
+        );
+        if (profile) {
+          set({ userBehaviorProfile: profile });
+        }
+      } catch (err) {
+        console.error("Fetch behavior profile error:", err);
+      }
+    }
+  },
+
+  setUserBehaviorSetting: async (key: string, value: string) => {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("set_user_behavior_setting_command", { key, value });
+        set((state) => ({
+          userBehaviorProfile: {
+            ...state.userBehaviorProfile,
+            [key]: value,
+          },
+        }));
+      } catch (err) {
+        console.error("Set behavior setting error:", err);
       }
     }
   },
